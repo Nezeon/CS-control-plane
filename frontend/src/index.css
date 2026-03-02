@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================================================
+   CSS Custom Properties — Void Precision Design System
+   ================================================ */
+:root {
+  --bg: #09090B;
+  --bg-subtle: #111113;
+  --bg-elevated: #18181B;
+  --bg-active: #27272A;
+
+  --border: #27272A;
+  --border-strong: #3F3F46;
+  --border-subtle: #1C1C1E;
+
+  --accent: #6366F1;
+  --accent-hover: #818CF8;
+  --accent-muted: #4338CA;
+  --accent-subtle: rgba(99, 102, 241, 0.12);
+
+  --data: #06B6D4;
+
+  --text-primary: #FAFAFA;
+  --text-secondary: #A1A1AA;
+  --text-muted: #71717A;
+  --text-ghost: #52525B;
+}
+
+/* ================================================
+   Base Styles
+   ================================================ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bg);
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  select option {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+}
+
+/* ================================================
+   Card Surfaces
+   ================================================ */
+@layer components {
+  .card {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: border-color 0.15s ease;
+  }
+
+  .card:hover {
+    border-color: var(--border-strong);
+  }
+
+  .card-elevated {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+  }
+
+  .card-interactive {
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .card-interactive:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Loading Skeleton */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg-active) 25%,
+      var(--border-strong) 50%,
+      var(--bg-active) 75%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .focus-ring {
+    outline: none;
+  }
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+/* ================================================
+   Scrollbar Styling
+   ================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-ghost);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ================================================
+   Accessibility — Reduced Motion
+   ================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}

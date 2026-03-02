@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Data
+chromadb_data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Docker volumes
+pgdata/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+test-results/
+playwright-report/
+
+# Alembic
+backend/alembic/versions/__pycache__/

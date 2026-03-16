@@ -599,3 +599,77 @@ async def update_customer(
         "created_at": customer.created_at,
         "updated_at": customer.updated_at,
     }
+
+
+# ── Customer Memory (ARCHITECTURE.md Section 4.4) ────────────────────
+
+
+@router.get("/{customer_id}/memory")
+async def get_customer_memory(
+    customer_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the full Customer Memory JSON for a customer."""
+    from app.database import get_sync_session
+
+    cust_result = await db.execute(
+        select(Customer).where(Customer.id == customer_id)
+    )
+    customer = cust_result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    sync_db = get_sync_session()
+    try:
+        from app.agents.memory_agent import CustomerMemoryAgent
+        memory_agent = CustomerMemoryAgent()
+        return memory_agent.build_memory(sync_db, str(customer_id))
+    except Exception as e:
+        return {
+            "customer": {
+                "id": str(customer.id),
+                "name": customer.name,
+                "industry": customer.industry,
+                "tier": customer.tier,
+                "deployment_mode": customer.deployment_mode,
+                "product_version": customer.product_version,
+                "integrations": customer.integrations or [],
+                "known_constraints": customer.known_constraints or [],
+                "renewal_date": str(customer.renewal_date) if customer.renewal_date else None,
+                "current_health": customer.current_health,
+            },
+            "error": str(e),
+        }
+    finally:
+        sync_db.close()
+
+
+@router.put("/{customer_id}/memory")
+async def update_customer_memory(
+    customer_id: UUID,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update specific Customer Memory fields (safe fields only)."""
+    result = await db.execute(select(Customer).where(Customer.id == customer_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    allowed_fields = {
+        "known_constraints", "integrations", "metadata_",
+        "deployment_mode", "product_version",
+    }
+    updated = {}
+    for key, value in body.items():
+        if key in allowed_fields:
+            setattr(customer, key, value)
+            updated[key] = value
+
+    if not updated:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    await db.commit()
+    return {"updated_fields": list(updated.keys()), "customer_id": str(customer_id)}

@@ -168,6 +168,10 @@ app.include_router(executive.router)
 # Demo router (always available, scenarios are self-contained)
 app.include_router(demo.router)
 
+# Drafts router (draft-first approval workflow)
+from app.routers import drafts
+app.include_router(drafts.router)
+
 
 @app.get("/api/health")
 async def health_check():

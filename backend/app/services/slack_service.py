@@ -107,7 +107,7 @@ class SlackService:
             logger.debug(f"[Slack] Not configured, skipping alert '{alert.title}'")
             return False
 
-        channel = settings.SLACK_ALERT_CHANNEL
+        channel = settings.SLACK_CH_HEALTH_ALERTS
         severity = (alert.severity or "medium").lower()
         color = SEVERITY_COLORS.get(severity, "#6B7280")
         customer_name = alert.customer.name if alert.customer else "Unknown"
@@ -175,7 +175,7 @@ class SlackService:
         if not self.configured:
             return False
 
-        channel = settings.SLACK_CHAT_CHANNEL or settings.SLACK_ALERT_CHANNEL
+        channel = settings.SLACK_CHAT_CHANNEL or settings.SLACK_CH_CALL_INTEL
 
         # Sentiment emoji
         sent_emoji = {
@@ -254,13 +254,110 @@ class SlackService:
         if not self.configured:
             return False
 
-        channel = settings.SLACK_ALERT_CHANNEL
+        channel = settings.SLACK_CH_HEALTH_ALERTS
         customer_name = alert.customer.name if alert.customer else "Unknown"
         status_emoji = {"acknowledged": "👀", "resolved": "✅", "dismissed": "🚫"}.get(new_status, "📝")
 
         text = f"{status_emoji} Alert *{alert.title}* ({customer_name}) → *{new_status}*"
 
         return self.send_message(channel, text)
+
+    def send_agent_card(
+        self,
+        channel: str,
+        agent_name: str,
+        event_type: str,
+        customer_name: str,
+        health_score: int | None,
+        priority: str | None,
+        summary: str,
+        action_required: str,
+        draft_id: str,
+        dashboard_url: str | None = None,
+    ) -> dict | bool:
+        """Post a standard agent card with Approve/Edit/Dismiss buttons.
+
+        Per ARCHITECTURE.md Section 6.2. Returns the Slack API response dict
+        (including 'ts') on success, or False on failure.
+        """
+        if not self.configured:
+            logger.debug(f"[Slack] Not configured, skipping agent card for {agent_name}")
+            return False
+
+        # Health score display
+        health_str = f"{health_score}" if health_score is not None else "N/A"
+        priority_str = priority.upper() if priority else "N/A"
+
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": f"{agent_name} — {event_type}",
+                    "emoji": True,
+                },
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name or 'Unknown'}"},
+                    {"type": "mrkdwn", "text": f"*Health:*\n{health_str}"},
+                    {"type": "mrkdwn", "text": f"*Priority:*\n{priority_str}"},
+                ],
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Summary:*\n{summary[:800]}",
+                },
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Action Required:*\n{action_required[:400]}",
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Approve", "emoji": True},
+                        "style": "primary",
+                        "action_id": "draft_approve",
+                        "value": draft_id,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Edit", "emoji": True},
+                        "action_id": "draft_edit",
+                        "value": draft_id,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Dismiss", "emoji": True},
+                        "style": "danger",
+                        "action_id": "draft_dismiss",
+                        "value": draft_id,
+                    },
+                ],
+            },
+        ]
+
+        # Add deep-link to dashboard if available
+        if dashboard_url:
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f"<{dashboard_url}|View Details →>"},
+                ],
+            })
+
+        fallback = f"[{agent_name}] {event_type} — {customer_name}: {summary[:120]}"
+        return self.send_message(channel, fallback, blocks)
 
     def _send_with_attachments(self, channel: str, text: str, attachments: list) -> bool:
         """Send a message with attachments (for colored sidebar)."""

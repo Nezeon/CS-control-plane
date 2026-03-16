@@ -189,6 +189,16 @@ class EventService:
                     except Exception as e:
                         logger.warning(f"Chat completion failed: {e}")
 
+                # ── Draft-first flow (ARCHITECTURE.md Section 8) ──────
+                # Create a draft for non-chat, non-health-alert events.
+                # Health alerts auto-post (informational, per spec 8.3).
+                # Chat events are interactive — no draft needed.
+                if not event_type.startswith("user_chat_") and agent_name:
+                    self._create_draft_for_output(
+                        sync_db, agent_name, event.id, customer_id,
+                        event_type, result, payload,
+                    )
+
                 event.status = "completed" if result.get("success") else "failed"
                 event.routed_to = agent_name
                 event.processed_at = datetime.now(timezone.utc)
@@ -233,6 +243,53 @@ class EventService:
                 "status": "failed",
                 "created_at": event.created_at,
             }
+
+
+    def _create_draft_for_output(
+        self, sync_db, agent_name, event_id, customer_id,
+        event_type, result, payload,
+    ):
+        """Create a draft record for the agent's output and post Slack card."""
+        try:
+            from app.services import draft_service
+
+            output = result.get("output", {})
+            confidence = None
+            if isinstance(output, dict):
+                confidence = output.get("confidence") or output.get("confidence_score")
+
+            # Resolve customer name for Slack card
+            customer_name = "Unknown"
+            health_score = None
+            try:
+                from app.models.customer import Customer
+                if customer_id:
+                    cust = sync_db.query(Customer).filter_by(id=customer_id).first()
+                    if cust:
+                        customer_name = cust.name
+                        health_score = cust.current_health
+            except Exception:
+                pass
+
+            # Extract priority from output
+            priority = None
+            if isinstance(output, dict):
+                priority = output.get("severity") or output.get("priority")
+
+            draft_service.create_draft(
+                db=sync_db,
+                agent_id=agent_name,
+                event_id=event_id,
+                customer_id=customer_id,
+                draft_content=output if isinstance(output, dict) else {"raw": str(output)[:2000]},
+                confidence=confidence,
+                event_type=event_type,
+                customer_name=customer_name,
+                health_score=health_score,
+                priority=priority,
+            )
+        except Exception as e:
+            logger.warning(f"[EventService] Draft creation failed (non-critical): {e}")
 
 
 event_service = EventService()

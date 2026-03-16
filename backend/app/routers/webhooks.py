@@ -339,3 +339,87 @@ async def slack_events(request: Request):
     )
 
     return {"ok": True}
+
+
+# ── Slack Interactivity Webhook ───────────────────────────────────────
+
+
+@router.post("/slack/interactions", status_code=status.HTTP_200_OK)
+async def slack_interactions(request: Request):
+    """
+    Handle Slack interactive button clicks (Approve/Edit/Dismiss).
+
+    Slack sends interactivity payloads as URL-encoded form data with a
+    single 'payload' field containing JSON.
+    """
+    import json
+    from urllib.parse import parse_qs
+
+    body = await request.body()
+
+    # Verify Slack signature
+    if settings.SLACK_SIGNING_SECRET:
+        from app.services.slack_chat_handler import slack_chat_handler
+        slack_signature = request.headers.get("x-slack-signature", "")
+        slack_timestamp = request.headers.get("x-slack-request-timestamp", "")
+        if not slack_chat_handler.verify_signature(slack_timestamp, body, slack_signature):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Slack signature",
+            )
+
+    # Parse URL-encoded payload
+    form_data = parse_qs(body.decode("utf-8"))
+    payload_str = form_data.get("payload", [""])[0]
+    if not payload_str:
+        return {"ok": True}
+
+    payload = json.loads(payload_str)
+
+    # Extract action details
+    actions = payload.get("actions", [])
+    if not actions:
+        return {"ok": True}
+
+    action = actions[0]
+    action_id = action.get("action_id", "")
+    draft_id = action.get("value", "")
+    user = payload.get("user", {})
+    user_name = user.get("username") or user.get("id", "unknown")
+
+    if not draft_id:
+        logger.warning("[SlackInteraction] No draft_id in action value")
+        return {"ok": True}
+
+    logger.info(f"[SlackInteraction] {action_id} on draft {draft_id} by {user_name}")
+
+    # Route to draft service (sync DB)
+    from app.database import get_sync_session
+    from app.services import draft_service
+
+    sync_db = get_sync_session()
+    try:
+        if action_id == "draft_approve":
+            draft = draft_service.approve_draft(sync_db, draft_id, approved_by=user_name)
+            response_text = f"Approved by {user_name}" if draft else "Draft not found"
+        elif action_id == "draft_dismiss":
+            draft = draft_service.dismiss_draft(sync_db, draft_id, dismissed_by=user_name)
+            response_text = f"Dismissed by {user_name}" if draft else "Draft not found"
+        elif action_id == "draft_edit":
+            from app.services.slack_service import slack_service
+            channel = payload.get("channel", {}).get("id", "")
+            message_ts = payload.get("message", {}).get("ts", "")
+            if channel and message_ts:
+                slack_service.send_message(
+                    channel=channel,
+                    text=f"<@{user.get('id', '')}> Please reply in this thread with your edits. When done, click Approve on the original message.",
+                    thread_ts=message_ts,
+                )
+            response_text = "Edit thread started"
+        else:
+            response_text = "Unknown action"
+            logger.warning(f"[SlackInteraction] Unknown action_id: {action_id}")
+    finally:
+        sync_db.close()
+
+    return {"text": response_text}

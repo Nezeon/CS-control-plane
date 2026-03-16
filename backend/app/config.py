@@ -49,15 +49,49 @@ class Settings(BaseSettings):
     JIRA_DEFAULT_PROJECT: str = "CS"
     JIRA_SYNC_JQL: str = ""
 
-    # Slack (Phase D)
+    # Slack
     SLACK_BOT_TOKEN: str = ""
-    SLACK_ALERT_CHANNEL: str = "#cs-control-plane"
     SLACK_ENABLED: bool = False
     SLACK_SIGNING_SECRET: str = ""       # Slack app signing secret (HMAC request verification)
     SLACK_CHAT_CHANNEL: str = ""         # Optional: restrict bot to specific channel(s), comma-separated
     SLACK_BOT_USER_ID: str = ""          # Bot's own Slack user ID (to ignore its own messages)
 
+    # Slack — 9 dedicated channels (ARCHITECTURE.md Section 6.1)
+    SLACK_CH_TICKET_TRIAGE: str = "#cs-ticket-triage"
+    SLACK_CH_CALL_INTEL: str = "#cs-call-intelligence"
+    SLACK_CH_HEALTH_ALERTS: str = "#cs-health-alerts"
+    SLACK_CH_ESCALATIONS: str = "#cs-escalations"
+    SLACK_CH_DELIVERY: str = "#cs-delivery"
+    SLACK_CH_QBR_DRAFTS: str = "#cs-qbr-drafts"
+    SLACK_CH_PRESALES: str = "#cs-presales-funnel"
+    SLACK_CH_EXEC_DIGEST: str = "#cs-executive-digest"
+    SLACK_CH_EXEC_URGENT: str = "#cs-executive-urgent"
+
+    # Dashboard base URL for deep-links in Slack cards
+    DASHBOARD_BASE_URL: str = "http://localhost:5173"
+
     model_config = {"env_file": [".env", "../.env"], "extra": "ignore"}
 
 
 settings = Settings()
+
+# Draft type → Slack channel routing map (ARCHITECTURE.md Section 6.1 + 10)
+DRAFT_CHANNEL_MAP = {
+    "triage": "SLACK_CH_TICKET_TRIAGE",
+    "call_intel": "SLACK_CH_CALL_INTEL",
+    "health_alert": "SLACK_CH_HEALTH_ALERTS",
+    "escalation": "SLACK_CH_ESCALATIONS",
+    "sow": "SLACK_CH_DELIVERY",
+    "deployment": "SLACK_CH_DELIVERY",
+    "qbr": "SLACK_CH_QBR_DRAFTS",
+    "presales": "SLACK_CH_PRESALES",
+    "exec_digest": "SLACK_CH_EXEC_DIGEST",
+    "exec_urgent": "SLACK_CH_EXEC_URGENT",
+    "troubleshoot": "SLACK_CH_TICKET_TRIAGE",
+}
+
+
+def get_channel_for_draft(draft_type: str) -> str:
+    """Resolve draft_type to actual Slack channel name."""
+    attr = DRAFT_CHANNEL_MAP.get(draft_type, "SLACK_CH_HEALTH_ALERTS")
+    return getattr(settings, attr, "#cs-health-alerts")

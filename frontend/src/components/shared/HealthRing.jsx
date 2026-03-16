@@ -1,68 +1,89 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useId } from 'react'
 import { cn } from '../../utils/cn'
 
-const sizeMap = {
-  sm: { px: 40, stroke: 3, fontSize: 'text-xs' },
-  md: { px: 56, stroke: 3.5, fontSize: 'text-base' },
-  lg: { px: 80, stroke: 4, fontSize: 'text-xl' },
-}
+const SIZE_MAP = { sm: 28, md: 48, lg: 64 }
 
 function getScoreColor(score) {
-  if (score >= 70) return '#22C55E'
-  if (score >= 40) return '#EAB308'
-  return '#EF4444'
+  if (score >= 80) return { start: '#00E5C4', end: '#00B89E' }
+  if (score >= 60) return { start: '#3B9EFF', end: '#2B7BD4' }
+  if (score >= 40) return { start: '#FFB547', end: '#E09A2F' }
+  return { start: '#FF5C5C', end: '#D94444' }
 }
 
-export default function HealthRing({ score = 0, size = 'md', animate = true, showLabel = true, className }) {
-  const { px, stroke, fontSize } = sizeMap[size] || sizeMap.md
-  const radius = (px - stroke * 2) / 2
+export default function HealthRing({ score = 0, size = 64, strokeWidth = 4, className }) {
+  const id = useId()
+  const gradientId = `health-grad-${id}`
+  const glowId = `health-glow-${id}`
+
+  const resolvedSize = typeof size === 'string' ? SIZE_MAP[size] || 64 : size
+  const clampedScore = Math.min(Math.max(score, 0), 100)
+  const radius = (resolvedSize - strokeWidth * 2) / 2
   const circumference = 2 * Math.PI * radius
-  const target = circumference * (1 - Math.min(Math.max(score, 0), 100) / 100)
-  const [offset, setOffset] = useState(animate ? circumference : target)
-  const color = getScoreColor(score)
+  const target = circumference * (1 - clampedScore / 100)
+  const center = resolvedSize / 2
+
+  const [offset, setOffset] = useState(circumference)
+  const colors = getScoreColor(clampedScore)
 
   useEffect(() => {
-    if (!animate) {
-      setOffset(target)
-      return
-    }
-    setOffset(circumference)
+    // Delay to trigger CSS transition on mount
     const timeout = setTimeout(() => setOffset(target), 50)
     return () => clearTimeout(timeout)
-  }, [score, animate, circumference, target])
+  }, [target])
 
   return (
-    <div data-testid="health-ring" className={cn('relative inline-flex items-center justify-center', className)} style={{ width: px, height: px }}>
-      <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`}>
+    <div
+      className={cn('relative inline-flex items-center justify-center', className)}
+      style={{ width: resolvedSize, height: resolvedSize }}
+    >
+      <svg width={resolvedSize} height={resolvedSize} viewBox={`0 0 ${resolvedSize} ${resolvedSize}`}>
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={colors.start} />
+            <stop offset="100%" stopColor={colors.end} />
+          </linearGradient>
+          <filter id={glowId}>
+            <feGaussianBlur stdDeviation="2" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Track */}
         <circle
-          cx={px / 2}
-          cy={px / 2}
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
           stroke="var(--border)"
-          strokeWidth={stroke}
+          strokeWidth={strokeWidth}
         />
+
+        {/* Progress arc */}
         <circle
-          cx={px / 2}
-          cy={px / 2}
+          cx={center}
+          cy={center}
           r={radius}
           fill="none"
-          stroke={color}
-          strokeWidth={stroke}
+          stroke={`url(#${gradientId})`}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          transform={`rotate(-90 ${px / 2} ${px / 2})`}
+          transform={`rotate(-90 ${center} ${center})`}
+          filter={`url(#${glowId})`}
           style={{
-            transition: animate ? 'stroke-dashoffset 1.2s ease-out' : 'none',
+            transition: 'stroke-dashoffset 1.2s ease-out',
           }}
         />
       </svg>
-      {showLabel && (
-        <span className={cn('absolute font-semibold text-text-primary tabular-nums', fontSize)}>
-          {Math.round(score)}
-        </span>
-      )}
+
+      {/* Center score */}
+      <span className="absolute font-display font-bold text-text-primary" style={{ fontSize: resolvedSize * 0.28 }}>
+        {Math.round(clampedScore)}
+      </span>
     </div>
   )
 }

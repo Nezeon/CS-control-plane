@@ -14,11 +14,7 @@ const useDashboardStore = create((set, get) => ({
       const { data } = await dashboardApi.getStats()
       set({ stats: data })
     } catch (err) {
-      console.error('[Dashboard] Failed to fetch stats, loading seed data:', err)
-      try {
-        const { seedDashboardStats } = await import('../data/dashboard')
-        set({ stats: seedDashboardStats })
-      } catch { /* seed unavailable */ }
+      console.error('[Dashboard] Failed to fetch stats:', err)
     }
   },
 
@@ -27,11 +23,7 @@ const useDashboardStore = create((set, get) => ({
       const { data } = await dashboardApi.getAgents()
       set({ agents: data.agents || data })
     } catch (err) {
-      console.error('[Dashboard] Failed to fetch agents, loading seed data:', err)
-      try {
-        const { seedAgents } = await import('../data/dashboard')
-        set({ agents: seedAgents })
-      } catch { /* seed unavailable */ }
+      console.error('[Dashboard] Failed to fetch agents:', err)
     }
   },
 
@@ -40,11 +32,7 @@ const useDashboardStore = create((set, get) => ({
       const { data } = await dashboardApi.getEvents(params)
       set({ events: data.events || data })
     } catch (err) {
-      console.error('[Dashboard] Failed to fetch events, loading seed data:', err)
-      try {
-        const { seedEvents } = await import('../data/dashboard')
-        set({ events: seedEvents })
-      } catch { /* seed unavailable */ }
+      console.error('[Dashboard] Failed to fetch events:', err)
     }
   },
 
@@ -53,16 +41,25 @@ const useDashboardStore = create((set, get) => ({
       const { data } = await dashboardApi.getQuickHealth()
       set({ quickHealth: data.customers || data })
     } catch (err) {
-      console.error('[Dashboard] Failed to fetch quick health, loading seed data:', err)
-      try {
-        const { seedQuickHealth } = await import('../data/dashboard')
-        set({ quickHealth: seedQuickHealth })
-      } catch { /* seed unavailable */ }
+      console.error('[Dashboard] Failed to fetch quick health:', err)
     }
   },
 
   fetchAll: async () => {
     set({ isLoading: true })
+    // In demo mode, skip API calls entirely — load seed data directly
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      console.log('[Dashboard] Demo mode — loading seed data directly (skipping API calls)')
+      try {
+        const { seedDashboardStats, seedAgents, seedEvents, seedQuickHealth } = await import('../data/dashboard')
+        set({ stats: seedDashboardStats, agents: seedAgents, events: seedEvents, quickHealth: seedQuickHealth, isLoading: false })
+      } catch {
+        set({ isLoading: false })
+      }
+      return
+    }
+    console.log('[Dashboard] Fetching live data from backend...')
     await Promise.allSettled([
       get().fetchStats(),
       get().fetchAgents(),

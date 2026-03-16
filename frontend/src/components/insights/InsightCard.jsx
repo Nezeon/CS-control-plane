@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { ChevronDown, Copy, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 import { formatDate, getInitials } from '../../utils/formatters'
 
 const sentimentColors = {
-  positive: '#22C55E',
-  neutral: '#71717A',
-  negative: '#EF4444',
+  positive: '#00E5A0',
+  neutral: '#5C5C72',
+  negative: '#FF5C5C',
 }
 
 function ActionItemCheckbox({ item, onToggle }) {
@@ -86,7 +86,7 @@ export default function InsightCard({ insight, isExpanded, onToggleExpand, onTog
       {/* Expanded content */}
       <AnimatePresence>
         {isExpanded && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -119,7 +119,7 @@ export default function InsightCard({ insight, isExpanded, onToggleExpand, onTog
                   <h4 className="font-mono text-[10px] text-text-ghost uppercase tracking-wider mb-1.5">Decisions</h4>
                   <ul className="space-y-1">
                     {decisions.map((d, i) => (
-                      <li key={i} className="text-xs text-text-secondary flex items-start gap-2">
+                      <li key={typeof d === 'string' ? d : d.description || d.text || i} className="text-xs text-text-secondary flex items-start gap-2">
                         <span className="text-accent mt-0.5">&#9656;</span>
                         {typeof d === 'string' ? d : d.description || d.text}
                       </li>
@@ -134,7 +134,7 @@ export default function InsightCard({ insight, isExpanded, onToggleExpand, onTog
                   <h4 className="font-mono text-[10px] text-text-ghost uppercase tracking-wider mb-1.5">Risks</h4>
                   <ul className="space-y-1">
                     {risks.map((r, i) => (
-                      <li key={i} className="text-xs text-status-danger/80 flex items-start gap-2">
+                      <li key={typeof r === 'string' ? r : r.description || r.text || i} className="text-xs text-status-danger/80 flex items-start gap-2">
                         <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
                         {typeof r === 'string' ? r : r.description || r.text}
                       </li>
@@ -165,7 +165,7 @@ export default function InsightCard({ insight, isExpanded, onToggleExpand, onTog
                 )}
               </div>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

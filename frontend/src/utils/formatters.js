@@ -44,7 +44,7 @@ export function getInitials(name) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
-/* ─── Color maps — Void Precision palette ─── */
+/* ─── Color maps — Obsidian Luxe palette ─── */
 
 const statusColorMap = {
   active: 'accent',
@@ -62,66 +62,66 @@ export function getStatusColor(status) {
 }
 
 const statusHexMap = {
-  active: '#6366F1',
-  processing: '#06B6D4',
-  idle: '#52525B',
-  healthy: '#22C55E',
-  watch: '#EAB308',
-  high_risk: '#EF4444',
-  critical: '#EF4444',
-  error: '#EF4444',
+  active: '#7C5CFC',
+  processing: '#3B9EFF',
+  idle: '#5C5C72',
+  healthy: '#00E5A0',
+  watch: '#FFB547',
+  high_risk: '#FF5C5C',
+  critical: '#FF5C5C',
+  error: '#FF5C5C',
 }
 
 export function getStatusHex(status) {
-  return statusHexMap[status] || '#52525B'
+  return statusHexMap[status] || '#5C5C72'
 }
 
 const severityColorMap = {
-  P1: '#EF4444',
-  P2: '#EAB308',
-  P3: '#06B6D4',
-  P4: '#71717A',
-  critical: '#EF4444',
-  high: '#EAB308',
-  medium: '#06B6D4',
-  low: '#71717A',
+  P1: '#FF5C5C',
+  P2: '#FFB547',
+  P3: '#3B9EFF',
+  P4: '#5C5C72',
+  critical: '#FF5C5C',
+  high: '#FFB547',
+  medium: '#3B9EFF',
+  low: '#5C5C72',
 }
 
 export function getSeverityColor(severity) {
-  return severityColorMap[severity] || '#71717A'
+  return severityColorMap[severity] || '#5C5C72'
 }
 
 const laneColorMap = {
-  control: '#6366F1',
-  value: '#22C55E',
-  support: '#EAB308',
-  delivery: '#06B6D4',
+  control: '#7C5CFC',
+  value: '#00E5A0',
+  support: '#FFB547',
+  delivery: '#3B9EFF',
 }
 
 export function getLaneColor(lane) {
-  return laneColorMap[lane] || '#71717A'
+  return laneColorMap[lane] || '#5C5C72'
 }
 
 export function getRiskColor(riskLevel) {
   switch (riskLevel) {
-    case 'high_risk': return '#EF4444'
-    case 'critical': return '#EF4444'
-    case 'watch': return '#EAB308'
-    case 'healthy': return '#22C55E'
-    default: return '#71717A'
+    case 'high_risk': return '#FF5C5C'
+    case 'critical': return '#FF5C5C'
+    case 'watch': return '#FFB547'
+    case 'healthy': return '#00E5A0'
+    default: return '#5C5C72'
   }
 }
 
 const eventTypeColorMap = {
-  jira_ticket_created: '#6366F1',
-  fathom_call_processed: '#06B6D4',
-  zoom_call_completed: '#06B6D4',
-  daily_health_check: '#22C55E',
-  health_check: '#22C55E',
-  new_alert: '#EAB308',
-  alert_fired: '#EF4444',
+  jira_ticket_created: '#7C5CFC',
+  fathom_call_processed: '#3B9EFF',
+  zoom_call_completed: '#3B9EFF',
+  daily_health_check: '#00E5A0',
+  health_check: '#00E5A0',
+  new_alert: '#FFB547',
+  alert_fired: '#FF5C5C',
 }
 
 export function getEventTypeColor(eventType) {
-  return eventTypeColorMap[eventType] || '#6366F1'
+  return eventTypeColorMap[eventType] || '#7C5CFC'
 }

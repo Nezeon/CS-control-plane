@@ -1,88 +1,76 @@
-import json
+"""
+Health Monitor Agent — Tier 3 Specialist (Value Lane).
+
+Calculates customer health scores using 6 weighted factors.
+Reports to: Damon Reeves (value_lead)
+Traits: trend_analysis, customer_sentiment
+"""
+
 import logging
 import uuid
-from datetime import datetime, timezone
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
 from app.models.health_score import HealthScore
-from app.services import claude_service
 
 logger = logging.getLogger("agents.health_monitor")
-
-HEALTH_SYSTEM_PROMPT = """You are a Customer Health Monitor for a cybersecurity SaaS company (HivePro).
-Analyze the customer context and calculate a health score from 0-100 using these 6 weighted factors:
-
-1. **Product Adoption** (weight: 0.20) — Active usage, feature utilization, deployment completeness
-2. **Support Health** (weight: 0.20) — Open ticket count, severity distribution, resolution trends
-3. **Engagement** (weight: 0.15) — Call frequency, responsiveness, stakeholder participation
-4. **Sentiment** (weight: 0.15) — Call sentiment trends, satisfaction signals, complaint frequency
-5. **Outcome Delivery** (weight: 0.15) — Whether the product is delivering on promised value
-6. **Contract/Renewal Risk** (weight: 0.15) — Days to renewal, contract expansion signals, churn indicators
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "score": <int 0-100>,
-  "risk_level": "<healthy|at_risk|critical>",
-  "factors": {
-    "product_adoption": {"score": <0-100>, "rationale": "<1 sentence>"},
-    "support_health": {"score": <0-100>, "rationale": "<1 sentence>"},
-    "engagement": {"score": <0-100>, "rationale": "<1 sentence>"},
-    "sentiment": {"score": <0-100>, "rationale": "<1 sentence>"},
-    "outcome_delivery": {"score": <0-100>, "rationale": "<1 sentence>"},
-    "contract_risk": {"score": <0-100>, "rationale": "<1 sentence>"}
-  },
-  "risk_flags": ["<flag1>", "<flag2>"],
-  "summary": "<2-3 sentence overall assessment>",
-  "recommended_actions": ["<action1>", "<action2>"]
-}"""
 
 
 class HealthMonitorAgent(BaseAgent):
     """Calculates customer health scores using Claude AI."""
 
-    agent_name = "health_monitor"
-    agent_type = "value"
+    agent_id = "health_monitor"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
+    def perceive(self, task: dict) -> dict:
+        customer_memory = task.get("customer_memory", {})
         if customer_memory.get("error"):
-            return {
-                "success": False,
-                "output": {"error": customer_memory["error"]},
-                "reasoning_summary": "Failed to load customer memory.",
-            }
+            raise ValueError(f"Customer memory error: {customer_memory['error']}")
 
-        user_message = self._build_prompt(customer_memory)
-        response = claude_service.generate_sync(
-            system_prompt=HEALTH_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=2048,
-            temperature=0.2,
+        self.memory.set_context("customer_memory", customer_memory)
+        self.memory.set_context("customer_name", task.get("customer_name", ""))
+        return task
+
+    def retrieve(self, task: dict) -> dict:
+        context = self.memory.assemble_context(
+            f"health analysis for {task.get('customer_name', 'unknown')}"
         )
+        context["customer_memory"] = task.get("customer_memory", {})
+        return context
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+    def think(self, task: dict, context: dict) -> dict:
+        customer_memory = context.get("customer_memory", {})
+        user_message = self._build_prompt(customer_memory)
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse Claude response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        # Enrich with episodic memory
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past Similar Analyses\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
+        # Add trait context
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
+
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=2048, temperature=0.2)
+        return self._parse_claude(response)
+
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("summary", "Health score calculated."),
+            **thinking,
+            "reasoning_summary": thinking.get("summary", "Health score calculated."),
         }
+
+    # ── DB Save ──────────────────────────────────────────────────────
 
     def save_score(self, db_session, customer_id, result: dict) -> None:
         """Create a HealthScore record from agent output."""
-        output = result.get("output", {})
+        output = result.get("output", result)
         score = HealthScore(
             id=uuid.uuid4(),
             customer_id=customer_id,
@@ -94,20 +82,50 @@ class HealthMonitorAgent(BaseAgent):
         db_session.add(score)
         db_session.commit()
 
+    # ── Prompt Building ──────────────────────────────────────────────
+
     def _build_prompt(self, memory: dict) -> str:
         customer = memory.get("customer", {})
         health = memory.get("health", {})
         tickets = memory.get("tickets", {})
         calls = memory.get("calls", {})
+        portfolio = memory.get("portfolio")
 
-        parts = [
-            f"## Customer: {customer.get('name', 'Unknown')}",
-            f"Industry: {customer.get('industry', 'N/A')} | Tier: {customer.get('tier', 'N/A')}",
-            f"Deployment: {customer.get('deployment_mode', 'N/A')} | Version: {customer.get('product_version', 'N/A')}",
-            f"Renewal Date: {customer.get('renewal_date', 'N/A')}",
-            f"Integrations: {', '.join(customer.get('integrations', [])) or 'None'}",
-            "",
-            f"## Current Health",
+        parts = []
+
+        # Portfolio-level analysis (when no specific customer)
+        if portfolio:
+            parts.extend([
+                f"## Portfolio Analysis ({portfolio.get('total_customers', 0)} customers)",
+                "",
+                "## Customer Health Rankings (worst to best):",
+            ])
+            for c in portfolio.get("customers", []):
+                risk_tag = "HIGH_RISK" if c.get("risk_level") in ("high_risk", "critical") else "WATCH" if c.get("risk_level") == "watch" else "OK"
+                parts.append(
+                    f"- [{risk_tag}] {c['name']} — Score: {c.get('health_score', 'N/A')}/100, "
+                    f"Risk: {c.get('risk_level', 'unknown')}, Tier: {c.get('tier', 'N/A')}, "
+                    f"Renewal: {c.get('renewal_date', 'N/A')}"
+                )
+            at_risk = portfolio.get("at_risk", [])
+            if at_risk:
+                parts.append(f"\n## At-Risk Customers ({len(at_risk)}):")
+                for c in at_risk:
+                    flags = ", ".join(c.get("risk_flags", [])) or "N/A"
+                    parts.append(f"- {c['name']}: score={c.get('health_score')}, flags={flags}")
+            parts.append("")
+        else:
+            parts.extend([
+                f"## Customer: {customer.get('name', 'Unknown')}",
+                f"Industry: {customer.get('industry', 'N/A')} | Tier: {customer.get('tier', 'N/A')}",
+                f"Deployment: {customer.get('deployment_mode', 'N/A')} | Version: {customer.get('product_version', 'N/A')}",
+                f"Renewal Date: {customer.get('renewal_date', 'N/A')}",
+                f"Integrations: {', '.join(customer.get('integrations', [])) or 'None'}",
+                "",
+            ])
+
+        parts.extend([
+            "## Current Health",
             f"Score: {health.get('current_score', 'N/A')} | Risk: {health.get('risk_level', 'N/A')}",
             f"Risk Flags: {', '.join(health.get('risk_flags', [])) or 'None'}",
             "",
@@ -119,7 +137,7 @@ class HealthMonitorAgent(BaseAgent):
             "",
             f"## Pending Action Items: {len(memory.get('action_items', []))}",
             f"## Active Alerts: {len(memory.get('alerts', []))}",
-        ]
+        ])
         return "\n".join(parts)
 
     def _format_tickets(self, items: list) -> str:
@@ -144,3 +162,6 @@ class HealthMonitorAgent(BaseAgent):
                 f"(topics: {topics})"
             )
         return "\n".join(lines)
+
+
+AgentFactory.register("health_monitor", HealthMonitorAgent)

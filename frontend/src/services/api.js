@@ -11,6 +11,9 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+    console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} (token: ${token.substring(0, 12)}...)`)
+  } else {
+    console.debug(`[API] ${config.method?.toUpperCase()} ${config.url} (no token)`)
   }
   return config
 })
@@ -35,10 +38,12 @@ api.interceptors.response.use(
     // Demo mode — skip 401 handling, let stores fall back to seed data
     const token = localStorage.getItem('access_token')
     if (token === 'demo-token') {
+      console.debug('[API] Demo mode — skipping 401 refresh for', originalRequest.url)
       return Promise.reject(error)
     }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
+      console.warn(`[API] 401 on ${originalRequest.url}, attempting token refresh...`)
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -53,6 +58,7 @@ api.interceptors.response.use(
 
       const refreshToken = localStorage.getItem('refresh_token')
       if (!refreshToken) {
+        console.warn('[API] No refresh token, redirecting to login')
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         window.location.href = '/login'
@@ -65,12 +71,14 @@ api.interceptors.response.use(
           { refresh_token: refreshToken },
           { headers: { 'Content-Type': 'application/json' } }
         )
+        console.log('[API] Token refreshed successfully')
         localStorage.setItem('access_token', data.access_token)
         api.defaults.headers.common.Authorization = `Bearer ${data.access_token}`
         processQueue(null, data.access_token)
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`
         return api(originalRequest)
       } catch (refreshError) {
+        console.warn('[API] Refresh failed, redirecting to login')
         processQueue(refreshError, null)
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')

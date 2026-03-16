@@ -35,6 +35,14 @@ const useTicketStore = create((set, get) => ({
   fetchTickets: async () => {
     const { search, status, severity, customer_id, ticket_type, sort_by, sort_order } = get()
     set({ isLoading: true, error: null })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedTickets } = await import('../data/tickets')
+        set({ tickets: seedTickets, total: seedTickets.length, isLoading: false })
+      } catch { set({ isLoading: false }) }
+      return
+    }
     try {
       const params = {}
       if (search) params.search = search
@@ -48,18 +56,22 @@ const useTicketStore = create((set, get) => ({
       const items = data.tickets || data.items || data || []
       set({ tickets: items, total: data.total ?? items.length, isLoading: false })
     } catch (err) {
-      console.error('[Ticket] Failed to fetch tickets, loading seed data:', err)
-      try {
-        const { seedTickets } = await import('../data/tickets')
-        set({ tickets: seedTickets, total: seedTickets.length, isLoading: false })
-      } catch {
-        set({ isLoading: false, error: err.message })
-      }
+      console.error('[Ticket] Failed to fetch tickets:', err)
+      set({ isLoading: false, error: err.message })
     }
   },
 
   fetchTicketDetail: async (id) => {
     set({ detailLoading: true })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedTickets } = await import('../data/tickets')
+        const ticket = seedTickets.find((t) => t.id === id)
+        set({ selectedTicket: ticket || null, detailLoading: false })
+      } catch { set({ detailLoading: false }) }
+      return
+    }
     try {
       const { data } = await ticketApi.get(id)
       set({ selectedTicket: data, detailLoading: false })

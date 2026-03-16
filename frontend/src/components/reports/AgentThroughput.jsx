@@ -1,10 +1,12 @@
 import { useMemo, useState, useCallback, memo } from 'react'
 import * as d3 from 'd3'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import useReportStore from '../../stores/reportStore'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import { AGENT_LANE_MAP, getCrossFilterOpacity } from '../../utils/chartHelpers'
 import { getLaneColor, formatNumber } from '../../utils/formatters'
+
+const EMPTY_ARRAY = []
 
 const SIZE = 300
 const CENTER = SIZE / 2
@@ -44,7 +46,7 @@ function ThroughputTooltip({ info, x, y }) {
   )
 }
 
-export default memo(function AgentThroughput({ data = [], isLoading }) {
+export default memo(function AgentThroughput({ data = EMPTY_ARRAY, isLoading }) {
   const crossFilter = useReportStore((s) => s.crossFilter)
   const setCrossFilter = useReportStore((s) => s.setCrossFilter)
   const clearCrossFilter = useReportStore((s) => s.clearCrossFilter)
@@ -149,6 +151,10 @@ export default memo(function AgentThroughput({ data = [], isLoading }) {
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           className="block"
           onClick={(e) => { if (e.target.tagName === 'svg') clearCrossFilter() }}
+          role="img"
+          aria-label="Agent throughput chart"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') clearCrossFilter() }}
         >
           <g transform={`translate(${CENTER},${CENTER})`}>
             {rings.map((ring) => (
@@ -168,7 +174,7 @@ export default memo(function AgentThroughput({ data = [], isLoading }) {
               )
 
               return (
-                <motion.path
+                <m.path
                   key={`fg-${ring.index}`}
                   d={ring.fgPath}
                   fill={ring.color}
@@ -261,7 +267,7 @@ export default memo(function AgentThroughput({ data = [], isLoading }) {
       <div className="flex flex-wrap justify-center gap-3 mt-2">
         {rings.slice(0, 5).map((ring) => (
           <button
-            key={ring.agent}
+            key={`${ring.agent}-${ring.index}`}
             className="flex items-center gap-1.5 text-[10px] font-mono text-text-ghost hover:text-text-primary transition-colors"
             onClick={() => handleRingClick(ring)}
           >

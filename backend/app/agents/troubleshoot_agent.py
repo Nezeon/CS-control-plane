@@ -1,92 +1,103 @@
-import logging
-from uuid import UUID
+"""
+Troubleshooter Agent — Tier 3 Specialist (Support Lane).
 
+Analyzes tickets for root cause and suggests resolution steps.
+Reports to: Rachel Torres (support_lead)
+Traits: root_cause_analysis, pattern_recognition
+"""
+
+import logging
+
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
-from app.services import claude_service, rag_service
+from app.services import rag_service
 
 logger = logging.getLogger("agents.troubleshooter")
-
-TROUBLESHOOT_SYSTEM_PROMPT = """You are a Troubleshooter Agent for a cybersecurity SaaS company (HivePro).
-Analyze the support ticket along with customer context and similar resolved tickets.
-Determine root cause, suggest resolution steps, and draft customer communication.
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "root_cause": "<1-2 sentence root cause hypothesis>",
-  "confidence": <float 0.0-1.0>,
-  "evidence": ["<evidence point 1>", "<evidence point 2>"],
-  "resolution_steps": [
-    {"step": 1, "action": "<what to do>", "details": "<how to do it>"},
-    {"step": 2, "action": "<what to do>", "details": "<how to do it>"}
-  ],
-  "estimated_time": "<e.g. 2-4 hours>",
-  "requires_customer_action": <true|false>,
-  "customer_communication_draft": "<professional email draft to customer explaining the issue and next steps>",
-  "reasoning": "<2-3 sentence explanation of troubleshooting decisions>"
-}"""
 
 
 class TroubleshootAgent(BaseAgent):
     """Analyzes tickets for root cause and suggests resolution steps."""
 
-    agent_name = "troubleshooter"
-    agent_type = "support"
+    agent_id = "troubleshooter"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        payload = event.get("payload", {})
+    def perceive(self, task: dict) -> dict:
+        payload = task.get("payload", {})
+        summary = payload.get("summary", "")
+
+        if not summary:
+            raise ValueError("No ticket summary in event payload")
+
+        self.memory.set_context("summary", summary)
+        self.memory.set_context("description", payload.get("description", ""))
+        self.memory.set_context("severity", payload.get("severity", "P3"))
+        self.memory.set_context("triage_result", payload.get("triage_result"))
+        return task
+
+    def retrieve(self, task: dict) -> dict:
+        payload = task.get("payload", {})
         summary = payload.get("summary", "")
         description = payload.get("description", "")
 
-        if not summary:
-            return {
-                "success": False,
-                "output": {"error": "No ticket summary in event payload"},
-                "reasoning_summary": "Event payload missing summary field.",
-            }
-
-        # Query RAG for similar resolved tickets
+        # RAG: similar resolved tickets
         query_text = f"{summary} {description}"[:500]
         similar_tickets = rag_service.find_similar_tickets(
             query_text, n_results=5, where={"status": "resolved"}
         )
+        self.memory.set_context("similar_tickets", similar_tickets)
 
-        customer = customer_memory.get("customer", {})
+        # Episodic + semantic memory
+        context = self.memory.assemble_context(query_text)
+        context["similar_tickets"] = similar_tickets
+        context["customer_memory"] = task.get("customer_memory", {})
+
+        # Check for prior triage output passed by lane lead
+        prior_outputs = task.get("prior_outputs", {})
+        if prior_outputs and "triage" in prior_outputs:
+            triage_output = prior_outputs["triage"].get("output", {})
+            context["triage_result"] = triage_output
+
+        return context
+
+    def think(self, task: dict, context: dict) -> dict:
+        payload = task.get("payload", {})
+        customer = context.get("customer_memory", {}).get("customer", {})
+        similar_tickets = context.get("similar_tickets", [])
+        triage_result = context.get("triage_result") or payload.get("triage_result")
+
         user_message = self._build_prompt(
-            summary=summary,
-            description=description,
+            summary=payload.get("summary", ""),
+            description=payload.get("description", ""),
             severity=payload.get("severity", "P3"),
-            triage_result=payload.get("triage_result"),
+            triage_result=triage_result,
             customer=customer,
             similar_tickets=similar_tickets,
         )
 
-        response = claude_service.generate_sync(
-            system_prompt=TROUBLESHOOT_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=3000,
-            temperature=0.3,
-        )
+        # Enrich with episodic memory
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past Similar Troubleshooting\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse Claude response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=3000, temperature=0.3)
+        return self._parse_claude(response)
 
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("reasoning", "Troubleshooting complete."),
+            **thinking,
+            "reasoning_summary": thinking.get("reasoning", "Troubleshooting complete."),
         }
+
+    # ── DB Save ──────────────────────────────────────────────────────
 
     def save_result(self, db_session, ticket_id, result: dict) -> None:
         """Save troubleshoot result to the ticket's JSONB field."""
@@ -94,8 +105,10 @@ class TroubleshootAgent(BaseAgent):
 
         ticket = db_session.query(Ticket).filter(Ticket.id == ticket_id).first()
         if ticket:
-            ticket.troubleshoot_result = result.get("output", {})
+            ticket.troubleshoot_result = result.get("output", result)
             db_session.commit()
+
+    # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_prompt(
         self, summary: str, description: str, severity: str,
@@ -136,3 +149,6 @@ class TroubleshootAgent(BaseAgent):
             parts.append("\n## No similar resolved tickets found.")
 
         return "\n".join(parts)
+
+
+AgentFactory.register("troubleshooter", TroubleshootAgent)

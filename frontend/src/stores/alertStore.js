@@ -6,6 +6,29 @@ const useAlertStore = create((set) => ({
   unreadCount: 0,
   isLoading: false,
 
+  fetchAll: async () => {
+    set({ isLoading: true })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedAlerts } = await import('../data/alerts')
+        set({ alerts: seedAlerts, total: seedAlerts.length, isLoading: false })
+      } catch {
+        set({ isLoading: false })
+      }
+      return
+    }
+    try {
+      const { default: api } = await import('../services/api')
+      const { data } = await api.get('/alerts')
+      const alerts = data.alerts || data || []
+      set({ alerts, total: alerts.length, isLoading: false })
+    } catch (err) {
+      console.error('[Alerts] Failed to fetch alerts:', err)
+      set({ isLoading: false })
+    }
+  },
+
   setAlerts: (alerts, total) => set({ alerts, total }),
 
   addAlert: (alert) => {

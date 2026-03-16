@@ -24,7 +24,7 @@ from app.schemas.customer import (
     HealthInfo,
 )
 from app.schemas.insight import InsightListItem, InsightListResponse
-from app.schemas.ticket import TicketListItem, TicketListResponse
+from app.schemas.ticket import AssigneeBrief, CustomerBrief, TicketListItem, TicketListResponse
 from app.schemas.user import CsOwnerBrief
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -348,22 +348,56 @@ async def get_customer_tickets(
     )
     total = count_result.scalar() or 0
 
-    # Fetch
+    # Fetch with explicit joins (no lazy loading in async)
     result = await db.execute(
-        select(Ticket)
+        select(
+            Ticket,
+            Customer.id.label("cust_id"),
+            Customer.name.label("cust_name"),
+            User.id.label("assignee_id"),
+            User.full_name.label("assignee_name"),
+            User.avatar_url.label("assignee_avatar"),
+        )
+        .outerjoin(Customer, Ticket.customer_id == Customer.id)
+        .outerjoin(User, Ticket.assigned_to_id == User.id)
         .where(Ticket.customer_id == customer_id)
         .order_by(Ticket.created_at.desc())
         .offset(offset)
         .limit(limit)
     )
-    tickets = result.scalars().all()
+    rows = result.all()
 
-    return TicketListResponse(
-        tickets=[TicketListItem.model_validate(t) for t in tickets],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    tickets = []
+    for row in rows:
+        ticket = row[0]
+        sla_remaining, sla_breaching = None, False
+        if ticket.sla_deadline:
+            delta = ticket.sla_deadline - datetime.now(timezone.utc)
+            sla_remaining = round(delta.total_seconds() / 3600, 1)
+            sla_breaching = sla_remaining <= 0 and ticket.status not in ("resolved", "closed")
+
+        customer = CustomerBrief(id=row.cust_id, name=row.cust_name) if row.cust_id else None
+        assignee = AssigneeBrief(id=row.assignee_id, full_name=row.assignee_name, avatar_url=row.assignee_avatar) if row.assignee_id else None
+
+        tickets.append(TicketListItem(
+            id=ticket.id,
+            jira_id=ticket.jira_id,
+            customer=customer,
+            summary=ticket.summary,
+            ticket_type=ticket.ticket_type,
+            severity=ticket.severity,
+            status=ticket.status,
+            assigned_to=assignee,
+            has_triage_result=ticket.triage_result is not None,
+            has_troubleshoot_result=ticket.troubleshoot_result is not None,
+            sla_deadline=ticket.sla_deadline,
+            sla_remaining_hours=sla_remaining,
+            sla_breaching=sla_breaching,
+            created_at=ticket.created_at,
+            updated_at=ticket.updated_at,
+        ))
+
+    return TicketListResponse(tickets=tickets, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{customer_id}/insights", response_model=InsightListResponse)

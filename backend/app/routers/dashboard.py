@@ -146,45 +146,44 @@ async def get_dashboard_agents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """All 10 agents with live status."""
+    """All 13 agents with live stats (single batch query)."""
     from app.routers.agents import AGENT_REGISTRY
 
-    now = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Batch: one query for all agents instead of N round-trips
+    result = await db.execute(
+        select(
+            AgentLog.agent_name,
+            func.count().filter(AgentLog.created_at >= today).label("tasks_today"),
+            func.avg(AgentLog.duration_ms).filter(AgentLog.duration_ms.isnot(None)).label("avg_ms"),
+            func.max(AgentLog.created_at).label("last_active"),
+        )
+        .group_by(AgentLog.agent_name)
+    )
+    stats = {row.agent_name: row for row in result.all()}
 
     agents = []
-    for meta in AGENT_REGISTRY:
+    for i, meta in enumerate(AGENT_REGISTRY):
         name = meta["name"]
-
-        today_result = await db.execute(
-            select(func.count())
-            .select_from(AgentLog)
-            .where(AgentLog.agent_name == name, AgentLog.created_at >= today)
-        )
-        tasks_today = today_result.scalar() or 0
-
-        avg_result = await db.execute(
-            select(func.avg(AgentLog.duration_ms))
-            .where(AgentLog.agent_name == name, AgentLog.duration_ms.isnot(None))
-        )
-        avg_ms = avg_result.scalar()
-        avg_response_ms = int(avg_ms) if avg_ms else None
-
-        last_result = await db.execute(
-            select(func.max(AgentLog.created_at)).where(AgentLog.agent_name == name)
-        )
-        last_active = last_result.scalar()
-
-        status = "active" if tasks_today > 0 else "idle"
+        row = stats.get(name)
+        tasks_today = (row.tasks_today or 0) if row else 0
+        avg_ms = row.avg_ms if row else None
 
         agents.append(DashboardAgentItem(
+            id=f"agent-{i + 1:02d}",
+            agent_key=meta.get("agent_key", name),
             name=name,
             display_name=meta["display_name"],
+            human_name=meta.get("human_name"),
+            tier=meta.get("tier", 3),
             lane=meta["lane"],
-            status=status,
+            role=meta.get("role"),
+            status="active" if tasks_today > 0 else "idle",
             tasks_today=tasks_today,
-            avg_response_ms=avg_response_ms,
-            last_active=last_active,
+            avg_response_ms=int(avg_ms) if avg_ms else None,
+            last_active=row.last_active if row else None,
+            manages=meta.get("manages", []),
         ))
 
     return agents

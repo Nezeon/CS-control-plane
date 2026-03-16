@@ -1,89 +1,77 @@
+"""
+QBR (Quarterly Business Review) Agent — Tier 3 Specialist (Value Lane).
+
+Synthesizes customer data into comprehensive business review narratives.
+Reports to: Damon Reeves (value_lead)
+Traits: trend_analysis, customer_sentiment
+"""
+
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
 from app.models.report import Report
-from app.services import claude_service
 
-logger = logging.getLogger("agents.qbr_value")
-
-QBR_SYSTEM_PROMPT = """You are a QBR (Quarterly Business Review) Agent for a cybersecurity SaaS company (HivePro).
-Synthesize customer data from the last 90 days into a comprehensive business review narrative.
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "executive_summary": "<3-5 sentence executive overview>",
-  "health_trend_narrative": "<paragraph analyzing health score trends and what's driving them>",
-  "ticket_analysis": {
-    "summary": "<1-2 sentence ticket overview>",
-    "total_tickets": <int>,
-    "resolved_tickets": <int>,
-    "avg_resolution_days": <float>,
-    "top_categories": ["<category 1>", "<category 2>"]
-  },
-  "call_sentiment_analysis": {
-    "summary": "<1-2 sentence sentiment overview>",
-    "avg_sentiment_score": <float>,
-    "trend": "<improving|stable|declining>",
-    "key_concerns": ["<concern 1>", "<concern 2>"]
-  },
-  "achievements": ["<achievement 1>", "<achievement 2>"],
-  "risks_and_concerns": ["<risk 1>", "<risk 2>"],
-  "recommendations": ["<recommendation 1>", "<recommendation 2>"],
-  "next_quarter_goals": ["<goal 1>", "<goal 2>"],
-  "reasoning": "<2-3 sentence explanation>"
-}"""
+logger = logging.getLogger("agents.qbr")
 
 
 class QBRAgent(BaseAgent):
     """Generates quarterly business review content."""
 
-    agent_name = "qbr_value"
-    agent_type = "value"
+    agent_id = "qbr_value"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        customer = customer_memory.get("customer", {})
+    def perceive(self, task: dict) -> dict:
+        customer = task.get("customer_memory", {}).get("customer", {})
         if not customer.get("name"):
-            return {
-                "success": False,
-                "output": {"error": "No customer context available"},
-                "reasoning_summary": "Customer memory is empty.",
-            }
+            raise ValueError("No customer context available")
 
+        self.memory.set_context("customer_name", customer.get("name"))
+        self.memory.set_context("customer_tier", customer.get("tier"))
+        return task
+
+    def retrieve(self, task: dict) -> dict:
+        customer_name = task.get("customer_name", "unknown")
+        context = self.memory.assemble_context(
+            f"quarterly business review for {customer_name}"
+        )
+        context["customer_memory"] = task.get("customer_memory", {})
+        return context
+
+    def think(self, task: dict, context: dict) -> dict:
+        customer_memory = context.get("customer_memory", {})
         user_message = self._build_prompt(customer_memory)
 
-        response = claude_service.generate_sync(
-            system_prompt=QBR_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=4000,
-            temperature=0.3,
-        )
+        # Enrich with episodic memory
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past QBR Insights\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=4000, temperature=0.3)
+        return self._parse_claude(response)
 
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("reasoning", "QBR content generated."),
+            **thinking,
+            "reasoning_summary": thinking.get("reasoning", "QBR content generated."),
         }
+
+    # ── DB Save ──────────────────────────────────────────────────────
 
     def save_report(self, db_session, customer_id, result: dict) -> None:
         """Create a Report record with QBR content."""
-        output = result.get("output", {})
+        output = result.get("output", result)
         now = datetime.now(timezone.utc)
         ninety_days_ago = now - timedelta(days=90)
 
@@ -98,6 +86,8 @@ class QBRAgent(BaseAgent):
         )
         db_session.add(report)
         db_session.commit()
+
+    # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_prompt(self, memory: dict) -> str:
         customer = memory.get("customer", {})
@@ -121,7 +111,7 @@ class QBRAgent(BaseAgent):
             "## Health Score Trend (last 30 days)",
         ]
 
-        trend = health.get("trend_30d", [])
+        trend = health.get("trend", health.get("trend_30d", []))
         if trend:
             for t in trend[:10]:
                 parts.append(f"  {t.get('date', '?')}: {t.get('score', '?')}")
@@ -154,3 +144,6 @@ class QBRAgent(BaseAgent):
         ])
 
         return "\n".join(parts)
+
+
+AgentFactory.register("qbr_value", QBRAgent)

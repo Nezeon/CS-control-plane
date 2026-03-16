@@ -6,8 +6,8 @@ export const seedDashboardStats = {
   watch: 3,
   high_risk: 3,
   avg_health: 64.2,
-  total_agents: 10,
-  active_agents: 7,
+  total_agents: 13,
+  active_agents: 8,
   total_tickets_open: 50,
   tickets_resolved_today: 6,
   calls_today: 4,
@@ -20,21 +20,30 @@ export const seedDashboardStats = {
 }
 
 export const seedAgents = [
-  { id: 'agent-01', name: 'CS Orchestrator', status: 'active', lane: 'control', tasks_today: 42, latency_ms: 120 },
-  { id: 'agent-02', name: 'Memory Agent', status: 'active', lane: 'control', tasks_today: 38, latency_ms: 85 },
-  { id: 'agent-03', name: 'Health Monitor', status: 'active', lane: 'control', tasks_today: 20, latency_ms: 200 },
-  { id: 'agent-04', name: 'Escalation Agent', status: 'idle', lane: 'control', tasks_today: 5, latency_ms: 150 },
-  { id: 'agent-05', name: 'Call Intelligence', status: 'active', lane: 'value', tasks_today: 12, latency_ms: 3200 },
-  { id: 'agent-06', name: 'QBR Generator', status: 'idle', lane: 'value', tasks_today: 2, latency_ms: 8500 },
-  { id: 'agent-07', name: 'Ticket Triage', status: 'active', lane: 'support', tasks_today: 28, latency_ms: 450 },
-  { id: 'agent-08', name: 'Troubleshooter', status: 'active', lane: 'support', tasks_today: 15, latency_ms: 2800 },
-  { id: 'agent-09', name: 'SOW Analyzer', status: 'active', lane: 'delivery', tasks_today: 8, latency_ms: 1600 },
-  { id: 'agent-10', name: 'Deployment Intel', status: 'idle', lane: 'delivery', tasks_today: 3, latency_ms: 900 },
+  // Tier 1: Supervisor
+  { id: 'agent-01', agent_key: 'cso_orchestrator', name: 'cso_orchestrator', human_name: 'Naveen Kapoor', display_name: 'CS Orchestrator', tier: 1, lane: 'control', role: 'CS Manager', status: 'active', tasks_today: 15, manages: ['support_lead', 'value_lead', 'delivery_lead'] },
+  // Tier 2: Lane Leads
+  { id: 'agent-02', agent_key: 'support_lead', name: 'support_lead', human_name: 'Rachel Torres', display_name: 'Support Lead', tier: 2, lane: 'support', role: 'Support Operations Lead', status: 'active', tasks_today: 12, manages: ['triage_agent', 'troubleshooter_agent', 'escalation_agent'] },
+  { id: 'agent-03', agent_key: 'value_lead', name: 'value_lead', human_name: 'Damon Reeves', display_name: 'Value Lead', tier: 2, lane: 'value', role: 'Value & Insights Lead', status: 'active', tasks_today: 9, manages: ['health_monitor_agent', 'fathom_agent', 'qbr_agent'] },
+  { id: 'agent-04', agent_key: 'delivery_lead', name: 'delivery_lead', human_name: 'Priya Mehta', display_name: 'Delivery Lead', tier: 2, lane: 'delivery', role: 'Delivery Operations Lead', status: 'idle', tasks_today: 6, manages: ['sow_agent', 'deployment_intel_agent'] },
+  // Tier 3: Specialists — Support
+  { id: 'agent-05', agent_key: 'triage_agent', name: 'triage_agent', human_name: 'Kai Nakamura', display_name: 'Ticket Triage', tier: 3, lane: 'support', role: 'Triage Specialist', status: 'active', tasks_today: 18, manages: [] },
+  { id: 'agent-06', agent_key: 'troubleshooter_agent', name: 'troubleshooter_agent', human_name: 'Leo Petrov', display_name: 'Troubleshooter', tier: 3, lane: 'support', role: 'Troubleshooting Engineer', status: 'active', tasks_today: 11, manages: [] },
+  { id: 'agent-07', agent_key: 'escalation_agent', name: 'escalation_agent', human_name: 'Maya Santiago', display_name: 'Escalation Manager', tier: 3, lane: 'support', role: 'Escalation Manager', status: 'idle', tasks_today: 4, manages: [] },
+  // Tier 3: Specialists — Value
+  { id: 'agent-08', agent_key: 'health_monitor_agent', name: 'health_monitor_agent', human_name: 'Dr. Aisha Okafor', display_name: 'Health Monitor', tier: 3, lane: 'value', role: 'Health Analyst', status: 'active', tasks_today: 14, manages: [] },
+  { id: 'agent-09', agent_key: 'fathom_agent', name: 'fathom_agent', human_name: 'Jordan Ellis', display_name: 'Fathom Agent', tier: 3, lane: 'value', role: 'Fathom Agent', status: 'active', tasks_today: 8, manages: [] },
+  { id: 'agent-10', agent_key: 'qbr_agent', name: 'qbr_agent', human_name: 'Sofia Marquez', display_name: 'QBR Specialist', tier: 3, lane: 'value', role: 'QBR Specialist', status: 'idle', tasks_today: 2, manages: [] },
+  // Tier 3: Specialists — Delivery
+  { id: 'agent-11', agent_key: 'sow_agent', name: 'sow_agent', human_name: 'Ethan Brooks', display_name: 'SOW Specialist', tier: 3, lane: 'delivery', role: 'SOW Specialist', status: 'processing', tasks_today: 5, manages: [] },
+  { id: 'agent-12', agent_key: 'deployment_intel_agent', name: 'deployment_intel_agent', human_name: 'Zara Kim', display_name: 'Deployment Intel', tier: 3, lane: 'delivery', role: 'Deployment Analyst', status: 'idle', tasks_today: 3, manages: [] },
+  // Tier 4: Foundation
+  { id: 'agent-13', agent_key: 'customer_memory', name: 'customer_memory', human_name: 'Atlas', display_name: 'Customer Memory', tier: 4, lane: 'control', role: 'Memory Manager', status: 'active', tasks_today: 20, manages: [] },
 ]
 
 export const seedEvents = [
   { id: 'evt-01', type: 'jira_ticket_created', message: 'New P1 ticket from Acme Corp — Login failures across all regions', timestamp: '2026-02-28T09:45:00Z', customer_id: 'cust-001' },
-  { id: 'evt-02', type: 'fathom_call_processed', message: 'Call intel extracted for Beta Financial QBR prep call', timestamp: '2026-02-28T09:30:00Z', customer_id: 'cust-002' },
+  { id: 'evt-02', type: 'fathom_call_processed', message: 'Fathom insights extracted for Beta Financial QBR prep call', timestamp: '2026-02-28T09:30:00Z', customer_id: 'cust-002' },
   { id: 'evt-03', type: 'daily_health_check', message: 'Epsilon Insurance health dropped to 38 — escalation triggered', timestamp: '2026-02-28T09:15:00Z', customer_id: 'cust-005' },
   { id: 'evt-04', type: 'jira_ticket_created', message: 'P3 ticket from Gamma Telecom — Dashboard slow loading', timestamp: '2026-02-28T09:00:00Z', customer_id: 'cust-003' },
   { id: 'evt-05', type: 'alert_fired', message: 'Iota Defense SLA breach in 2 hours — 3 P2 tickets unresolved', timestamp: '2026-02-28T08:50:00Z', customer_id: 'cust-009' },
@@ -66,6 +75,4 @@ export const seedQuickHealth = [
   { id: 'cust-008', company_name: 'Theta Energy', health_score: 72, risk_level: 'healthy', trend: -2 },
   { id: 'cust-009', company_name: 'Iota Defense', health_score: 44, risk_level: 'high_risk', trend: -4 },
   { id: 'cust-010', company_name: 'Kappa Logistics', health_score: 60, risk_level: 'watch', trend: +2 },
-  { id: 'cust-002', company_name: 'Beta Financial', health_score: 88, risk_level: 'healthy', trend: +2 },
-  { id: 'cust-004', company_name: 'Delta Health', health_score: 91, risk_level: 'healthy', trend: 0 },
 ]

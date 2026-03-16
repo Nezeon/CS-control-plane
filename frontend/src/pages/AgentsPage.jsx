@@ -1,199 +1,250 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
-import { Cpu, Network, Zap, Clock, CheckCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import useAgentStore from '../stores/agentStore'
-import NeuralNetwork from '../components/agents/NeuralNetwork'
-import AgentBrainPanel from '../components/agents/AgentBrainPanel'
-import StatusIndicator from '../components/shared/StatusIndicator'
+import GlassCard from '../components/shared/GlassCard'
+import AgentAvatar from '../components/shared/AgentAvatar'
+import TierBadge from '../components/shared/TierBadge'
+import StatusPill from '../components/shared/StatusPill'
+import PillFilter from '../components/shared/PillFilter'
 import LoadingSkeleton from '../components/shared/LoadingSkeleton'
 import { getLaneColor, formatRelativeTime } from '../utils/formatters'
+import { X } from 'lucide-react'
 
-function AgentCard({ agent, onClick }) {
-  const laneColor = getLaneColor(agent.lane)
-  const isActive = agent.status === 'active' || agent.status === 'processing'
-
-  return (
-    <motion.button
-      onClick={() => onClick?.(agent.name || agent.agent_key || agent.id)}
-      className="card-interactive p-4 text-left w-full"
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.15 }}
-    >
-      <div className="flex items-start gap-3">
-        <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0"
-          style={{
-            backgroundColor: `${laneColor}15`,
-            border: `1px solid ${laneColor}30`,
-            color: laneColor,
-          }}
-        >
-          {(agent.display_name || agent.name || '?')[0]?.toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-semibold text-text-primary truncate">
-              {(agent.display_name || agent.name || '').replace(/_/g, ' ')}
-            </span>
-            <div className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-status-success animate-pulse' : 'bg-text-ghost/30'}`} />
-          </div>
-          {agent.lane && (
-            <span
-              className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold uppercase"
-              style={{ backgroundColor: `${laneColor}12`, color: laneColor }}
-            >
-              {agent.lane}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-border-subtle">
-        <div className="text-center">
-          <div className="text-sm font-bold text-text-primary tabular-nums">{agent.tasks_today ?? 0}</div>
-          <div className="text-[9px] font-mono text-text-ghost uppercase">Tasks</div>
-        </div>
-        <div className="text-center">
-          <div className="text-sm font-bold text-text-primary tabular-nums">
-            {agent.success_rate != null ? `${Math.round(agent.success_rate)}%` : '—'}
-          </div>
-          <div className="text-[9px] font-mono text-text-ghost uppercase">Success</div>
-        </div>
-        <div className="text-center">
-          <div className="text-sm font-bold text-text-primary tabular-nums">
-            {agent.avg_response_ms != null ? `${(agent.avg_response_ms / 1000).toFixed(1)}s` : '—'}
-          </div>
-          <div className="text-[9px] font-mono text-text-ghost uppercase">Avg</div>
-        </div>
-      </div>
-    </motion.button>
-  )
-}
+const TIER_OPTIONS = [
+  { value: '', label: 'All Tiers' },
+  { value: '1', label: 'T1 Supervisor' },
+  { value: '2', label: 'T2 Lane Leads' },
+  { value: '3', label: 'T3 Specialists' },
+  { value: '4', label: 'T4 Foundation' },
+]
 
 export default function AgentsPage() {
-  const location = useLocation()
-  const [viewMode, setViewMode] = useState('grid')
-
   const {
-    agents, isLoading, selectedAgent, selectedAgentDetail,
-    agentLogs, logsLoading, brainPanelOpen,
-    fetchAgents, fetchOrchestrationFlow, selectAgent, closeBrainPanel,
+    agents, isLoading, fetchAll,
+    selectedAgentDetail, agentLogs, logsLoading,
+    brainPanelOpen, selectAgent, closeBrainPanel,
   } = useAgentStore()
 
-  useEffect(() => {
-    fetchAgents()
-    fetchOrchestrationFlow()
-  }, [fetchAgents, fetchOrchestrationFlow])
+  const [tierFilter, setTierFilter] = useState('')
 
-  useEffect(() => {
-    if (location.state?.agent && agents.length > 0) {
-      selectAgent(location.state.agent)
-    }
-  }, [location.state, agents.length, selectAgent])
+  useEffect(() => { fetchAll() }, [fetchAll])
 
-  const stats = useMemo(() => {
-    const active = agents.filter((a) => a.status === 'active' || a.status === 'processing').length
-    const idle = agents.filter((a) => a.status === 'idle').length
-    const totalTasks = agents.reduce((sum, a) => sum + (a.tasks_today || 0), 0)
-    return { total: agents.length, active, idle, totalTasks }
-  }, [agents])
+  const filtered = tierFilter
+    ? agents.filter((a) => String(a.tier) === tierFilter)
+    : agents
+
+  // Sort by tier
+  const sorted = [...filtered].sort((a, b) => (a.tier || 99) - (b.tier || 99))
 
   return (
-    <div className="relative h-full flex flex-col overflow-hidden" data-testid="agents-page">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary">Agents</h1>
-          <div className="flex items-center gap-4 mt-1">
-            <span className="text-xs text-text-muted">
-              <span className="text-status-success font-semibold">{stats.active}</span> active
-            </span>
-            <span className="text-xs text-text-muted">
-              <span className="text-text-ghost font-semibold">{stats.idle}</span> idle
-            </span>
-            <span className="text-xs text-text-muted">
-              <span className="text-accent font-semibold">{stats.totalTasks}</span> tasks today
-            </span>
-          </div>
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-display font-bold text-text-primary">AI Agents</h1>
+
+      <PillFilter options={TIER_OPTIONS} value={tierFilter} onChange={setTierFilter} />
+
+      {isLoading && agents.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <LoadingSkeleton key={i} variant="card" />
+          ))}
         </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setViewMode('grid')}
-            className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'text-accent bg-accent-subtle' : 'text-text-ghost hover:text-text-muted'}`}
-          >
-            <Cpu className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('network')}
-            className={`p-2 rounded-lg transition-colors ${viewMode === 'network' ? 'text-accent bg-accent-subtle' : 'text-text-ghost hover:text-text-muted'}`}
-          >
-            <Network className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-6">
-        {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="card p-4"><LoadingSkeleton variant="text" count={4} /></div>
-            ))}
-          </div>
-        ) : agents.length === 0 ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <p className="text-sm text-text-muted mb-1">No agents configured</p>
-              <p className="text-xs text-text-ghost">Agent data will appear once the backend is connected</p>
-            </div>
-          </div>
-        ) : viewMode === 'grid' ? (
-          <div className="space-y-6">
-            {/* Agent grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-              {agents.map((agent) => (
-                <AgentCard key={agent.id || agent.name} agent={agent} onClick={selectAgent} />
-              ))}
-            </div>
-
-            {/* Recent activity */}
-            <div className="card p-0 overflow-hidden">
-              <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                <h3 className="text-xs text-text-primary font-semibold uppercase tracking-wider">Recent Activity</h3>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {sorted.map((agent) => (
+            <GlassCard
+              key={agent.agent_key || agent.name}
+              level="near"
+              interactive
+              className="cursor-pointer hover:border-accent/30 transition-all"
+              onClick={() => selectAgent(agent.agent_key || agent.name)}
+            >
+              <div className="flex items-start gap-3">
+                <AgentAvatar
+                  name={agent.human_name || agent.display_name || agent.name}
+                  tier={agent.tier}
+                  status={agent.status}
+                  size="md"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-text-primary truncate">
+                      {agent.human_name || agent.display_name || agent.name}
+                    </h3>
+                    <TierBadge tier={agent.tier} />
+                  </div>
+                  <p className="text-xs text-text-muted mt-0.5 truncate">
+                    {agent.role || agent.codename || agent.display_name}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <StatusPill status={agent.status || 'idle'} />
+                    {agent.lane && (
+                      <span
+                        className="text-xxs font-mono px-1.5 py-0.5 rounded"
+                        style={{
+                          color: getLaneColor(agent.lane),
+                          backgroundColor: `${getLaneColor(agent.lane)}15`,
+                        }}
+                      >
+                        {agent.lane}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="max-h-[240px] overflow-y-auto scrollbar-thin">
-                {agentLogs.length > 0 ? (
-                  agentLogs.slice(0, 15).map((log, i) => (
-                    <div key={log.id || i} className="flex items-center gap-3 px-4 py-2 border-b border-border-subtle last:border-0">
-                      <div className="flex items-center gap-2 w-28 shrink-0">
-                        <Zap className="w-3 h-3 text-accent" />
-                        <span className="text-[10px] font-mono text-accent truncate">{log.agent_name || log.agent}</span>
+
+              {/* Traits */}
+              {agent.traits && agent.traits.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {agent.traits.slice(0, 4).map((trait) => (
+                    <span
+                      key={typeof trait === 'string' ? trait : trait.name}
+                      className="text-xxs px-1.5 py-0.5 rounded bg-bg-active text-text-ghost"
+                    >
+                      {typeof trait === 'string' ? trait : trait.name}
+                    </span>
+                  ))}
+                  {agent.traits.length > 4 && (
+                    <span className="text-xxs text-text-ghost">+{agent.traits.length - 4}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Tools count */}
+              {agent.tools && agent.tools.length > 0 && (
+                <p className="text-xxs text-text-ghost mt-2 font-mono">
+                  {agent.tools.length} tools available
+                </p>
+              )}
+            </GlassCard>
+          ))}
+        </div>
+      )}
+
+      {/* Agent Detail Panel */}
+      {brainPanelOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={closeBrainPanel} />
+          <div className="relative w-full max-w-lg bg-bg-subtle border-l border-border-subtle overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-display font-bold text-text-primary">Agent Profile</h2>
+                <button onClick={closeBrainPanel} className="p-1 rounded text-text-ghost hover:text-text-primary">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {selectedAgentDetail ? (
+                <div className="space-y-5">
+                  {/* Identity */}
+                  <div className="flex items-center gap-3">
+                    <AgentAvatar
+                      name={selectedAgentDetail.human_name || selectedAgentDetail.name}
+                      tier={selectedAgentDetail.tier}
+                      status={selectedAgentDetail.status}
+                      size="lg"
+                    />
+                    <div>
+                      <h3 className="text-base font-semibold text-text-primary">
+                        {selectedAgentDetail.human_name || selectedAgentDetail.name}
+                      </h3>
+                      <p className="text-sm text-text-muted">
+                        {selectedAgentDetail.role || selectedAgentDetail.codename}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <TierBadge tier={selectedAgentDetail.tier} />
+                        <StatusPill status={selectedAgentDetail.status || 'idle'} />
                       </div>
-                      <span className="text-xs text-text-secondary truncate flex-1">{log.message || log.action || log.event_type}</span>
-                      <span className="text-[10px] font-mono text-text-ghost shrink-0">{formatRelativeTime(log.timestamp || log.created_at)}</span>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-text-ghost text-xs font-mono">No recent activity</div>
-                )}
-              </div>
+                  </div>
+
+                  {/* Personality */}
+                  {selectedAgentDetail.personality && (
+                    <GlassCard level="mid">
+                      <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Personality</h4>
+                      <p className="text-sm text-text-secondary">{selectedAgentDetail.personality}</p>
+                    </GlassCard>
+                  )}
+
+                  {/* Traits */}
+                  {selectedAgentDetail.traits?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Traits</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAgentDetail.traits.map((t) => (
+                          <span
+                            key={typeof t === 'string' ? t : t.name}
+                            className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent"
+                          >
+                            {typeof t === 'string' ? t : t.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tools */}
+                  {selectedAgentDetail.tools?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Tools</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAgentDetail.tools.map((tool) => (
+                          <span
+                            key={typeof tool === 'string' ? tool : tool.name}
+                            className="text-xs px-2 py-1 rounded-full bg-bg-active text-text-secondary font-mono"
+                          >
+                            {typeof tool === 'string' ? tool : tool.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manages */}
+                  {selectedAgentDetail.manages?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Manages</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAgentDetail.manages.map((m) => (
+                          <span key={m} className="text-xs px-2 py-1 rounded-full bg-bg-active text-text-secondary">
+                            {m}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recent Logs */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Recent Activity</h4>
+                    {logsLoading ? (
+                      <LoadingSkeleton variant="text" count={3} />
+                    ) : agentLogs.length === 0 ? (
+                      <p className="text-xs text-text-ghost">No recent activity</p>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {agentLogs.slice(0, 10).map((log, i) => (
+                          <div key={log.id || i} className="p-2 rounded-lg bg-bg-hover/30">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-text-secondary">{log.action || log.event_type}</span>
+                              <span className="text-xxs text-text-ghost font-mono">
+                                {formatRelativeTime(log.created_at)}
+                              </span>
+                            </div>
+                            {log.customer_name && (
+                              <span className="text-xxs text-text-muted">{log.customer_name}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <LoadingSkeleton variant="text" count={5} />
+              )}
             </div>
           </div>
-        ) : (
-          <div className="h-full min-h-[400px]">
-            <NeuralNetwork agents={agents} selectedAgent={selectedAgent} onAgentClick={selectAgent} />
-          </div>
-        )}
-      </div>
-
-      {/* Brain Panel (right drawer) */}
-      <AnimatePresence>
-        {brainPanelOpen && (
-          <AgentBrainPanel agent={selectedAgentDetail} logs={agentLogs} logsLoading={logsLoading} onClose={closeBrainPanel} />
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   )
 }

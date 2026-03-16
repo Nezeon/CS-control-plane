@@ -1,13 +1,15 @@
 import { useMemo, useState, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { getSeverityColor, getInitials } from '../../utils/formatters'
 
+const EMPTY_ARRAY = []
+
 const statusColorMap = {
-  open: '#71717A',
-  in_progress: '#6366F1',
-  waiting: '#EAB308',
-  resolved: '#22C55E',
-  closed: '#52525B',
+  open: '#5C5C72',
+  in_progress: '#7C5CFC',
+  waiting: '#FFB547',
+  resolved: '#00E5A0',
+  closed: '#5C5C72',
 }
 
 const severityX = { P1: 0.9, P2: 0.7, P3: 0.4, P4: 0.15, critical: 0.9, high: 0.7, medium: 0.4, low: 0.15 }
@@ -22,7 +24,7 @@ function getAgeDays(dateStr) {
 function TicketTooltip({ ticket, x, y }) {
   if (!ticket) return null
   return (
-    <motion.foreignObject
+    <m.foreignObject
       x={x + 16} y={y - 30}
       width={200} height={80}
       initial={{ opacity: 0 }}
@@ -35,11 +37,11 @@ function TicketTooltip({ ticket, x, y }) {
         <div className="text-text-ghost font-mono mt-0.5 truncate">{ticket.summary || ticket.title}</div>
         <div className="text-text-ghost font-mono mt-0.5">{ticket.customer_name} · {ticket.severity}</div>
       </div>
-    </motion.foreignObject>
+    </m.foreignObject>
   )
 }
 
-export default function ConstellationWrapper({ tickets = [], onTicketClick }) {
+export default function ConstellationWrapper({ tickets = EMPTY_ARRAY, onTicketClick }) {
   const [hovered, setHovered] = useState(null)
 
   const viewW = 900
@@ -56,7 +58,7 @@ export default function ConstellationWrapper({ tickets = [], onTicketClick }) {
       const x = padX + sx * (viewW - padX * 2) + (Math.random() - 0.5) * 20
       const y = padY + (age / maxAge) * (viewH - padY * 2)
       const r = severityR[t.severity] || 8
-      const color = statusColorMap[t.status] || '#71717A'
+      const color = statusColorMap[t.status] || '#5C5C72'
       const isBreaching = t.sla_deadline && new Date(t.sla_deadline) < new Date()
       return { ticket: t, x, y, r, color, isBreaching }
     })
@@ -97,13 +99,13 @@ export default function ConstellationWrapper({ tickets = [], onTicketClick }) {
         <rect width={viewW} height={viewH} fill="url(#constGrid)" />
 
         {/* Axis labels */}
-        <text x={padX} y={viewH - 8} style={{ fontFamily: '"JetBrains Mono"', fill: '#52525B', fontSize: 10 }}>Low severity →</text>
-        <text x={viewW - padX} y={viewH - 8} textAnchor="end" style={{ fontFamily: '"JetBrains Mono"', fill: '#52525B', fontSize: 10 }}>→ High severity</text>
-        <text x={12} y={padY + 4} style={{ fontFamily: '"JetBrains Mono"', fill: '#52525B', fontSize: 10 }} transform={`rotate(-90, 12, ${viewH / 2})`}>Age (days)</text>
+        <text x={padX} y={viewH - 8} style={{ fontFamily: '"JetBrains Mono"', fill: '#5C5C72', fontSize: 10 }}>Low severity →</text>
+        <text x={viewW - padX} y={viewH - 8} textAnchor="end" style={{ fontFamily: '"JetBrains Mono"', fill: '#5C5C72', fontSize: 10 }}>→ High severity</text>
+        <text x={12} y={padY + 4} style={{ fontFamily: '"JetBrains Mono"', fill: '#5C5C72', fontSize: 10 }} transform={`rotate(-90, 12, ${viewH / 2})`}>Age (days)</text>
 
         {/* Customer connection lines */}
-        {customerLines.map((l, i) => (
-          <line key={`line-${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="rgba(63,63,70,0.15)" strokeWidth={1} strokeDasharray="2 4" />
+        {customerLines.map((l) => (
+          <line key={`line-${l.x1}-${l.y1}-${l.x2}-${l.y2}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="rgba(63,63,70,0.15)" strokeWidth={1} strokeDasharray="2 4" />
         ))}
 
         {/* Ticket nodes */}
@@ -117,11 +119,11 @@ export default function ConstellationWrapper({ tickets = [], onTicketClick }) {
           >
             {/* Breaching pulse ring */}
             {isBreaching && (
-              <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#EF4444" strokeWidth={1.5} opacity={0.5}
+              <circle cx={x} cy={y} r={r + 4} fill="none" stroke="#FF5C5C" strokeWidth={1.5} opacity={0.5}
                 style={{ animation: 'pulseConst 1.5s ease-in-out infinite' }} />
             )}
             <circle cx={x} cy={y} r={r} fill={`${color}30`} stroke={color} strokeWidth={1.5}
-              style={{ transition: 'all 0.2s' }} />
+              style={{ transition: 'fill 0.2s, stroke 0.2s' }} />
           </g>
         ))}
 

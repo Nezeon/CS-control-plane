@@ -5,6 +5,17 @@
 
 ---
 
+## Core Principles
+
+1. First think through the problem, read the codebase for relevant files.
+2. Before you make any major changes, check in with me and I will verify the plan.
+3. Please every step of the way just give me a high level explanation of what changes you made
+4. Make every task and code change you do as simple as possible. We want to avoid making any massive or complex changes. Every change should impact as little code as possible. Everything is about simplicity.
+5. Maintain a documentation file that describes how the architecture of the app works inside and out.
+6. Never speculate about code you have not opened. If the user references a specific file, you MUST read the file before answering. Make sure to investigate and read relevant files BEFORE answering questions about the codebase. Never make any claims about code before investigating unless you are certain of the correct answer - give grounded and hallucination-free answers.
+
+---
+
 ## Project Identity
 
 - **Name:** HivePro CS Control Plane
@@ -17,16 +28,20 @@
 
 ## What This Project Does
 
-The CS Control Plane is an AI-powered spatial dashboard that orchestrates 10 specialized agents to automate Customer Success workflows at HivePro. It replaces manual processes like call analysis, ticket triage, health monitoring, and report generation with an always-on virtual CS workforce.
+The CS Control Plane is an AI-powered spatial dashboard that orchestrates **13 named AI agents in a 4-tier hierarchy** (Supervisor → Lane Leads → Specialists → Foundation) to automate Customer Success workflows at HivePro. Each agent has a human identity, personality, specialized traits, and tools — running multi-round pipelines instead of single-shot API calls.
 
 **Core capabilities:**
-1. **Agent Orchestration** — Routes events (Jira tickets, Fathom calls, cron jobs) to the correct AI agent via a central Orchestrator
-2. **Customer Memory** — Maintains structured + semantic memory for every customer (PostgreSQL + ChromaDB)
-3. **Spatial 3D Dashboard** — Immersive command center with 3D neural sphere, health terrain, floating orbs, particle rivers, and cinematic transitions
-4. **AI Triage** — Auto-classifies and suggests actions for incoming Jira tickets
-5. **Call Intelligence** — Extracts summaries, action items, sentiment from Fathom recordings
-6. **Health Monitoring** — Calculates daily health scores, flags at-risk customers
-7. **RAG-Powered Search** — Finds similar past issues across customers for faster resolution
+1. **4-Tier Agent Hierarchy** — A Supervisor (Naveen Kapoor, T1) delegates to 3 Lane Leads (T2: Rachel Torres/Support, Damon Reeves/Value, Priya Mehta/Delivery), who coordinate 8 Specialists (T3), all powered by a Foundation memory layer (Atlas, T4)
+2. **Multi-Round Pipeline Execution** — Agents think in stages: perceive → retrieve → think → act → reflect → quality_gate → finalize, with tier-specific configurations defined in YAML
+3. **3-Tier Memory System** — Working memory (in-process scratchpad), episodic memory (ChromaDB per-agent diary), semantic memory (ChromaDB lane-scoped knowledge pools)
+4. **Inter-Agent Message Board** — Typed messages (task_assignment, deliverable, request, escalation, feedback) flowing through the hierarchy with threading and delegation chains
+5. **12+ Agent Tools** — Agents call real functions (query_customer_db, search_similar_tickets, check_sla_status, publish_knowledge, etc.) via Claude's tool_use API
+6. **YAML-Driven Configuration** — Agent personalities, traits, pipeline stages, org structure, and workflows defined in config files (not hardcoded Python)
+7. **Spatial 3D Dashboard** — Immersive command center with 3D neural sphere (13 agents in 4 tiers), health terrain, floating orbs, particle rivers, and cinematic transitions
+8. **AI Triage** — Auto-classifies and suggests actions for incoming Jira tickets
+9. **Call Intelligence** — Extracts summaries, action items, sentiment from Fathom recordings via API
+10. **Health Monitoring** — Calculates daily health scores, flags at-risk customers
+11. **RAG-Powered Search** — Finds similar past issues across customers for faster resolution
 
 ---
 
@@ -74,6 +89,8 @@ All project documentation lives in the `/docs` directory:
 | Task Queue | Celery | 5.3+ | |
 | Cache/Broker | Redis | 7.x | |
 | LLM | Claude API | claude-sonnet-4-5-20250929 | |
+| Config | PyYAML | 6.0+ | Agent profiles, org structure, pipelines, workflows |
+| HTTP Client | httpx | 0.27+ | Fathom API integration |
 | Browser Automation | Playwright (Python) | 1.40+ | |
 | Testing | Pytest + Playwright | latest | |
 
@@ -84,10 +101,11 @@ All project documentation lives in the `/docs` directory:
 ```
 hivepro-cs-control-plane/
 ├── CLAUDE.md                          ← YOU ARE HERE
+├── REBUILD_PLAN.md                    # Master rebuild plan (source of truth for architecture)
 ├── .env.example
 ├── .gitignore
 ├── README.md
-├── docker-compose.yml                 # PostgreSQL + Redis
+├── render.yaml                        # Render deployment config
 │
 ├── docs/
 │   ├── PRD.md
@@ -97,30 +115,102 @@ hivepro-cs-control-plane/
 │
 ├── backend/
 │   ├── requirements.txt
+│   ├── Procfile                       # Render process config
+│   ├── runtime.txt                    # Python version
 │   ├── alembic.ini
 │   ├── alembic/versions/
+│   │
+│   ├── config/                        # YAML-driven agent configuration
+│   │   ├── org_structure.yaml         # 4-tier hierarchy, lanes, reporting lines
+│   │   ├── agent_profiles.yaml        # 13 agent identities, personalities, traits, tools
+│   │   ├── pipeline.yaml              # Pipeline stage definitions per tier
+│   │   └── workflows.yaml             # Event → agent routing workflows
+│   │
 │   ├── app/
 │   │   ├── main.py                    # FastAPI entry
 │   │   ├── config.py                  # Settings from .env
 │   │   ├── database.py                # PostgreSQL connection
 │   │   ├── chromadb_client.py         # ChromaDB connection
 │   │   ├── websocket_manager.py       # WebSocket broadcast
-│   │   ├── models/                    # SQLAlchemy models (10 tables)
+│   │   │
+│   │   ├── models/                    # SQLAlchemy models (12 tables)
+│   │   │   ├── ...                    # Existing 10 tables (users, customers, health_scores, etc.)
+│   │   │   ├── execution_round.py     # agent_execution_rounds table
+│   │   │   └── agent_message.py       # agent_messages table
+│   │   │
 │   │   ├── schemas/                   # Pydantic schemas
+│   │   │   ├── ...                    # Existing schemas
+│   │   │   ├── pipeline.py            # Pipeline execution schemas
+│   │   │   ├── message.py             # Agent message schemas
+│   │   │   ├── memory.py              # Memory API schemas
+│   │   │   └── hierarchy.py           # Hierarchy API schemas
+│   │   │
 │   │   ├── routers/                   # API endpoints
-│   │   ├── agents/                    # AI agent implementations (10 agents)
+│   │   │   ├── ...                    # Existing routers (auth, customers, dashboard, etc.)
+│   │   │   ├── webhooks.py            # Fathom webhook receiver
+│   │   │   ├── pipeline.py            # /v2/pipeline/* endpoints
+│   │   │   ├── messages.py            # /v2/messages/* endpoints
+│   │   │   ├── memory.py              # /v2/memory/* endpoints
+│   │   │   ├── hierarchy.py           # /v2/hierarchy/* endpoints
+│   │   │   └── workflows.py           # /v2/workflows/* endpoints
+│   │   │
+│   │   ├── agents/                    # AI agent implementations (13 agents)
+│   │   │   ├── base_agent.py          # Base agent with pipeline execution
+│   │   │   ├── pipeline_engine.py     # Multi-round pipeline runner
+│   │   │   ├── orchestrator.py        # Naveen Kapoor (T1 Supervisor)
+│   │   │   ├── leads/                 # Tier 2 Lane Leads
+│   │   │   │   ├── support_lead.py    # Rachel Torres
+│   │   │   │   ├── value_lead.py      # Damon Reeves
+│   │   │   │   └── delivery_lead.py   # Priya Mehta
+│   │   │   ├── specialists/           # Tier 3 Specialists (existing agents, upgraded)
+│   │   │   │   ├── triage_agent.py    # Kai Nakamura
+│   │   │   │   ├── troubleshooter.py  # Leo Petrov
+│   │   │   │   ├── escalation_agent.py # Maya Santiago
+│   │   │   │   ├── health_monitor.py  # Dr. Aisha Okafor
+│   │   │   │   ├── call_intel.py      # Jordan Ellis
+│   │   │   │   ├── qbr_agent.py       # Sofia Marquez
+│   │   │   │   ├── sow_agent.py       # Ethan Brooks
+│   │   │   │   └── deployment_intel.py # Zara Kim
+│   │   │   ├── memory/                # Tier 4 Foundation + Memory system
+│   │   │   │   ├── customer_memory.py # Atlas — Customer Memory Manager
+│   │   │   │   ├── working_memory.py  # In-process scratchpad
+│   │   │   │   ├── episodic_memory.py # ChromaDB per-agent diary
+│   │   │   │   └── semantic_memory.py # ChromaDB lane-scoped knowledge pools
+│   │   │   ├── tools/                 # 12+ tool definitions for Claude tool_use
+│   │   │   │   ├── tool_registry.py   # Tool registration and dispatch
+│   │   │   │   ├── db_tools.py        # query_customer_db, query_health_scores, get_ticket_details
+│   │   │   │   ├── rag_tools.py       # search_similar_tickets, search_knowledge_base
+│   │   │   │   ├── action_tools.py    # write_report, create_action_item, send_alert
+│   │   │   │   └── agent_tools.py     # read_agent_output, publish_knowledge, check_sla_status
+│   │   │   ├── traits/                # 9+ pluggable trait behaviors
+│   │   │   │   ├── trait_registry.py  # Trait registration and lifecycle hooks
+│   │   │   │   ├── confidence_scoring.py
+│   │   │   │   ├── escalation_detection.py
+│   │   │   │   ├── sla_awareness.py
+│   │   │   │   ├── strategic_oversight.py
+│   │   │   │   ├── quality_evaluation.py
+│   │   │   │   ├── delegation.py
+│   │   │   │   ├── workflow_coordination.py
+│   │   │   │   ├── synthesis.py
+│   │   │   │   └── customer_sentiment.py
+│   │   │   └── message_board.py       # Inter-agent message bus
+│   │   │
 │   │   ├── services/                  # Business logic
+│   │   │   ├── ...                    # Existing services
+│   │   │   └── fathom_service.py      # Fathom API client (httpx-based)
+│   │   │
 │   │   ├── tasks/                     # Celery async tasks
 │   │   ├── middleware/auth.py         # JWT middleware
 │   │   └── utils/
 │   │       ├── security.py
-│   │       └── seed.py                # Demo data seeder
+│   │       └── seed.py                # Demo data seeder (expanded for new entities)
 │   └── tests/
 │
 ├── frontend/
 │   ├── package.json
 │   ├── vite.config.js
 │   ├── tailwind.config.js
+│   ├── vercel.json                    # Vercel deployment config
 │   ├── index.html
 │   └── src/
 │       ├── main.jsx
@@ -131,10 +221,14 @@ hivepro-cs-control-plane/
 │       │   ├── authStore.js
 │       │   ├── dashboardStore.js
 │       │   ├── customerStore.js
-│       │   ├── agentStore.js
+│       │   ├── agentStore.js          # Updated: hierarchy, profiles, tier data
 │       │   ├── ticketStore.js
 │       │   ├── insightStore.js
 │       │   ├── alertStore.js
+│       │   ├── pipelineStore.js       # NEW: pipeline executions, active runs
+│       │   ├── messageStore.js        # NEW: inter-agent messages, threads
+│       │   ├── memoryStore.js         # NEW: episodic + semantic memory browsing
+│       │   ├── reportStore.js
 │       │   └── websocketStore.js
 │       │
 │       ├── services/                  # API clients
@@ -145,10 +239,15 @@ hivepro-cs-control-plane/
 │       │   ├── agentApi.js
 │       │   ├── ticketApi.js
 │       │   ├── insightApi.js
-│       │   └── websocket.js           # WebSocket client
+│       │   ├── pipelineApi.js         # NEW: /v2/pipeline/* calls
+│       │   ├── messageApi.js          # NEW: /v2/messages/* calls
+│       │   ├── memoryApi.js           # NEW: /v2/memory/* calls
+│       │   ├── hierarchyApi.js        # NEW: /v2/hierarchy/* calls
+│       │   ├── workflowApi.js         # NEW: /v2/workflows/* calls
+│       │   └── websocket.js           # WebSocket client (extended events)
 │       │
 │       ├── three/                     # 3D scenes (code-split, lazy-loaded)
-│       │   ├── NeuralSphere.jsx       # Hero 3D agent globe
+│       │   ├── NeuralSphere.jsx       # Hero 3D globe (13 agents, 4 tiers)
 │       │   ├── HealthTerrain.jsx      # 3D topographic map
 │       │   ├── FloatingOrb.jsx        # Holographic metric orb
 │       │   ├── DataFlowRivers.jsx     # Particle stream visualization
@@ -173,13 +272,20 @@ hivepro-cs-control-plane/
 │       │   │   ├── SentimentWave.jsx  # Mini waveform component
 │       │   │   ├── SeverityMarker.jsx # Colored light ribbon
 │       │   │   ├── EventPulseItem.jsx # Live feed item
-│       │   │   └── LoadingSkeleton.jsx # Teal shimmer skeleton
+│       │   │   ├── LoadingSkeleton.jsx # Teal shimmer skeleton
+│       │   │   ├── PipelineStageCard.jsx  # NEW: single pipeline stage display
+│       │   │   ├── MessageThread.jsx      # NEW: threaded message chain
+│       │   │   ├── MemoryEntry.jsx        # NEW: memory item card
+│       │   │   ├── HierarchyNode.jsx      # NEW: agent tree node
+│       │   │   ├── TraitBadge.jsx         # NEW: agent trait pill
+│       │   │   └── AgentAvatar.jsx        # NEW: per-agent icon + tier ring
 │       │   │
 │       │   ├── dashboard/
 │       │   │   ├── NeuralSphereWrapper.jsx  # Suspense + lazy load 3D
 │       │   │   ├── HealthTerrainWrapper.jsx # Suspense + lazy load 3D
 │       │   │   ├── FloatingOrbsGrid.jsx     # 4 metric orbs positioned
 │       │   │   ├── DataFlowRiversWrapper.jsx
+│       │   │   ├── ActivePipelinesStrip.jsx # NEW: live pipeline progress
 │       │   │   ├── LivePulse.jsx            # EKG-style event timeline
 │       │   │   └── QuickActions.jsx
 │       │   │
@@ -195,9 +301,16 @@ hivepro-cs-control-plane/
 │       │   │   └── IntelPanels.jsx      # Tickets/Calls/RAG columns
 │       │   │
 │       │   ├── agents/
-│       │   │   ├── NeuralNetwork.jsx    # Full neural graph visualization
-│       │   │   ├── AgentBrainPanel.jsx  # Slide-up detail panel
-│       │   │   └── ReasoningLog.jsx     # Terminal-style log
+│       │   │   ├── HierarchyTree.jsx      # 4-tier hierarchical tree (replaces NeuralNetwork)
+│       │   │   ├── AgentBrainPanel.jsx    # Slide-up detail panel (expanded)
+│       │   │   ├── AgentProfileCard.jsx   # Full/compact/node agent card
+│       │   │   ├── ReasoningLog.jsx       # Terminal-style log
+│       │   │   ├── PipelineView.jsx       # Active + recent pipeline executions
+│       │   │   ├── MessageBoardView.jsx   # Message feed + thread detail
+│       │   │   ├── MemoryInspector.jsx    # Episodic timeline + semantic browser
+│       │   │   ├── ExecutionTraceView.jsx # Stage-by-stage drilldown
+│       │   │   ├── WorkflowViewer.jsx     # Workflow diagram + active instances
+│       │   │   └── AgentNexusTabs.jsx     # Sub-view tab bar
 │       │   │
 │       │   ├── insights/
 │       │   │   ├── SentimentSpectrum.jsx # Full-width waveform chart
@@ -213,7 +326,7 @@ hivepro-cs-control-plane/
 │       │       ├── HealthHeatmap.jsx    # Calendar heatmap (D3)
 │       │       ├── TicketVelocity.jsx   # Stacked area chart
 │       │       ├── SentimentRiver.jsx   # Stream graph (D3)
-│       │       ├── AgentThroughput.jsx  # Radial bar chart (D3)
+│       │       ├── AgentThroughput.jsx  # Radial bar chart (D3, now 13 agents)
 │       │       └── ReportList.jsx       # Report table + generate modal
 │       │
 │       └── pages/
@@ -221,7 +334,7 @@ hivepro-cs-control-plane/
 │           ├── DashboardPage.jsx       # Command Center
 │           ├── CustomersPage.jsx       # Customer Observatory
 │           ├── CustomerDetailPage.jsx  # Deep Dive (scroll journey)
-│           ├── AgentsPage.jsx          # Agent Nexus
+│           ├── AgentsPage.jsx          # Agent Nexus (with 6 sub-view tabs)
 │           ├── InsightsPage.jsx        # Signal Intelligence
 │           ├── TicketsPage.jsx         # Ticket Warroom
 │           ├── ReportsPage.jsx         # Analytics Lab
@@ -245,7 +358,7 @@ Everything flows through the Orchestrator. External events (Jira webhook, Fathom
 Every agent reads from and writes to the Customer Memory (PostgreSQL + ChromaDB). No agent should maintain its own state about a customer.
 
 ### Rule 3: WebSocket for All Real-Time Updates
-Any change that should appear immediately (agent status, new event, alert, health score) must broadcast via WebSocket. The frontend never polls.
+Any change that should appear immediately (agent status, new event, alert, health score, pipeline progress, delegation) must broadcast via WebSocket. The frontend never polls. New event types: `pipeline:*`, `delegation:*`, `memory:*`.
 
 ### Rule 4: AI Calls are Always Async
 All Claude API calls go through Celery tasks. The API returns 202 with a task_id. Results broadcast via WebSocket. Never block the API thread.
@@ -259,14 +372,58 @@ Three surface levels: near (0.65 opacity), mid (0.45), far (0.25). Critical data
 ### Rule 7: Orbital Navigation
 No sidebar. The Orbital Nav arc is the primary navigation at the bottom-center. Command Palette (Cmd+K) is the power-user alternative. Breadcrumbs float at top-left. Content fills the full viewport.
 
+### Rule 8: Hierarchical Delegation
+Tasks flow DOWN the hierarchy: Supervisor (T1) → Lane Lead (T2) → Specialist (T3). Results flow UP. Specialists NEVER delegate to each other directly — sideways requests go through the Message Board and the Lane Lead coordinates. The Foundation layer (T4) serves ALL tiers.
+
+### Rule 9: YAML-Driven Configuration
+Agent identities, personalities, traits, tools, pipeline stages, org structure, and workflows are defined in YAML config files (`backend/config/`). **Never** hardcode agent behavior in Python. The code reads YAML at startup and constructs agents dynamically. To change an agent's behavior, edit YAML, not code.
+
+### Rule 10: Message Board Communication
+Agents communicate through typed messages on the Message Board (`agent_messages` table). Five message types: `task_assignment` (down), `deliverable` (up), `request` (sideways), `escalation` (up, urgent), `feedback` (down). Messages support threading via `thread_id` and `parent_id`. Every message links to its originating event.
+
+### Rule 11: 3-Tier Memory System
+Every agent accesses three memory tiers: **Working** (in-process scratchpad, cleared per run), **Episodic** (ChromaDB `episodic_memory` collection, per-agent diary with tri-factor retrieval), **Semantic** (ChromaDB `shared_knowledge` collection, lane-scoped knowledge pools). Agents read episodic + semantic during `retrieve` stage, write to episodic during `reflect` stage, and optionally publish to semantic via `publish_knowledge` tool.
+
+### Rule 12: Pipeline Execution
+Every agent runs a multi-round pipeline defined in `pipeline.yaml`. Stages: `perceive` → `retrieve` → `think` → `act` → `reflect` → `quality_gate` → `finalize`. Each stage is logged to `agent_execution_rounds` with tools called, tokens used, confidence, and duration. The pipeline engine handles quality gate failures (retry from a specific stage). Every stage broadcasts progress via WebSocket.
+
 ---
 
 ## Coding Standards
 
 ### Python (Backend)
 ```python
-# Same as before — type hints, Pydantic schemas, HTTPException, dependency injection
+# Type hints, Pydantic schemas, HTTPException, dependency injection
 # See API_CONTRACT.md for exact response shapes
+
+# YAML Profile Loading Pattern:
+import yaml
+from pathlib import Path
+
+def load_agent_profiles() -> dict:
+    config_path = Path(__file__).parent.parent.parent / "config" / "agent_profiles.yaml"
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+# Tool Definition Pattern (for Claude tool_use):
+def query_customer_db(customer_id: str) -> dict:
+    """Look up customer profile and history."""
+    # Tool functions are registered in tool_registry.py
+    # They return dicts that Claude can use as tool_result
+    customer = db.query(Customer).filter_by(id=customer_id).first()
+    return {"name": customer.name, "health_score": customer.current_health, ...}
+
+# Pipeline Stage Method Pattern:
+class BaseAgent:
+    async def perceive(self, context: WorkingMemory) -> WorkingMemory:
+        """Process raw input into structured understanding."""
+        ...
+    async def retrieve(self, context: WorkingMemory) -> WorkingMemory:
+        """Fetch relevant episodic + semantic memories."""
+        ...
+    async def think(self, context: WorkingMemory) -> WorkingMemory:
+        """Reason about the task using Claude with tool_use."""
+        ...
 ```
 
 ### JavaScript/React (Frontend)
@@ -313,6 +470,8 @@ const NeuralSphereWrapper = () => (
 **Void:** #020408 (body bg — absolute black, not navy)
 **Accents:** --bio-teal=#00F5D4, --bio-violet=#8B5CF6, --bio-cyan=#22D3EE
 **Danger:** --bio-rose=#FB7185, Warning: --bio-amber=#FBBF24, Success: --bio-emerald=#34D399
+**Tiers:** T1=#00F5D4 (teal), T2=#8B5CF6 (violet), T3=#22D3EE (cyan), T4=#64748B (slate)
+**Lanes:** Control=#00F5D4, Support=#FBBF24, Value=#34D399, Delivery=#22D3EE
 **Surfaces:** near=rgba(8,16,32,0.65), mid=0.45, far=0.25 — all with backdrop-blur(20px)
 **Fonts:** Space Grotesk (display/numbers), IBM Plex Mono (data/labels), Inter (body)
 **Nav:** Orbital arc at bottom-center, NOT sidebar. Cmd+K palette.
@@ -344,12 +503,12 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 # ChromaDB
 CHROMADB_PATH=./chromadb_data
 
-# External (Phase 2)
+# External Integrations
 JIRA_API_URL=https://hivepro.atlassian.net
 JIRA_API_TOKEN=
 SLACK_BOT_TOKEN=
-FATHOM_EMAIL=
-FATHOM_PASSWORD=
+FATHOM_API_KEY=                        # Fathom API key (replaces email/password auth)
+FATHOM_WEBHOOK_SECRET=                 # HMAC secret for Fathom webhook verification
 
 # Frontend
 VITE_API_URL=http://localhost:8000/api
@@ -387,138 +546,110 @@ volumes:
 
 ## Development Phases (Build Order)
 
-### Phase 1: Foundation
-- [ ] Project scaffolding (all folders, configs, .env, docker-compose)
-- [ ] Docker Compose up (PostgreSQL + Redis)
-- [ ] SQLAlchemy models for all 10 tables
-- [ ] Alembic initial migration
-- [ ] FastAPI skeleton with health check
-- [ ] **Test:** `docker-compose up` → `alembic upgrade head` → tables created
+> **Phase 0 is complete.** Phases A-H are the new architecture rebuild.
 
-### Phase 2: Auth + Users
-- [ ] JWT auth (login, refresh, me)
-- [ ] Auth middleware
-- [ ] **Test:** Login → get token → hit /auth/me
+### Phase 0: Fathom Integration (COMPLETE)
+- [x] Fathom API service (httpx-based, replaces Playwright scraping)
+- [x] Webhook receiver endpoint (`POST /webhooks/fathom`)
+- [x] Render + Vercel deployment configs
+- [x] Environment variable updates (FATHOM_API_KEY replaces email/password)
 
-### Phase 3: Customer CRUD + Health
-- [ ] Customer CRUD + Health score endpoints
-- [ ] **Test:** Create customer → add health score → get detail
+### Phase A: Documentation Update (CURRENT)
+- [x] Rewrite `/docs/PRD.md` — 13 agents, 4-tier hierarchy, features F12-F16
+- [x] Rewrite `/docs/DATABASE_SCHEMA.md` — new tables + ChromaDB collections + YAML schemas
+- [x] Rewrite `/docs/API_CONTRACT.md` — v2 endpoints for pipeline, messages, memory, hierarchy, workflows
+- [x] Rewrite `/docs/WIREFRAMES.md` — hierarchy tree, 5 new Agent Nexus sub-views, new components
+- [x] Update `CLAUDE.md` — new structure, rules 8-12, coding patterns, phases
 
-### Phase 4: Core Services
-- [ ] Claude API wrapper, ChromaDB + RAG, mock Jira/Fathom/Slack services
-- [ ] **Test:** Embed document → query similarity → get results
+### Phase B: Foundation
+- [ ] Create `backend/config/` with 4 YAML files (org_structure, agent_profiles, pipeline, workflows)
+- [ ] YAML config loader utility
+- [ ] New SQLAlchemy models: `agent_execution_rounds`, `agent_messages`
+- [ ] Alembic migration for new tables
+- [ ] New ChromaDB collections: `episodic_memory`, `shared_knowledge`
+- [ ] New Pydantic schemas: pipeline, message, memory, hierarchy
+- [ ] **Test:** `alembic upgrade head` → 12 tables created, YAML loads without errors
 
-### Phase 5: Agent Framework
-- [ ] Base agent, Orchestrator, Memory Agent, Call Intel, Health Monitor
-- [ ] Celery + Redis setup
-- [ ] **Test:** Trigger health check → agent runs → score updated
+### Phase C: Pipeline Engine + Tools
+- [ ] Base agent with pipeline execution (`base_agent.py`, `pipeline_engine.py`)
+- [ ] Tool registry + 12 tool definitions (db_tools, rag_tools, action_tools, agent_tools)
+- [ ] Working memory implementation
+- [ ] Episodic memory read/write (ChromaDB with tri-factor retrieval)
+- [ ] Semantic memory read/write (lane-scoped knowledge pools)
+- [ ] `agent_execution_rounds` logging for each pipeline stage
+- [ ] WebSocket broadcasting per pipeline stage
+- [ ] **Test:** Trigger agent → pipeline runs 7 stages → each logged → WebSocket events fire
 
-### Phase 6: Event System + WebSocket
-- [ ] Event model, routing logic, WebSocket manager
-- [ ] **Test:** Create event → agent processes → WebSocket push
+### Phase D: Traits + Reflection
+- [ ] Trait registry with lifecycle hooks (on_perceive, on_think, on_act, on_round_end, on_complete)
+- [ ] 9 trait implementations: confidence_scoring, escalation_detection, sla_awareness, strategic_oversight, quality_evaluation, delegation, workflow_coordination, synthesis, customer_sentiment
+- [ ] Reflection engine with tier-appropriate depth
+- [ ] Quality gate with retry logic
+- [ ] **Test:** Agent with traits → traits fire at correct stages → reflection writes to episodic memory
 
-### Phase 7: Remaining Agents
-- [ ] Ticket Triage, Troubleshooter, Escalation, QBR, SOW, Deployment Intel
-- [ ] **Test:** Create ticket → auto-triage → result stored
+### Phase E: Message Board + Hierarchy
+- [ ] Message board implementation (agent_messages CRUD)
+- [ ] 5 message types with threading (task_assignment, deliverable, request, escalation, feedback)
+- [ ] Delegation chain tracking
+- [ ] New API routers: `/v2/pipeline/`, `/v2/messages/`, `/v2/memory/`, `/v2/hierarchy/`, `/v2/workflows/`
+- [ ] Workflow YAML configs and routing logic
+- [ ] **Test:** T1 delegates → T2 routes → T3 executes → deliverables flow back up
 
-### Phase 8: Frontend Shell — Design System + Navigation
-- [ ] Vite + React + Tailwind + Router + Framer Motion setup
-- [ ] Google Fonts (Space Grotesk, IBM Plex Mono, Inter)
-- [ ] Global CSS: void background, nebula mesh, depth vignette, particle field
-- [ ] SurfaceCard component (3 levels)
-- [ ] StatusIndicator, HealthRing (2D), AnimatedCounter, SeverityMarker
-- [ ] OrbitalNav (bottom arc navigation)
-- [ ] CommandPalette (Cmd+K)
-- [ ] TopBar (floating breadcrumb + icons)
-- [ ] **Test:** App loads with void/nebula background, orbital nav works, Cmd+K opens palette
+### Phase F: Agent Implementation
+- [ ] Orchestrator (Naveen Kapoor, T1) — strategic decomposition, delegation, quality evaluation, synthesis
+- [ ] 3 Lane Leads (T2) — Rachel Torres, Damon Reeves, Priya Mehta — workflow coordination, sub-delegation
+- [ ] Migrate 8 existing Specialists (T3) to pipeline-based execution with traits and tools
+- [ ] Upgrade Memory Agent (T4, Atlas) — context provider for all tiers
+- [ ] **Test:** End-to-end: event → T1 → T2 → T3 → deliverables → T1 synthesis → output
 
-### Phase 9: Login + Command Center (2D first)
-- [ ] Login page with auth flow
-- [ ] Dashboard: 4 Metric Orbs (2D fallback first)
-- [ ] Dashboard: Live Pulse (EKG timeline)
-- [ ] Dashboard: Health grid (2D cards with health rings)
-- [ ] Dashboard: WebSocket integration
-- [ ] **Test:** Login → see dashboard with real data → events stream in
+### Phase G: Frontend — Agent Nexus Rebuild + New Views
+- [ ] Agent Nexus redesign: HierarchyTree component (4-tier tree replacing flat network)
+- [ ] Agent Nexus sub-view tabs: Hierarchy, Pipeline, Messages, Memory, Traces, Workflows
+- [ ] PipelineView: active executions + recent completions with real-time WebSocket
+- [ ] MessageBoardView: message feed (60%) + thread detail (40%)
+- [ ] MemoryInspector: episodic timeline + semantic knowledge pool browser
+- [ ] ExecutionTraceView: stage-by-stage drilldown with input/output/tools
+- [ ] WorkflowViewer: workflow diagram + active instances
+- [ ] New shared components: PipelineStageCard, MessageThread, MemoryEntry, HierarchyNode, TraitBadge, AgentAvatar, AgentProfileCard
+- [ ] Dashboard: ActivePipelinesStrip (below Data Flow Rivers)
+- [ ] NeuralSphere update: 13 agents in 4 tiers
+- [ ] AgentThroughput chart: 13 rings grouped by tier
+- [ ] New stores: pipelineStore, messageStore, memoryStore
+- [ ] New API services: pipelineApi, messageApi, memoryApi, hierarchyApi, workflowApi
+- [ ] **Test:** Full Agent Nexus walkthrough — hierarchy → pipeline → messages → memory → traces → workflows
 
-### Phase 10: Command Center 3D Upgrade
-- [ ] Install Three.js + @react-three/fiber + @react-three/drei + gsap
-- [ ] Neural Sphere (lazy-loaded, with Suspense + 2D fallback)
-- [ ] Floating Orbs (3D, parallax)
-- [ ] Data Flow Rivers (particle streams)
-- [ ] Health Terrain (3D topo map)
-- [ ] **Test:** 3D loads after skeleton → interactive → click agent node → detail
-
-### Phase 11: Customer Observatory + Detail
-- [ ] Customer Observatory: Premium Grid (3D tilt cards) + Data Table
-- [ ] Solar System View (3D orbital — can defer to Phase 15 polish)
-- [ ] Quick Intel Panel
-- [ ] Customer Detail: Hero (3D health ring), Health Story (scroll charts), Deployment DNA (D3), Journey Timeline, Intel Panels
-- [ ] **Test:** Browse → filter → click → scroll through detail → see RAG results
-
-### Phase 12: Agent Nexus
-- [ ] Neural network visualization (D3 force-directed or Three.js)
-- [ ] Agent Brain Panel (slide-up)
-- [ ] Reasoning Log (terminal style)
-- [ ] **Test:** See agents → click → view reasoning → see data flow
-
-### Phase 13: Signal Intelligence + Ticket Warroom
-- [ ] Sentiment Spectrum waveform
-- [ ] Insight cards with action tracking
-- [ ] Warroom Table (premium table, live SLA countdown)
-- [ ] Ticket Detail Drawer
-- [ ] Ticket Constellation (3D — can defer to Phase 15)
-- [ ] **Test:** Browse insights → toggle action → browse tickets → drag status
-
-### Phase 14: Analytics Lab
-- [ ] Health Heatmap (D3 calendar)
-- [ ] Ticket Velocity (Recharts stacked area)
-- [ ] Sentiment River (D3 stream graph)
-- [ ] Agent Throughput (D3 radial bar)
-- [ ] Cross-filtering between charts
-- [ ] Report list + generate modal
-- [ ] **Test:** View analytics → click chart → see cross-filter → generate report
-
-### Phase 15: Seed Data + Polish
-- [ ] Comprehensive seed script (10 customers, 50 tickets, 100 insights, etc.)
-- [ ] Page transitions (Framer Motion AnimatePresence)
-- [ ] Scroll animations (IntersectionObserver + Framer Motion)
-- [ ] Loading skeletons (teal shimmer)
-- [ ] Empty states (dormant visualizations)
-- [ ] Toast notifications (particle trail)
-- [ ] Solar System view (if deferred from Phase 11)
-- [ ] Ticket Constellation (if deferred from Phase 13)
-- [ ] Settings page with Reduce Motion toggle
-- [ ] **Test:** Fresh seed → full demo walkthrough → all animations smooth
-
-### Phase 16: E2E Testing + Performance
-- [ ] Playwright E2E tests
-- [ ] 3D performance audit (fps monitoring)
-- [ ] Bundle size audit (3D chunks lazy-loaded)
-- [ ] Lighthouse accessibility check
-- [ ] **Test:** All tests pass → 60fps on target hardware → accessible
+### Phase H: Integration, Seed Data + Polish
+- [ ] Expanded seed script: 10 customers, 50 tickets, 100 insights, 50 execution rounds, 40 messages, 30 episodic memories, 15 knowledge entries
+- [ ] End-to-end integration testing (event → full pipeline → frontend updates)
+- [ ] Page transitions for Agent Nexus sub-views
+- [ ] Loading states for all new views
+- [ ] WebSocket reconnection + buffering for pipeline events
+- [ ] Playwright E2E tests for new views
+- [ ] Performance audit (3D 60fps, WebSocket throughput, bundle size)
+- [ ] **Test:** Fresh seed → full demo walkthrough → all features functional
 
 ---
 
 ## Quick Commands for Claude Code
 
-**Setup:**
+**Phase B Foundation:**
 ```
-"Set up the project scaffolding — create the folder structure, docker-compose.yml, requirements.txt, package.json with all dependencies including Three.js and Framer Motion. Reference CLAUDE.md for the exact structure."
-```
-
-**Design System:**
-```
-"Build the frontend design system. Read docs/WIREFRAMES.md Section 1 for exact colors, fonts, surfaces. Create index.css with void background, nebula mesh, vignette. Build SurfaceCard (3 levels), StatusIndicator, HealthRing (2D SVG), AnimatedCounter components."
+"Create the 4 YAML config files in backend/config/. Read REBUILD_PLAN.md Section 4.2 for exact shapes. Also create the YAML loader utility and new SQLAlchemy models (agent_execution_rounds, agent_messages). Run alembic migration."
 ```
 
-**Navigation:**
+**Pipeline Engine:**
 ```
-"Build the OrbitalNav component. Read docs/WIREFRAMES.md Section 2 for specs. Curved arc at bottom-center, 7 items with perspective transform, active item centered and enlarged. Also build CommandPalette (Cmd+K) with fuzzy search using fuse.js."
+"Build the pipeline engine. Read docs/PRD.md Section 5.2 and REBUILD_PLAN.md Section 4.3. Create base_agent.py with 7 pipeline stage methods and pipeline_engine.py that runs stages in order, logs to agent_execution_rounds, and broadcasts via WebSocket."
 ```
 
-**3D Scene:**
+**Tool Registry:**
 ```
-"Build the NeuralSphere 3D component. Read docs/WIREFRAMES.md Section 1.5 (3D-1) for full spec. Use @react-three/fiber + drei. IcosahedronGeometry wireframe, 10 agent nodes as emissive spheres, OrbitControls. Wrap in Suspense with SVG network graph as fallback."
+"Build the tool registry and 12 tool definitions. Read REBUILD_PLAN.md Section 4.4 for the full tool list. Create tool_registry.py + db_tools.py + rag_tools.py + action_tools.py + agent_tools.py. Each tool returns a dict for Claude tool_result."
+```
+
+**Agent Nexus Frontend:**
+```
+"Rebuild the Agent Nexus page. Read docs/WIREFRAMES.md Sections 3.4 and 3.8-3.13 for layouts. Create HierarchyTree (4-tier tree), AgentNexusTabs (6 sub-views), and the Pipeline/Messages/Memory/Traces/Workflows sub-view components."
 ```
 
 **Backend feature:**
@@ -544,3 +675,11 @@ volumes:
 | Broadcast changes via WebSocket | Poll endpoints from frontend |
 | Respect prefers-reduced-motion | Force 3D on all users |
 | Use D3 for complex charts (heatmap, river, radial) | Try to force everything into Recharts |
+| Define agent behavior in YAML config files | Hardcode agent personalities/traits/tools in Python |
+| Route tasks through hierarchy (T1→T2→T3) | Let specialists call each other directly |
+| Use typed messages (task_assignment, deliverable, etc.) | Send unstructured strings between agents |
+| Run agents through full pipeline (perceive→...→finalize) | Use single-shot Claude API calls for agent work |
+| Log every pipeline stage to agent_execution_rounds | Skip execution logging (breaks trace viewer) |
+| Use tri-factor retrieval for episodic memory | Use simple vector similarity only |
+| Thread all messages with thread_id + parent_id | Create orphaned messages without thread context |
+| Use tier colors (T1=teal, T2=violet, T3=cyan, T4=slate) | Use random colors for agent hierarchy |

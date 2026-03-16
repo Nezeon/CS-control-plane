@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useRef, memo } from 'react'
 import * as d3 from 'd3'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import useReportStore from '../../stores/reportStore'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import { SENTIMENT_COLORS, getCrossFilterOpacity } from '../../utils/chartHelpers'
@@ -152,7 +152,7 @@ export default memo(function SentimentRiver({ data = [], isLoading }) {
         >
           <defs>
             <clipPath id="river-clip">
-              <motion.rect
+              <m.rect
                 x={0}
                 y={0}
                 height={height}
@@ -181,7 +181,7 @@ export default memo(function SentimentRiver({ data = [], isLoading }) {
               )
 
               return (
-                <motion.path
+                <m.path
                   key={key}
                   d={pathD}
                   fill={`url(#river-grad-${key})`}

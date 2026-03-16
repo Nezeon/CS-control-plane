@@ -1,10 +1,11 @@
 # HivePro CS Control Plane — API Contract
 
-**Version:** 1.0  
-**Base URL:** `http://localhost:8000/api`  
-**Auth:** JWT Bearer token (unless marked PUBLIC)  
-**Content-Type:** `application/json`  
-**Date:** February 27, 2026
+**Version:** 2.0 (Agentic Architecture)
+**Base URL:** `http://localhost:8000/api`
+**v2 Base URL:** `http://localhost:8000/api/v2`
+**Auth:** JWT Bearer token (unless marked PUBLIC)
+**Content-Type:** `application/json`
+**Date:** March 2, 2026
 
 ---
 
@@ -107,34 +108,40 @@ All agent statuses for the orchestration map.
 {
   "agents": [
     {
-      "name": "cs_orchestrator",
+      "name": "cso_orchestrator",
       "display_name": "CS Orchestrator",
-      "lane": "control",
+      "human_name": "Naveen Kapoor",
+      "tier": 1,
+      "lane": null,
       "status": "active",
-      "current_task": "Routing jira_ticket_created to Ticket Triage",
+      "current_task": "Delegating health_alert to Value Lane",
       "tasks_today": 12,
       "avg_response_ms": 340,
-      "last_active": "2026-02-27T14:23:00Z"
+      "last_active": "2026-03-01T14:23:00Z"
     },
     {
-      "name": "customer_memory",
-      "display_name": "Customer Memory Agent",
-      "lane": "control",
-      "status": "idle",
-      "current_task": null,
-      "tasks_today": 8,
-      "avg_response_ms": 120,
-      "last_active": "2026-02-27T14:22:30Z"
-    },
-    {
-      "name": "call_intelligence",
-      "display_name": "Call Intelligence Agent",
-      "lane": "value",
+      "name": "support_lead",
+      "display_name": "Support Operations Lead",
+      "human_name": "Rachel Torres",
+      "tier": 2,
+      "lane": "support",
       "status": "active",
-      "current_task": "Processing Fathom recording for Acme Corp",
-      "tasks_today": 3,
-      "avg_response_ms": 4500,
-      "last_active": "2026-02-27T14:21:00Z"
+      "current_task": "Coordinating triage for JIRA-1234",
+      "tasks_today": 8,
+      "avg_response_ms": 520,
+      "last_active": "2026-03-01T14:22:30Z"
+    },
+    {
+      "name": "triage_agent",
+      "display_name": "Ticket Triage Specialist",
+      "human_name": "Kai Nakamura",
+      "tier": 3,
+      "lane": "support",
+      "status": "active",
+      "current_task": "Triaging JIRA-1234 for Acme Corp",
+      "tasks_today": 5,
+      "avg_response_ms": 2100,
+      "last_active": "2026-03-01T14:21:00Z"
     }
   ]
 }
@@ -157,8 +164,8 @@ Recent events for the live stream.
       "customer_name": "Acme Corp",
       "routed_to": "ticket_triage",
       "status": "completed",
-      "created_at": "2026-02-27T14:23:00Z",
-      "processed_at": "2026-02-27T14:23:02Z"
+      "created_at": "2026-03-01T14:23:00Z",
+      "processed_at": "2026-03-01T14:23:02Z"
     }
   ],
   "total": 245,
@@ -181,6 +188,43 @@ Top 12 customers for the mini health grid (sorted by risk).
       "risk_level": "high_risk",
       "risk_count": 3,
       "initial": "AC"
+    }
+  ]
+}
+```
+
+### GET /dashboard/active-pipelines
+Currently running agent pipeline executions (for the dashboard active pipelines strip).
+
+**Response 200:**
+```json
+{
+  "pipelines": [
+    {
+      "execution_id": "exec-001",
+      "agent_id": "triage_agent",
+      "agent_name": "Kai Nakamura",
+      "tier": 3,
+      "event_type": "jira_ticket_created",
+      "customer_name": "Acme Corp",
+      "current_stage": "think",
+      "stages_completed": 2,
+      "stages_total": 5,
+      "started_at": "2026-03-01T14:23:00Z",
+      "duration_ms": 1200
+    },
+    {
+      "execution_id": "exec-002",
+      "agent_id": "cso_orchestrator",
+      "agent_name": "Naveen Kapoor",
+      "tier": 1,
+      "event_type": "daily_health_check",
+      "customer_name": null,
+      "current_stage": "act",
+      "stages_completed": 3,
+      "stages_total": 6,
+      "started_at": "2026-03-01T14:22:00Z",
+      "duration_ms": 3400
     }
   ]
 }
@@ -277,7 +321,7 @@ Full customer detail with memory.
   "pending_action_items": 3,
   "metadata": {},
   "created_at": "2025-06-01T00:00:00Z",
-  "updated_at": "2026-02-27T14:00:00Z"
+  "updated_at": "2026-03-01T14:00:00Z"
 }
 ```
 
@@ -292,16 +336,10 @@ Health score time series.
   "customer_id": "cust-001",
   "history": [
     {
-      "date": "2026-02-27",
+      "date": "2026-03-01",
       "score": 42,
       "risk_level": "high_risk",
       "risk_flags": ["3 overdue tickets", "Negative sentiment trend"]
-    },
-    {
-      "date": "2026-02-26",
-      "score": 48,
-      "risk_level": "high_risk",
-      "risk_flags": ["2 overdue tickets"]
     }
   ]
 }
@@ -355,15 +393,6 @@ RAG-powered similar issues from other customers.
       "resolved_in_days": 2,
       "resolved_at": "2026-01-15",
       "similarity_score": 0.87
-    },
-    {
-      "ticket_id": "JIRA-654",
-      "customer_name": "Gamma Telecom",
-      "summary": "Subnet scan timeout on 172.16.0.x",
-      "resolution": "Firewall rule blocking scanner — added exception",
-      "resolved_in_days": 5,
-      "resolved_at": "2025-11-20",
-      "similarity_score": 0.72
     }
   ]
 }
@@ -416,7 +445,7 @@ All latest health scores.
       "score": 42,
       "risk_level": "high_risk",
       "risk_flags": ["3 overdue tickets"],
-      "calculated_at": "2026-02-27T09:00:00Z"
+      "calculated_at": "2026-03-01T09:00:00Z"
     }
   ]
 }
@@ -446,8 +475,7 @@ Aggregated health trends.
 ```json
 {
   "daily_averages": [
-    { "date": "2026-02-27", "avg_score": 71.4, "at_risk_count": 5 },
-    { "date": "2026-02-26", "avg_score": 70.1, "at_risk_count": 4 }
+    { "date": "2026-03-01", "avg_score": 71.4, "at_risk_count": 5 }
   ]
 }
 ```
@@ -486,11 +514,11 @@ List tickets with filters.
       "assigned_to": { "id": "user-001", "full_name": "Vignesh", "avatar_url": null },
       "has_triage_result": true,
       "has_troubleshoot_result": false,
-      "sla_deadline": "2026-02-27T16:23:00Z",
+      "sla_deadline": "2026-03-01T16:23:00Z",
       "sla_remaining_hours": 2.0,
       "sla_breaching": false,
-      "created_at": "2026-02-27T14:23:00Z",
-      "updated_at": "2026-02-27T14:23:02Z"
+      "created_at": "2026-03-01T14:23:00Z",
+      "updated_at": "2026-03-01T14:23:02Z"
     }
   ],
   "total": 50,
@@ -523,15 +551,15 @@ Full ticket detail with AI results.
       "is_duplicate": false,
       "similar_tickets": ["JIRA-987", "JIRA-654"]
     },
-    "triaged_at": "2026-02-27T14:23:02Z"
+    "triaged_at": "2026-03-01T14:23:02Z"
   },
   "troubleshoot_result": null,
   "escalation_summary": null,
-  "sla_deadline": "2026-02-27T16:23:00Z",
+  "sla_deadline": "2026-03-01T16:23:00Z",
   "sla_remaining_hours": 2.0,
   "sla_breaching": false,
-  "created_at": "2026-02-27T14:23:00Z",
-  "updated_at": "2026-02-27T14:23:02Z",
+  "created_at": "2026-03-01T14:23:00Z",
+  "updated_at": "2026-03-01T14:23:02Z",
   "resolved_at": null
 }
 ```
@@ -557,25 +585,27 @@ Assign ticket to a user.
 **Response 200:** Updated ticket object.
 
 ### POST /tickets/:id/triage
-Trigger AI triage on a ticket. Async.
+Trigger AI triage on a ticket. Runs pipeline execution async.
 
 **Response 202:**
 ```json
 {
+  "execution_id": "exec-010",
   "task_id": "celery-task-002",
-  "message": "AI triage initiated for JIRA-1234",
+  "message": "Pipeline triage initiated for JIRA-1234 (Agent: Kai Nakamura)",
   "status": "processing"
 }
 ```
 
 ### POST /tickets/:id/troubleshoot
-Trigger AI troubleshooting on a ticket. Async.
+Trigger AI troubleshooting on a ticket. Runs pipeline execution async.
 
 **Response 202:**
 ```json
 {
+  "execution_id": "exec-011",
   "task_id": "celery-task-003",
-  "message": "AI troubleshooting initiated for JIRA-1234",
+  "message": "Pipeline troubleshooting initiated for JIRA-1234 (Agent: Leo Petrov)",
   "status": "processing"
 }
 ```
@@ -613,7 +643,7 @@ List call insights.
         { "name": "John Doe", "role": "customer" },
         { "name": "Vignesh", "role": "cs_engineer" }
       ],
-      "summary": "Customer expressed concern about onboarding timeline delays. Requested follow-up within a week.",
+      "summary": "Customer expressed concern about onboarding timeline delays.",
       "decisions": ["Extend onboarding by 2 weeks", "Weekly sync until go-live"],
       "action_items": [
         {
@@ -622,20 +652,13 @@ List call insights.
           "owner": "Vignesh",
           "deadline": "2026-03-01",
           "status": "pending"
-        },
-        {
-          "id": "ai-002",
-          "task": "Share updated timeline document",
-          "owner": "Sarah",
-          "deadline": "2026-02-28",
-          "status": "pending"
         }
       ],
       "risks": ["Possible escalation if timeline slips further"],
       "sentiment": "negative",
       "sentiment_score": -0.4,
       "key_topics": ["onboarding", "timeline", "deployment"],
-      "customer_recap_draft": "Hi John,\n\nThank you for today's call. Here's a summary of what we discussed...",
+      "customer_recap_draft": "Hi John,\n\nThank you for today's call...",
       "processed_at": "2026-02-25T10:45:00Z"
     }
   ],
@@ -651,13 +674,15 @@ Full insight detail (includes raw transcript if available).
 **Response 200:** Same as list item + `raw_transcript` field.
 
 ### POST /insights/sync-fathom
-Trigger Fathom sync. Async.
+Trigger Fathom sync. Pulls historical meetings from real Fathom API.
+
+**Query Params:** `since_days` (int, default 30)
 
 **Response 202:**
 ```json
 {
   "task_id": "celery-task-004",
-  "message": "Fathom sync initiated",
+  "message": "Fathom sync initiated for last 30 days",
   "status": "processing"
 }
 ```
@@ -669,8 +694,7 @@ Sentiment chart data.
 ```json
 {
   "trend": [
-    { "date": "2026-02-27", "avg_sentiment_score": -0.1, "call_count": 3 },
-    { "date": "2026-02-26", "avg_sentiment_score": 0.2, "call_count": 5 }
+    { "date": "2026-03-01", "avg_sentiment_score": -0.1, "call_count": 3 }
   ]
 }
 ```
@@ -712,31 +736,58 @@ Update action item status.
 ## 7. Agents
 
 ### GET /agents
-All agent statuses (same as /dashboard/agents but with more detail).
+All agent profiles and statuses.
 
 **Response 200:**
 ```json
 {
   "agents": [
     {
-      "name": "cs_orchestrator",
+      "name": "cso_orchestrator",
       "display_name": "CS Orchestrator",
-      "description": "Routes events to the correct agent based on event type and customer context",
-      "lane": "control",
+      "human_name": "Naveen Kapoor",
+      "tier": 1,
+      "lane": null,
+      "role": "CS Manager",
+      "personality": "Strategic, composed, sees the big picture...",
+      "traits": ["strategic_oversight", "quality_evaluation", "delegation", "customer_sentiment"],
+      "tools": ["query_customer_db", "search_knowledge_base", "read_agent_output"],
+      "manages": ["support_lead", "value_lead", "delivery_lead"],
+      "reports_to": null,
       "status": "active",
-      "current_task": "Routing jira_ticket_created to Ticket Triage",
+      "current_task": "Delegating health_alert to Value Lane",
       "tasks_today": 12,
       "tasks_total": 1543,
       "avg_response_ms": 340,
       "success_rate": 0.98,
-      "last_active": "2026-02-27T14:23:00Z"
+      "last_active": "2026-03-01T14:23:00Z"
+    },
+    {
+      "name": "triage_agent",
+      "display_name": "Ticket Triage Specialist",
+      "human_name": "Kai Nakamura",
+      "tier": 3,
+      "lane": "support",
+      "role": "Ticket Triage Specialist",
+      "personality": "Fast, precise, pattern-recognizing...",
+      "traits": ["confidence_scoring", "escalation_detection", "sla_awareness", "customer_sentiment"],
+      "tools": ["get_ticket_details", "search_similar_tickets", "check_sla_status"],
+      "manages": [],
+      "reports_to": "support_lead",
+      "status": "active",
+      "current_task": "Triaging JIRA-1234 for Acme Corp",
+      "tasks_today": 5,
+      "tasks_total": 456,
+      "avg_response_ms": 2100,
+      "success_rate": 0.95,
+      "last_active": "2026-03-01T14:21:00Z"
     }
   ]
 }
 ```
 
 ### GET /agents/:name
-Specific agent detail.
+Specific agent profile and status.
 
 **Response 200:** Single agent from the above list.
 
@@ -749,16 +800,17 @@ Agent activity logs.
   "logs": [
     {
       "id": "log-001",
-      "agent_name": "ticket_triage",
+      "agent_name": "triage_agent",
+      "agent_display_name": "Kai Nakamura",
       "event_type": "task_completed",
       "trigger_event": "jira_ticket_created",
       "customer_name": "Acme Corp",
       "input_summary": "New P2 ticket: Scan failure on subnet 10.0.1.x",
       "output_summary": "Classified as scan_failure, recommended P1 severity, suggested config check",
-      "reasoning_summary": "Ticket mentions scan failure + specific subnet. Historical data shows similar issues resolved by config update. Severity should be P1 due to production impact.",
+      "reasoning_summary": "Ticket mentions scan failure + specific subnet. Historical data shows similar issues resolved by config update.",
       "status": "completed",
       "duration_ms": 2340,
-      "created_at": "2026-02-27T14:23:02Z"
+      "created_at": "2026-03-01T14:23:02Z"
     }
   ],
   "total": 150,
@@ -768,7 +820,7 @@ Agent activity logs.
 ```
 
 ### GET /agents/orchestration-flow?limit=20
-Recent event routing timeline.
+Recent event routing timeline showing hierarchical delegation.
 
 **Response 200:**
 ```json
@@ -779,18 +831,22 @@ Recent event routing timeline.
       "event_type": "jira_ticket_created",
       "source": "jira_webhook",
       "customer_name": "Acme Corp",
-      "routed_to": "ticket_triage",
+      "delegation_chain": [
+        { "agent": "cso_orchestrator", "agent_name": "Naveen Kapoor", "action": "Delegated to Support Lane" },
+        { "agent": "support_lead", "agent_name": "Rachel Torres", "action": "Assigned triage to Kai" },
+        { "agent": "triage_agent", "agent_name": "Kai Nakamura", "action": "Triaged as P1 scan_failure" }
+      ],
       "output": "Triaged as P1 scan_failure",
       "status": "completed",
       "total_duration_ms": 2680,
-      "created_at": "2026-02-27T14:23:00Z"
+      "created_at": "2026-03-01T14:23:00Z"
     }
   ]
 }
 ```
 
 ### POST /agents/:name/trigger
-Manually trigger an agent. Async.
+Manually trigger an agent pipeline execution. Async.
 
 **Request:**
 ```json
@@ -803,8 +859,10 @@ Manually trigger an agent. Async.
 **Response 202:**
 ```json
 {
+  "execution_id": "exec-020",
   "task_id": "celery-task-005",
-  "message": "Health Monitor Agent triggered for Acme Corp",
+  "agent_name": "Dr. Aisha Okafor",
+  "message": "Pipeline execution initiated for Health Monitor Agent on Acme Corp",
   "status": "processing"
 }
 ```
@@ -844,7 +902,7 @@ Create event (used by Jira/Slack webhooks and manual triggers).
   "id": "evt-001",
   "event_type": "jira_ticket_created",
   "status": "pending",
-  "created_at": "2026-02-27T14:23:00Z"
+  "created_at": "2026-03-01T14:23:00Z"
 }
 ```
 
@@ -875,7 +933,7 @@ List alerts.
       "assigned_to": { "id": "user-001", "full_name": "Vignesh" },
       "status": "open",
       "slack_notified": true,
-      "created_at": "2026-02-27T09:00:00Z"
+      "created_at": "2026-03-01T09:00:00Z"
     }
   ],
   "total": 15,
@@ -909,11 +967,11 @@ List generated reports.
     {
       "id": "rpt-001",
       "report_type": "weekly_digest",
-      "title": "Weekly CS Digest — Feb 17-23, 2026",
+      "title": "Weekly CS Digest — Feb 24 - Mar 1, 2026",
       "customer_name": null,
-      "period_start": "2026-02-17",
-      "period_end": "2026-02-23",
-      "generated_at": "2026-02-24T09:00:00Z"
+      "period_start": "2026-02-24",
+      "period_end": "2026-03-01",
+      "generated_at": "2026-03-02T09:00:00Z"
     }
   ],
   "total": 12,
@@ -930,10 +988,10 @@ Report detail with full content.
 {
   "id": "rpt-001",
   "report_type": "weekly_digest",
-  "title": "Weekly CS Digest — Feb 17-23, 2026",
+  "title": "Weekly CS Digest — Feb 24 - Mar 1, 2026",
   "customer_name": null,
-  "period_start": "2026-02-17",
-  "period_end": "2026-02-23",
+  "period_start": "2026-02-24",
+  "period_end": "2026-03-01",
   "content": {
     "summary": "This week saw 23 new tickets...",
     "health_overview": { "avg_score": 70, "at_risk": 4 },
@@ -942,7 +1000,7 @@ Report detail with full content.
     "highlights": ["Acme Corp health dropped to 42", "Beta Financial renewal confirmed"],
     "recommendations": ["Schedule emergency sync with Acme", "Review Epsilon Insurance tickets"]
   },
-  "generated_at": "2026-02-24T09:00:00Z"
+  "generated_at": "2026-03-02T09:00:00Z"
 }
 ```
 
@@ -953,8 +1011,8 @@ Generate a new report. Async.
 ```json
 {
   "report_type": "weekly_digest",
-  "period_start": "2026-02-17",
-  "period_end": "2026-02-23",
+  "period_start": "2026-02-24",
+  "period_end": "2026-03-01",
   "customer_id": null
 }
 ```
@@ -962,8 +1020,9 @@ Generate a new report. Async.
 **Response 202:**
 ```json
 {
+  "execution_id": "exec-030",
   "task_id": "celery-task-006",
-  "message": "Generating Weekly Digest for Feb 17-23",
+  "message": "Generating Weekly Digest for Feb 24 - Mar 1 (Agent: Sofia Marquez)",
   "status": "processing"
 }
 ```
@@ -981,7 +1040,7 @@ Analytics dashboard data.
     "calls_processed_this_month": 32
   },
   "health_trend": [
-    { "date": "2026-02-27", "avg_score": 71.4 }
+    { "date": "2026-03-01", "avg_score": 71.4 }
   ],
   "ticket_volume": [
     { "week": "2026-W09", "opened": 23, "resolved": 18, "by_severity": { "P1": 3, "P2": 8, "P3": 9, "P4": 3 } }
@@ -992,14 +1051,669 @@ Analytics dashboard data.
     "negative": 20
   },
   "agent_performance": [
-    { "agent": "ticket_triage", "tasks_completed": 156, "avg_duration_ms": 1200 }
+    { "agent": "triage_agent", "agent_name": "Kai Nakamura", "tasks_completed": 156, "avg_duration_ms": 1200 }
   ]
 }
 ```
 
 ---
 
-## 11. WebSocket
+## 11. Pipeline Execution (v2)
+
+### GET /v2/pipeline/active
+Currently running pipeline executions across all agents.
+
+**Response 200:**
+```json
+{
+  "executions": [
+    {
+      "execution_id": "exec-001",
+      "agent_id": "triage_agent",
+      "agent_name": "Kai Nakamura",
+      "tier": 3,
+      "lane": "support",
+      "event_id": "evt-001",
+      "event_type": "jira_ticket_created",
+      "customer_name": "Acme Corp",
+      "pipeline_type": "tier_3_specialist",
+      "current_stage": "think",
+      "stages_completed": 2,
+      "stages_total": 5,
+      "started_at": "2026-03-01T14:23:00Z",
+      "duration_ms": 1200,
+      "status": "running"
+    }
+  ]
+}
+```
+
+### GET /v2/pipeline/:execution_id
+Full execution trace for a single pipeline run.
+
+**Response 200:**
+```json
+{
+  "execution_id": "exec-001",
+  "agent_id": "triage_agent",
+  "agent_name": "Kai Nakamura",
+  "tier": 3,
+  "lane": "support",
+  "event_id": "evt-001",
+  "event_type": "jira_ticket_created",
+  "customer_name": "Acme Corp",
+  "pipeline_type": "tier_3_specialist",
+  "status": "completed",
+  "started_at": "2026-03-01T14:23:00Z",
+  "completed_at": "2026-03-01T14:23:08Z",
+  "total_duration_ms": 8200,
+  "total_tokens": 3450,
+  "confidence": 0.92,
+  "rounds": [
+    {
+      "stage_number": 1,
+      "stage_name": "Task Perception",
+      "stage_type": "perceive",
+      "input_summary": "New P2 ticket from Acme Corp: Scan failure on subnet 10.0.1.x",
+      "output_summary": "Task understood. Key elements: scan failure, specific subnet, P2 severity from reporter.",
+      "tools_called": [],
+      "duration_ms": 200,
+      "tokens_used": 150,
+      "status": "completed"
+    },
+    {
+      "stage_number": 2,
+      "stage_name": "Memory Retrieval",
+      "stage_type": "retrieve",
+      "input_summary": "Searching for similar past triage experiences",
+      "output_summary": "Found 3 similar past triage runs. Most relevant: JIRA-987 (scan failure, resolved by config update).",
+      "tools_called": [],
+      "duration_ms": 340,
+      "tokens_used": 0,
+      "status": "completed",
+      "metadata": { "memory_retrieved": 3 }
+    },
+    {
+      "stage_number": 3,
+      "stage_name": "Analysis",
+      "stage_type": "think",
+      "input_summary": "Analyzing ticket with customer context and past experience",
+      "output_summary": "High confidence this is a scanner config issue. Similar to past JIRA-987. Recommending P1 due to production impact.",
+      "tools_called": [
+        {
+          "tool_name": "query_customer_db",
+          "arguments": { "customer_id": "cust-001" },
+          "result_preview": "Acme Corp, Enterprise, health=42, 5 open tickets",
+          "duration_ms": 120
+        },
+        {
+          "tool_name": "search_similar_tickets",
+          "arguments": { "query": "scan failure subnet" },
+          "result_preview": "3 similar tickets found, top match: JIRA-987 (0.87 similarity)",
+          "duration_ms": 340
+        }
+      ],
+      "duration_ms": 4200,
+      "tokens_used": 2100,
+      "status": "completed"
+    },
+    {
+      "stage_number": 4,
+      "stage_name": "Execution",
+      "stage_type": "act",
+      "input_summary": "Producing triage result",
+      "output_summary": "Triage complete: scan_failure, P1, confidence 0.92",
+      "tools_called": [],
+      "duration_ms": 2800,
+      "tokens_used": 900,
+      "status": "completed"
+    },
+    {
+      "stage_number": 5,
+      "stage_name": "Self-Reflection",
+      "stage_type": "reflect",
+      "input_summary": "Assessing triage quality",
+      "output_summary": "Confidence: 0.92. Strong match with historical data. Minor gap: did not check deployment status.",
+      "tools_called": [],
+      "duration_ms": 660,
+      "tokens_used": 300,
+      "status": "completed"
+    }
+  ]
+}
+```
+
+### GET /v2/pipeline/:execution_id/rounds
+All rounds for a pipeline run (same as `rounds` array above, paginated).
+
+**Query Params:** `limit` (int, default 20), `offset` (int, default 0)
+
+**Response 200:**
+```json
+{
+  "execution_id": "exec-001",
+  "rounds": [ /* same shape as rounds array above */ ],
+  "total": 5,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /v2/pipeline/agent/:agent_id?limit=10&offset=0
+Recent pipeline executions for a specific agent.
+
+**Response 200:**
+```json
+{
+  "agent_id": "triage_agent",
+  "agent_name": "Kai Nakamura",
+  "executions": [
+    {
+      "execution_id": "exec-001",
+      "event_type": "jira_ticket_created",
+      "customer_name": "Acme Corp",
+      "status": "completed",
+      "total_duration_ms": 8200,
+      "confidence": 0.92,
+      "stages_completed": 5,
+      "started_at": "2026-03-01T14:23:00Z"
+    }
+  ],
+  "total": 45,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+---
+
+## 12. Messages (v2)
+
+### GET /v2/messages?limit=50&offset=0
+Recent inter-agent messages.
+
+**Query Params:**
+- `message_type` (string) — task_assignment | deliverable | request | escalation | feedback
+- `agent_id` (string) — filter by from_agent or to_agent
+- `event_id` (uuid) — filter by related event
+- `lane` (string) — support | value | delivery
+- `limit` (int, default 50)
+- `offset` (int, default 0)
+
+**Response 200:**
+```json
+{
+  "messages": [
+    {
+      "id": "msg-001",
+      "thread_id": "msg-001",
+      "parent_id": null,
+      "from_agent": "cso_orchestrator",
+      "from_name": "Naveen Kapoor",
+      "to_agent": "support_lead",
+      "to_name": "Rachel Torres",
+      "message_type": "task_assignment",
+      "direction": "down",
+      "content": "New P2 ticket from Acme Corp needs triage. Customer health is already at 42 — handle with priority.",
+      "priority": 7,
+      "event_id": "evt-001",
+      "customer_name": "Acme Corp",
+      "status": "completed",
+      "created_at": "2026-03-01T14:23:00Z",
+      "reply_count": 2
+    },
+    {
+      "id": "msg-002",
+      "thread_id": "msg-001",
+      "parent_id": "msg-001",
+      "from_agent": "support_lead",
+      "from_name": "Rachel Torres",
+      "to_agent": "triage_agent",
+      "to_name": "Kai Nakamura",
+      "message_type": "task_assignment",
+      "direction": "down",
+      "content": "Kai, triage this Acme Corp ticket immediately. P2 reported but customer health is critical. Check if severity should be upgraded.",
+      "priority": 8,
+      "event_id": "evt-001",
+      "customer_name": "Acme Corp",
+      "status": "completed",
+      "created_at": "2026-03-01T14:23:01Z",
+      "reply_count": 1
+    }
+  ],
+  "total": 240,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+### GET /v2/messages/thread/:thread_id
+Full message thread.
+
+**Response 200:**
+```json
+{
+  "thread_id": "msg-001",
+  "event_id": "evt-001",
+  "customer_name": "Acme Corp",
+  "messages": [
+    {
+      "id": "msg-001",
+      "from_agent": "cso_orchestrator",
+      "from_name": "Naveen Kapoor",
+      "to_agent": "support_lead",
+      "to_name": "Rachel Torres",
+      "message_type": "task_assignment",
+      "direction": "down",
+      "content": "New P2 ticket from Acme Corp needs triage...",
+      "priority": 7,
+      "created_at": "2026-03-01T14:23:00Z"
+    },
+    {
+      "id": "msg-002",
+      "from_agent": "support_lead",
+      "from_name": "Rachel Torres",
+      "to_agent": "triage_agent",
+      "to_name": "Kai Nakamura",
+      "message_type": "task_assignment",
+      "direction": "down",
+      "content": "Kai, triage this immediately...",
+      "priority": 8,
+      "created_at": "2026-03-01T14:23:01Z"
+    },
+    {
+      "id": "msg-003",
+      "from_agent": "triage_agent",
+      "from_name": "Kai Nakamura",
+      "to_agent": "support_lead",
+      "to_name": "Rachel Torres",
+      "message_type": "deliverable",
+      "direction": "up",
+      "content": "Triage complete. Classified as scan_failure, upgrading to P1. Confidence: 0.92. Suggested action: check scanner config for subnet range.",
+      "priority": 7,
+      "created_at": "2026-03-01T14:23:08Z"
+    }
+  ],
+  "total_messages": 3
+}
+```
+
+### GET /v2/messages/agent/:agent_id?limit=20&offset=0
+Messages sent to or from a specific agent.
+
+**Response 200:** Same shape as `GET /v2/messages` but filtered.
+
+### GET /v2/messages/event/:event_id
+All messages related to a specific event's processing.
+
+**Response 200:** Same shape as `GET /v2/messages` but filtered by event_id.
+
+---
+
+## 13. Memory (v2)
+
+### GET /v2/memory/:agent_id/episodic?limit=20&offset=0
+An agent's episodic memories (past execution diary).
+
+**Query Params:**
+- `customer_id` (uuid) — filter by customer
+- `importance_min` (int) — minimum importance (1-10)
+- `limit` (int, default 20)
+- `offset` (int, default 0)
+
+**Response 200:**
+```json
+{
+  "agent_id": "triage_agent",
+  "agent_name": "Kai Nakamura",
+  "memories": [
+    {
+      "id": "mem-001",
+      "content": "Triaged Acme Corp ticket JIRA-1234 as P1 scan_failure. High confidence (0.92). Found 3 similar historical tickets. Key insight: subnet config issues are recurring for this customer.",
+      "customer_name": "Acme Corp",
+      "event_type": "jira_ticket_created",
+      "execution_id": "exec-001",
+      "importance": 7,
+      "timestamp": "2026-03-01T14:23:08Z"
+    }
+  ],
+  "total": 30,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /v2/memory/:agent_id/working
+An agent's current working memory (active scratchpad during pipeline run).
+
+**Response 200:**
+```json
+{
+  "agent_id": "triage_agent",
+  "agent_name": "Kai Nakamura",
+  "is_active": true,
+  "execution_id": "exec-050",
+  "entries": [
+    { "key": "current_task", "value": "Triage JIRA-1250 for Beta Financial" },
+    { "key": "customer_context", "value": { "name": "Beta Financial", "health": 78, "tier": "enterprise" } },
+    { "key": "similar_tickets_found", "value": 2 },
+    { "key": "tool_outputs", "value": [{ "tool": "search_similar_tickets", "result_count": 2 }] }
+  ]
+}
+```
+
+Returns empty `entries` and `is_active: false` if the agent has no active pipeline run.
+
+### GET /v2/memory/knowledge/:lane?limit=20&offset=0
+Knowledge pool for a specific lane.
+
+**Query Params:**
+- `lane` (string, required) — support | value | delivery | global
+- `tags` (string, comma-separated) — filter by tags
+- `importance_min` (int) — minimum importance
+- `limit` (int, default 20)
+- `offset` (int, default 0)
+
+**Response 200:**
+```json
+{
+  "lane": "value",
+  "entries": [
+    {
+      "id": "know-001",
+      "content": "Acme Corp shows a strong correlation between deployment events and health score drops. Every deployment in the last 6 months was followed by a 10-15 point health decline within 48 hours.",
+      "agent_id": "health_monitor_agent",
+      "agent_name": "Dr. Aisha Okafor",
+      "tags": ["health-correlation", "deployment-risk", "acme-corp"],
+      "importance": 8,
+      "knowledge_type": "customer_pattern",
+      "customer_name": "Acme Corp",
+      "timestamp": "2026-02-28T09:00:00Z"
+    }
+  ],
+  "total": 15,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /v2/memory/search
+Cross-memory semantic search across all tiers.
+
+**Query Params:**
+- `q` (string, required) — semantic search query
+- `memory_type` (string) — episodic | knowledge | all (default: all)
+- `agent_id` (string) — filter by agent
+- `lane` (string) — filter by lane (for knowledge)
+- `limit` (int, default 10)
+
+**Response 200:**
+```json
+{
+  "query": "customer health declining after deployment",
+  "results": [
+    {
+      "type": "knowledge",
+      "id": "know-001",
+      "content": "Acme Corp shows a strong correlation between deployment events and health score drops...",
+      "agent_name": "Dr. Aisha Okafor",
+      "lane": "value",
+      "importance": 8,
+      "relevance_score": 0.91,
+      "combined_score": 0.87,
+      "timestamp": "2026-02-28T09:00:00Z"
+    },
+    {
+      "type": "episodic",
+      "id": "mem-015",
+      "content": "Analyzed Gamma Telecom health drop from 72 to 55 following v4.2 deployment...",
+      "agent_name": "Dr. Aisha Okafor",
+      "importance": 6,
+      "relevance_score": 0.78,
+      "combined_score": 0.72,
+      "timestamp": "2026-02-20T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## 14. Hierarchy (v2)
+
+### GET /v2/hierarchy
+Full organizational structure tree.
+
+**Response 200:**
+```json
+{
+  "organization": "HivePro CS Control Plane",
+  "tiers": [
+    {
+      "tier": 1,
+      "name": "Supervisor",
+      "agents": [
+        {
+          "id": "cso_orchestrator",
+          "name": "Naveen Kapoor",
+          "role": "CS Manager",
+          "status": "active",
+          "manages": ["support_lead", "value_lead", "delivery_lead"]
+        }
+      ]
+    },
+    {
+      "tier": 2,
+      "name": "Lane Leads",
+      "agents": [
+        {
+          "id": "support_lead",
+          "name": "Rachel Torres",
+          "role": "Support Operations Lead",
+          "lane": "support",
+          "status": "active",
+          "reports_to": "cso_orchestrator",
+          "manages": ["triage_agent", "troubleshooter_agent", "escalation_agent"]
+        },
+        {
+          "id": "value_lead",
+          "name": "Damon Reeves",
+          "role": "Value & Insights Lead",
+          "lane": "value",
+          "status": "idle",
+          "reports_to": "cso_orchestrator",
+          "manages": ["health_monitor_agent", "call_intel_agent", "qbr_agent"]
+        },
+        {
+          "id": "delivery_lead",
+          "name": "Priya Mehta",
+          "role": "Delivery Operations Lead",
+          "lane": "delivery",
+          "status": "idle",
+          "reports_to": "cso_orchestrator",
+          "manages": ["sow_agent", "deployment_intel_agent"]
+        }
+      ]
+    },
+    {
+      "tier": 3,
+      "name": "Specialists",
+      "agents": [
+        {
+          "id": "triage_agent",
+          "name": "Kai Nakamura",
+          "role": "Ticket Triage Specialist",
+          "lane": "support",
+          "status": "active",
+          "reports_to": "support_lead"
+        }
+      ]
+    },
+    {
+      "tier": 4,
+      "name": "Foundation",
+      "agents": [
+        {
+          "id": "customer_memory",
+          "name": "Atlas",
+          "role": "Customer Memory Manager",
+          "status": "active",
+          "reports_to": null
+        }
+      ]
+    }
+  ],
+  "lanes": {
+    "support": { "lead": "support_lead", "specialists": ["triage_agent", "troubleshooter_agent", "escalation_agent"] },
+    "value": { "lead": "value_lead", "specialists": ["health_monitor_agent", "call_intel_agent", "qbr_agent"] },
+    "delivery": { "lead": "delivery_lead", "specialists": ["sow_agent", "deployment_intel_agent"] }
+  }
+}
+```
+
+### GET /v2/hierarchy/agents
+All agent profiles with stats. Same as `GET /agents` (v1) but scoped under v2 path.
+
+**Response 200:** Same shape as `GET /agents`.
+
+### GET /v2/hierarchy/agents/:agent_id
+Single agent profile with full detail.
+
+**Response 200:** Single agent from `GET /agents` list.
+
+---
+
+## 15. Workflows (v2)
+
+### GET /v2/workflows
+All workflow definitions from YAML config.
+
+**Response 200:**
+```json
+{
+  "workflows": [
+    {
+      "name": "ticket_workflow",
+      "description": "Handles new Jira tickets through triage and optional troubleshooting",
+      "trigger_events": ["jira_ticket_created"],
+      "steps": [
+        { "agent": "cso_orchestrator", "action": "Analyze and delegate to Support Lane" },
+        { "agent": "support_lead", "action": "Assign triage to specialist" },
+        { "agent": "triage_agent", "action": "Classify, assess severity, find similar tickets" },
+        { "agent": "troubleshooter_agent", "action": "Root cause analysis (if severity >= P2)", "condition": "severity >= P2" },
+        { "agent": "escalation_agent", "action": "Escalation summary (if escalation needed)", "condition": "escalation_detected" }
+      ]
+    },
+    {
+      "name": "call_workflow",
+      "description": "Processes Fathom call recordings through analysis",
+      "trigger_events": ["fathom_recording_ready"],
+      "steps": [
+        { "agent": "cso_orchestrator", "action": "Delegate to Value Lane" },
+        { "agent": "value_lead", "action": "Assign call analysis" },
+        { "agent": "call_intel_agent", "action": "Extract summary, sentiment, action items" }
+      ]
+    },
+    {
+      "name": "health_workflow",
+      "description": "Daily health monitoring and alerting",
+      "trigger_events": ["daily_health_check"],
+      "steps": [
+        { "agent": "cso_orchestrator", "action": "Delegate health check to Value Lane" },
+        { "agent": "value_lead", "action": "Coordinate health analysis" },
+        { "agent": "health_monitor_agent", "action": "Calculate scores, flag risks" },
+        { "agent": "escalation_agent", "action": "Generate alerts for critical drops", "condition": "score_drop > 15" }
+      ]
+    }
+  ]
+}
+```
+
+### GET /v2/workflows/active
+Currently running workflow instances.
+
+**Response 200:**
+```json
+{
+  "instances": [
+    {
+      "instance_id": "wf-inst-001",
+      "workflow_name": "ticket_workflow",
+      "event_id": "evt-001",
+      "customer_name": "Acme Corp",
+      "current_step": 3,
+      "total_steps": 5,
+      "current_agent": "triage_agent",
+      "status": "running",
+      "started_at": "2026-03-01T14:23:00Z"
+    }
+  ]
+}
+```
+
+### GET /v2/workflows/:instance_id/status
+Status of a specific workflow instance.
+
+**Response 200:**
+```json
+{
+  "instance_id": "wf-inst-001",
+  "workflow_name": "ticket_workflow",
+  "event_id": "evt-001",
+  "customer_name": "Acme Corp",
+  "status": "completed",
+  "started_at": "2026-03-01T14:23:00Z",
+  "completed_at": "2026-03-01T14:23:12Z",
+  "total_duration_ms": 12000,
+  "steps": [
+    { "step": 1, "agent": "cso_orchestrator", "agent_name": "Naveen Kapoor", "status": "completed", "duration_ms": 800 },
+    { "step": 2, "agent": "support_lead", "agent_name": "Rachel Torres", "status": "completed", "duration_ms": 600 },
+    { "step": 3, "agent": "triage_agent", "agent_name": "Kai Nakamura", "status": "completed", "duration_ms": 8200 },
+    { "step": 4, "agent": "troubleshooter_agent", "agent_name": "Leo Petrov", "status": "skipped", "condition": "severity >= P2" },
+    { "step": 5, "agent": "escalation_agent", "agent_name": "Maya Santiago", "status": "skipped", "condition": "escalation_detected" }
+  ]
+}
+```
+
+---
+
+## 16. Webhooks
+
+### POST /webhooks/fathom [PUBLIC — verified by HMAC]
+Fathom webhook receiver. Receives meeting data when a new recording is ready.
+
+**Verification:** HMAC-SHA256 signature in `X-Fathom-Signature` header, verified against `FATHOM_WEBHOOK_SECRET`.
+
+**Request (from Fathom):**
+```json
+{
+  "recording_id": "rec-abc123",
+  "title": "Acme Corp Weekly Sync",
+  "url": "https://fathom.video/recordings/abc123",
+  "recorded_by": { "email": "vignesh@hivepro.com" },
+  "calendar_invitees": [
+    { "email": "john@acme.com", "name": "John Doe" },
+    { "email": "vignesh@hivepro.com", "name": "Vignesh" }
+  ],
+  "default_summary": "Discussion about onboarding timeline...",
+  "transcript": [ /* transcript segments */ ],
+  "action_items": [
+    { "text": "Schedule follow-up call", "assignee": "Vignesh" }
+  ]
+}
+```
+
+**Response 200:**
+```json
+{
+  "status": "received",
+  "event_id": "evt-050"
+}
+```
+
+---
+
+## 17. WebSocket
 
 ### WS /ws
 Real-time event stream. Connect after login with JWT.
@@ -1013,9 +1727,11 @@ Real-time event stream. Connect after login with JWT.
 {
   "type": "agent_status",
   "data": {
-    "agent": "call_intelligence",
+    "agent": "triage_agent",
+    "agent_name": "Kai Nakamura",
+    "tier": 3,
     "status": "active",
-    "task": "Processing Fathom recording for Acme Corp"
+    "task": "Triaging JIRA-1234 for Acme Corp"
   }
 }
 
@@ -1026,7 +1742,7 @@ Real-time event stream. Connect after login with JWT.
     "event_id": "evt-001",
     "event_type": "jira_ticket_created",
     "customer": "Acme Corp",
-    "routed_to": "ticket_triage",
+    "routed_to": "triage_agent",
     "status": "completed"
   }
 }
@@ -1080,9 +1796,122 @@ Real-time event stream. Connect after login with JWT.
 }
 ```
 
+**New Pipeline Events (v2):**
+
+```json
+// Pipeline stage started
+{
+  "type": "pipeline:stage_started",
+  "data": {
+    "execution_id": "exec-001",
+    "agent_id": "triage_agent",
+    "agent_name": "Kai Nakamura",
+    "tier": 3,
+    "stage_name": "Analysis",
+    "stage_type": "think",
+    "stage_number": 3,
+    "customer_name": "Acme Corp"
+  }
+}
+
+// Pipeline stage completed
+{
+  "type": "pipeline:stage_completed",
+  "data": {
+    "execution_id": "exec-001",
+    "agent_id": "triage_agent",
+    "agent_name": "Kai Nakamura",
+    "stage_name": "Analysis",
+    "stage_type": "think",
+    "duration_ms": 4200,
+    "tokens_used": 2100,
+    "tools_called": ["query_customer_db", "search_similar_tickets"]
+  }
+}
+
+// Pipeline tool called
+{
+  "type": "pipeline:tool_called",
+  "data": {
+    "execution_id": "exec-001",
+    "agent_id": "triage_agent",
+    "agent_name": "Kai Nakamura",
+    "tool_name": "search_similar_tickets",
+    "arguments": { "query": "scan failure subnet" },
+    "result_preview": "3 similar tickets found",
+    "duration_ms": 340
+  }
+}
+```
+
+**New Delegation Events (v2):**
+
+```json
+// Task assigned (down the hierarchy)
+{
+  "type": "delegation:task_assigned",
+  "data": {
+    "message_id": "msg-001",
+    "from_agent": "cso_orchestrator",
+    "from_name": "Naveen Kapoor",
+    "to_agent": "support_lead",
+    "to_name": "Rachel Torres",
+    "content_preview": "New P2 ticket from Acme Corp needs triage...",
+    "priority": 7,
+    "event_id": "evt-001"
+  }
+}
+
+// Deliverable returned (up the hierarchy)
+{
+  "type": "delegation:deliverable",
+  "data": {
+    "message_id": "msg-003",
+    "from_agent": "triage_agent",
+    "from_name": "Kai Nakamura",
+    "to_agent": "support_lead",
+    "to_name": "Rachel Torres",
+    "content_preview": "Triage complete. scan_failure, P1, confidence 0.92",
+    "event_id": "evt-001"
+  }
+}
+
+// Escalation
+{
+  "type": "delegation:escalation",
+  "data": {
+    "message_id": "msg-010",
+    "from_agent": "escalation_agent",
+    "from_name": "Maya Santiago",
+    "to_agent": "support_lead",
+    "to_name": "Rachel Torres",
+    "content_preview": "ESCALATION: Acme Corp threatening churn — renewal in 45 days",
+    "priority": 9,
+    "customer_name": "Acme Corp"
+  }
+}
+```
+
+**New Memory Event (v2):**
+
+```json
+// Knowledge published
+{
+  "type": "memory:knowledge_published",
+  "data": {
+    "agent_id": "call_intel_agent",
+    "agent_name": "Jordan Ellis",
+    "lane": "value",
+    "content_preview": "Acme Corp mentioned competitor CrowdStrike in recent call...",
+    "tags": ["competitor-mention", "acme-corp"],
+    "importance": 8
+  }
+}
+```
+
 ---
 
-## 12. Error Responses
+## 18. Error Responses
 
 All errors follow this format:
 
@@ -1109,7 +1938,7 @@ All errors follow this format:
 
 ---
 
-## 13. Common Headers
+## 19. Common Headers
 
 **Request:**
 ```

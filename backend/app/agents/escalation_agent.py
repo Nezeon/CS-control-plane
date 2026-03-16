@@ -1,86 +1,90 @@
+"""
+Escalation Agent — Tier 3 Specialist (Support Lane).
+
+Generates technical escalation summaries for L2/L3 engineering.
+Reports to: Rachel Torres (support_lead)
+Traits: sla_awareness, risk_assessment, customer_sentiment
+"""
+
 import logging
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
-from app.services import claude_service
 
-logger = logging.getLogger("agents.escalation_summary")
-
-ESCALATION_SYSTEM_PROMPT = """You are an Escalation Summary Agent for a cybersecurity SaaS company (HivePro).
-Generate a technical escalation document for a ticket being escalated to L2/L3 engineering.
-Include all context an engineer needs to pick up this issue quickly.
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "problem_statement": "<clear 2-3 sentence problem statement>",
-  "investigation_summary": "<what has been investigated so far, findings>",
-  "reproduction_steps": ["<step 1>", "<step 2>", "<step 3>"],
-  "impact_assessment": {
-    "severity": "<P1|P2|P3|P4>",
-    "affected_users": "<scope of impact>",
-    "business_impact": "<business-level impact description>"
-  },
-  "technical_details": {
-    "environment": "<deployment details>",
-    "error_details": "<relevant logs, error messages>",
-    "related_components": ["<component 1>", "<component 2>"]
-  },
-  "suggested_next_steps": ["<step 1 for L2/L3>", "<step 2>"],
-  "escalation_urgency": "<immediate|high|medium|low>",
-  "reasoning": "<2-3 sentence explanation>"
-}"""
+logger = logging.getLogger("agents.escalation")
 
 
 class EscalationAgent(BaseAgent):
     """Generates technical escalation summaries for ticket escalation."""
 
-    agent_name = "escalation_summary"
-    agent_type = "support"
+    agent_id = "escalation_summary"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        payload = event.get("payload", {})
-        ticket_id = payload.get("ticket_id")
+    def perceive(self, task: dict) -> dict:
+        payload = task.get("payload", {})
         summary = payload.get("summary", "")
+        ticket_id = payload.get("ticket_id")
 
         if not summary and not ticket_id:
-            return {
-                "success": False,
-                "output": {"error": "No ticket info in event payload"},
-                "reasoning_summary": "Event payload missing ticket data.",
-            }
+            raise ValueError("No ticket info in event payload")
 
-        # Try to load ticket data from DB if we have ticket_id
-        ticket_data = self._load_ticket(event, customer_memory)
+        self.memory.set_context("summary", summary)
+        self.memory.set_context("ticket_id", ticket_id)
+        self.memory.set_context("ticket_data", self._load_ticket(task))
+        return task
 
-        customer = customer_memory.get("customer", {})
+    def retrieve(self, task: dict) -> dict:
+        payload = task.get("payload", {})
+        summary = payload.get("summary", "")
+        context = self.memory.assemble_context(f"escalation for: {summary}")
+        context["customer_memory"] = task.get("customer_memory", {})
+
+        # Check for prior outputs from lane lead pipeline
+        prior_outputs = task.get("prior_outputs", {})
+        if prior_outputs:
+            if "triage" in prior_outputs:
+                context["triage_result"] = prior_outputs["triage"].get("output", {})
+            if "troubleshoot" in prior_outputs:
+                context["troubleshoot_result"] = prior_outputs["troubleshoot"].get("output", {})
+
+        return context
+
+    def think(self, task: dict, context: dict) -> dict:
+        ticket_data = self.memory.get_context("ticket_data", {})
+        customer = context.get("customer_memory", {}).get("customer", {})
+
+        # Merge prior outputs into ticket data
+        if context.get("triage_result"):
+            ticket_data["triage_result"] = context["triage_result"]
+        if context.get("troubleshoot_result"):
+            ticket_data["troubleshoot_result"] = context["troubleshoot_result"]
+
         user_message = self._build_prompt(ticket_data, customer)
 
-        response = claude_service.generate_sync(
-            system_prompt=ESCALATION_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=3000,
-            temperature=0.2,
-        )
+        # Enrich with episodic memory
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past Similar Escalations\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=3000, temperature=0.2)
+        return self._parse_claude(response)
 
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("reasoning", "Escalation summary generated."),
+            **thinking,
+            "reasoning_summary": thinking.get("reasoning", "Escalation summary generated."),
         }
+
+    # ── DB Save ──────────────────────────────────────────────────────
 
     def save_result(self, db_session, ticket_id, result: dict) -> None:
         """Save escalation summary to the ticket's JSONB field."""
@@ -88,12 +92,14 @@ class EscalationAgent(BaseAgent):
 
         ticket = db_session.query(Ticket).filter(Ticket.id == ticket_id).first()
         if ticket:
-            ticket.escalation_summary = result.get("output", {})
+            ticket.escalation_summary = result.get("output", result)
             db_session.commit()
 
-    def _load_ticket(self, event: dict, customer_memory: dict) -> dict:
-        """Load ticket info from payload or memory."""
-        payload = event.get("payload", {})
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    def _load_ticket(self, task: dict) -> dict:
+        """Load ticket info from payload."""
+        payload = task.get("payload", {})
         return {
             "summary": payload.get("summary", ""),
             "description": payload.get("description", ""),
@@ -151,3 +157,6 @@ class EscalationAgent(BaseAgent):
                         parts.append(f"  - {s}")
 
         return "\n".join(parts)
+
+
+AgentFactory.register("escalation_summary", EscalationAgent)

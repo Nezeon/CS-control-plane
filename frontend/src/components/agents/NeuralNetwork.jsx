@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { getLaneColor, getStatusHex, getInitials } from '../../utils/formatters'
+
+const EMPTY_ARRAY = []
 
 /* ─── Agent layout positions by lane cluster ─── */
 const LAYOUT = {
@@ -8,7 +10,7 @@ const LAYOUT = {
   memory_agent:     { x: 500, y: 140, r: 28, lane: 'control' },
   health_monitor:   { x: 340, y: 180, r: 28, lane: 'control' },
   escalation_agent: { x: 660, y: 180, r: 28, lane: 'control' },
-  call_intel:       { x: 780, y: 320, r: 26, lane: 'value' },
+  fathom:           { x: 780, y: 320, r: 26, lane: 'value' },
   qbr_generator:    { x: 760, y: 480, r: 26, lane: 'value' },
   ticket_triage:    { x: 180, y: 300, r: 26, lane: 'support' },
   troubleshooter:   { x: 200, y: 460, r: 26, lane: 'support' },
@@ -58,15 +60,15 @@ function ConnectionLine({ ox, oy, nx, ny, color, active }) {
 /* ─── Agent node circle ─── */
 function AgentNode({ agent, layout, isSelected, isAnySelected, onHover, onLeave, onClick }) {
   const { x, y, r, lane } = layout
-  const laneColor = lane ? getLaneColor(lane) : '#6366F1'
+  const laneColor = lane ? getLaneColor(lane) : '#7C5CFC'
   const statusColor = getStatusHex(agent.status)
   const isActive = agent.status === 'active' || agent.status === 'processing'
   const initials = getInitials(agent.display_name || agent.name)
   const dimmed = isAnySelected && !isSelected
 
   return (
-    <motion.g
-      initial={{ opacity: 0, scale: 0 }}
+    <m.g
+      initial={{ opacity: 0, scale: 0.8 }}
       animate={{
         opacity: dimmed ? 0.3 : 1,
         scale: 1,
@@ -107,7 +109,7 @@ function AgentNode({ agent, layout, isSelected, isAnySelected, onHover, onLeave,
         fill="#09090B"
         stroke={laneColor}
         strokeWidth={isSelected ? 2.5 : 1.5}
-        style={{ transition: 'all 0.3s ease' }}
+        style={{ transition: 'stroke 0.3s ease, stroke-width 0.3s ease' }}
       />
 
       {/* Status dot (top-right) */}
@@ -138,7 +140,7 @@ function AgentNode({ agent, layout, isSelected, isAnySelected, onHover, onLeave,
         textAnchor="middle"
         className="select-none pointer-events-none"
         style={{
-          fill: '#71717A',
+          fill: '#5C5C72',
           fontSize: 10,
           fontFamily: '"JetBrains Mono"',
           letterSpacing: '0.03em',
@@ -169,7 +171,7 @@ function AgentNode({ agent, layout, isSelected, isAnySelected, onHover, onLeave,
           </text>
         </g>
       )}
-    </motion.g>
+    </m.g>
   )
 }
 
@@ -181,7 +183,7 @@ function Tooltip({ agent, layout }) {
   const ty = Math.max(60, y - 40)
 
   return (
-    <motion.foreignObject
+    <m.foreignObject
       x={tx} y={ty}
       width={200} height={120}
       initial={{ opacity: 0, scale: 0.9 }}
@@ -202,12 +204,12 @@ function Tooltip({ agent, layout }) {
           {agent.success_rate != null && <div>Success: {agent.success_rate}%</div>}
         </div>
       </div>
-    </motion.foreignObject>
+    </m.foreignObject>
   )
 }
 
 /* ─── Main SVG Component ─── */
-export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick }) {
+export default function NeuralNetwork({ agents = EMPTY_ARRAY, selectedAgent, onAgentClick }) {
   const [hoveredAgent, setHoveredAgent] = useState(null)
 
   const orchLayout = LAYOUT.orchestrator
@@ -250,8 +252,8 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
             <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(63,63,70,0.15)" strokeWidth="0.5" />
           </pattern>
           <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.06" />
-            <stop offset="100%" stopColor="#6366F1" stopOpacity="0" />
+            <stop offset="0%" stopColor="#7C5CFC" stopOpacity="0.06" />
+            <stop offset="100%" stopColor="#7C5CFC" stopOpacity="0" />
           </radialGradient>
         </defs>
 
@@ -260,7 +262,7 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
 
         {agentNodes.map(({ agent, layout }) => {
           const isActive = agent.status === 'active' || agent.status === 'processing'
-          const laneColor = layout.lane ? getLaneColor(layout.lane) : '#6366F1'
+          const laneColor = layout.lane ? getLaneColor(layout.lane) : '#7C5CFC'
           return (
             <ConnectionLine
               key={`conn-${agent.name}`}
@@ -274,10 +276,10 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
           )
         })}
 
-        <text x="500" y="80" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#6366F120', fontSize: 11, letterSpacing: '0.2em' }}>CONTROL</text>
-        <text x="860" y="400" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#22C55E20', fontSize: 11, letterSpacing: '0.2em' }}>VALUE</text>
-        <text x="120" y="380" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#EAB30820', fontSize: 11, letterSpacing: '0.2em' }}>SUPPORT</text>
-        <text x="500" y="630" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#06B6D420', fontSize: 11, letterSpacing: '0.2em' }}>DELIVERY</text>
+        <text x="500" y="80" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#7C5CFC20', fontSize: 11, letterSpacing: '0.2em' }}>CONTROL</text>
+        <text x="860" y="400" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#00E5A020', fontSize: 11, letterSpacing: '0.2em' }}>VALUE</text>
+        <text x="120" y="380" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#FFB54720', fontSize: 11, letterSpacing: '0.2em' }}>SUPPORT</text>
+        <text x="500" y="630" textAnchor="middle" style={{ fontFamily: '"JetBrains Mono"', fill: '#3B9EFF20', fontSize: 11, letterSpacing: '0.2em' }}>DELIVERY</text>
 
         {agentNodes.map(({ agent, layout }) => (
           <AgentNode
@@ -292,23 +294,23 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
           />
         ))}
 
-        <motion.g
-          initial={{ scale: 0 }}
+        <m.g
+          initial={{ scale: 0.8 }}
           animate={{ scale: 1 }}
           transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.1 }}
         >
           <circle
             cx={orchLayout.x} cy={orchLayout.y} r={orchLayout.r + 8}
             fill="none"
-            stroke="#6366F1"
+            stroke="#7C5CFC"
             strokeWidth={1}
             opacity={0.15}
             style={{ animation: 'pulseGlow 3s ease-in-out infinite' }}
           />
           <circle
             cx={orchLayout.x} cy={orchLayout.y} r={orchLayout.r}
-            fill="rgba(99,102,241,0.08)"
-            stroke="#6366F1"
+            fill="rgba(124,92,252,0.08)"
+            stroke="#7C5CFC"
             strokeWidth={2}
           />
           <text
@@ -316,7 +318,7 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
             textAnchor="middle"
             dominantBaseline="central"
             className="font-bold select-none pointer-events-none"
-            style={{ fill: '#6366F1', fontSize: 14, fontFamily: 'Inter' }}
+            style={{ fill: '#7C5CFC', fontSize: 14, fontFamily: 'Inter' }}
           >
             ORCH
           </text>
@@ -325,11 +327,11 @@ export default function NeuralNetwork({ agents = [], selectedAgent, onAgentClick
             textAnchor="middle"
             dominantBaseline="central"
             className="select-none pointer-events-none"
-            style={{ fill: 'rgba(99,102,241,0.5)', fontSize: 9, fontFamily: '"JetBrains Mono"' }}
+            style={{ fill: 'rgba(124,92,252,0.5)', fontSize: 9, fontFamily: '"JetBrains Mono"' }}
           >
             ORCHESTRATOR
           </text>
-        </motion.g>
+        </m.g>
 
         {hoveredAgent && hoveredLayout && (
           <Tooltip agent={hoveredAgent} layout={hoveredLayout} />

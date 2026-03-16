@@ -1,151 +1,117 @@
-import { useEffect, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Search, LayoutGrid, List, ShieldAlert, ShieldCheck, Eye } from 'lucide-react'
+import { Search } from 'lucide-react'
 import useCustomerStore from '../stores/customerStore'
-import PremiumGrid from '../components/customers/PremiumGrid'
-import DataTable from '../components/customers/DataTable'
-import QuickIntelPanel from '../components/customers/QuickIntelPanel'
+import PillFilter from '../components/shared/PillFilter'
+import HealthRing from '../components/shared/HealthRing'
+import StatusPill from '../components/shared/StatusPill'
 import LoadingSkeleton from '../components/shared/LoadingSkeleton'
+import { formatDate } from '../utils/formatters'
+
+const RISK_OPTIONS = [
+  { value: '', label: 'All Risk' },
+  { value: 'critical', label: 'Critical' },
+  { value: 'high_risk', label: 'High Risk' },
+  { value: 'watch', label: 'Watch' },
+  { value: 'healthy', label: 'Healthy' },
+]
+
+const TIER_OPTIONS = [
+  { value: '', label: 'All Tiers' },
+  { value: 'enterprise', label: 'Enterprise' },
+  { value: 'mid_market', label: 'Mid-Market' },
+  { value: 'smb', label: 'SMB' },
+]
 
 export default function CustomersPage() {
   const navigate = useNavigate()
   const {
-    customers, total, isLoading, viewMode,
-    search, risk_level, tier, sort_by,
-    setSearch, setRiskLevel, setTier, setSortBy, setViewMode,
-    setHoveredCustomer, hoveredCustomer, fetchCustomers,
+    customers, isLoading, search, risk_level, tier,
+    setSearch, setRiskLevel, setTier, fetchCustomers,
   } = useCustomerStore()
 
-  const debounceRef = useRef(null)
-
-  useEffect(() => { fetchCustomers() }, [fetchCustomers])
-
-  const handleSearch = useCallback((val) => {
-    setSearch(val)
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchCustomers(), 300)
-  }, [setSearch, fetchCustomers])
-
-  const handleFilterChange = useCallback((setter) => (val) => {
-    setter(val)
-    setTimeout(() => fetchCustomers(), 0)
+  useEffect(() => {
+    fetchCustomers()
   }, [fetchCustomers])
 
-  // Risk distribution counts
-  const riskCounts = useMemo(() => {
-    if (!customers?.length) return { healthy: 0, watch: 0, high_risk: 0 }
-    return {
-      healthy: customers.filter((c) => c.risk_level === 'healthy').length,
-      watch: customers.filter((c) => c.risk_level === 'watch').length,
-      high_risk: customers.filter((c) => c.risk_level === 'high_risk').length,
-    }
-  }, [customers])
+  const handleSearch = useCallback((e) => {
+    setSearch(e.target.value)
+  }, [setSearch])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => fetchCustomers(), 300)
+    return () => clearTimeout(timeout)
+  }, [search, risk_level, tier, fetchCustomers])
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-5 space-y-4">
-      {/* Header */}
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-text-primary">Customers</h1>
-        <span className="text-xs text-text-ghost font-mono tabular-nums">{total || customers?.length || 0} total</span>
-      </div>
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-display font-bold text-text-primary">Customers</h1>
 
-      {/* Risk pills */}
-      <div className="flex items-center gap-2">
-        {[
-          { key: null, label: 'All', count: total || customers?.length || 0, cls: '' },
-          { key: 'healthy', label: 'Healthy', count: riskCounts.healthy, cls: 'text-status-success' },
-          { key: 'watch', label: 'Watch', count: riskCounts.watch, cls: 'text-status-warning' },
-          { key: 'high_risk', label: 'At Risk', count: riskCounts.high_risk, cls: 'text-status-danger' },
-        ].map((pill) => (
-          <button
-            key={pill.label}
-            onClick={() => handleFilterChange(setRiskLevel)(pill.key || '')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              (risk_level || '') === (pill.key || '')
-                ? 'bg-accent/15 text-accent border border-accent/20'
-                : 'bg-bg-active/50 text-text-muted border border-border-subtle hover:border-border'
-            }`}
-          >
-            <span className={pill.cls}>{pill.count}</span> {pill.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-ghost" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-ghost" />
           <input
             type="text"
-            placeholder="Search customers..."
             value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-ghost focus:border-accent focus:outline-none transition-colors"
+            onChange={handleSearch}
+            placeholder="Search customers..."
+            className="w-full pl-9 pr-3 py-2 text-sm bg-bg-subtle border border-border rounded-lg text-text-primary placeholder:text-text-ghost focus:outline-none focus:border-accent"
           />
         </div>
-
-        <select
-          value={tier}
-          onChange={(e) => handleFilterChange(setTier)(e.target.value)}
-          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-secondary focus:border-accent focus:outline-none"
-        >
-          <option value="">All Tiers</option>
-          <option value="enterprise">Enterprise</option>
-          <option value="mid_market">Mid-Market</option>
-          <option value="smb">SMB</option>
-        </select>
-
-        <select
-          value={sort_by}
-          onChange={(e) => handleFilterChange(setSortBy)(e.target.value)}
-          className="px-3 py-2 rounded-lg bg-bg-subtle border border-border text-sm text-text-secondary focus:border-accent focus:outline-none"
-        >
-          <option value="health_score">Sort: Health</option>
-          <option value="company_name">Sort: Name</option>
-          <option value="risk_level">Sort: Risk</option>
-          <option value="contract_end">Sort: Renewal</option>
-        </select>
-
-        {/* View toggle */}
-        <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={() => setViewMode('grid')}
-            className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-accent/15 text-accent' : 'text-text-ghost hover:text-text-muted'}`}
-            aria-label="Grid view"
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode('table')}
-            className={`p-2 rounded-md transition-colors ${viewMode === 'table' ? 'bg-accent/15 text-accent' : 'text-text-ghost hover:text-text-muted'}`}
-            aria-label="Table view"
-          >
-            <List className="w-4 h-4" />
-          </button>
-        </div>
+        <PillFilter options={RISK_OPTIONS} value={risk_level} onChange={setRiskLevel} />
+        <PillFilter options={TIER_OPTIONS} value={tier} onChange={setTier} />
       </div>
 
-      {/* Content */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => <LoadingSkeleton key={i} variant="card" height={140} />)}
-        </div>
-      ) : viewMode === 'grid' ? (
-        <PremiumGrid
-          customers={customers}
-          onCustomerClick={(c) => navigate(`/customers/${c.id}`)}
-          onHover={setHoveredCustomer}
-        />
+      {/* Table */}
+      {isLoading && customers.length === 0 ? (
+        <LoadingSkeleton variant="card" count={3} />
+      ) : customers.length === 0 ? (
+        <p className="text-sm text-text-muted py-8 text-center">No customers found</p>
       ) : (
-        <DataTable
-          customers={customers}
-          onCustomerClick={(c) => navigate(`/customers/${c.id}`)}
-          onHover={setHoveredCustomer}
-        />
+        <div className="glass-near rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-text-muted font-mono text-xxs uppercase tracking-wider border-b border-border-subtle">
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Industry</th>
+                  <th className="px-4 py-3">Tier</th>
+                  <th className="px-4 py-3">Health</th>
+                  <th className="px-4 py-3">Risk</th>
+                  <th className="px-4 py-3">Tickets</th>
+                  <th className="px-4 py-3">Renewal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customers.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => navigate(`/customers/${c.id}`)}
+                    className="border-b border-border-subtle/50 hover:bg-bg-hover/50 cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-text-primary">{c.name}</td>
+                    <td className="px-4 py-3 text-text-muted">{c.industry || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-xxs font-mono uppercase px-2 py-0.5 rounded-full bg-bg-active text-text-secondary">
+                        {c.tier || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <HealthRing score={c.health_score ?? c.current_health} size={28} strokeWidth={3} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill status={c.risk_level || 'healthy'} />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-text-muted">{c.open_tickets ?? '—'}</td>
+                    <td className="px-4 py-3 text-text-muted text-xs">{formatDate(c.renewal_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
-
-      <QuickIntelPanel customer={hoveredCustomer} />
     </div>
   )
 }

@@ -1,26 +1,27 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { X, Target, Search, Link2, Loader2 } from 'lucide-react'
 import StatusIndicator from '../shared/StatusIndicator'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import { getSeverityColor, formatDate, formatRelativeTime } from '../../utils/formatters'
 
+const EMPTY_ARRAY = []
+
 /* ─── Live SLA countdown ─── */
 function SlaCountdown({ deadline }) {
-  const [text, setText] = useState('—')
-  const [color, setColor] = useState('#71717A')
+  const [sla, setSla] = useState({ text: '—', color: '#5C5C72' })
 
   useEffect(() => {
     if (!deadline) return
     function update() {
       const diff = new Date(deadline).getTime() - Date.now()
-      if (diff <= 0) { setText('SLA BREACHED'); setColor('#EF4444'); return }
+      if (diff <= 0) { setSla({ text: 'SLA BREACHED', color: '#FF5C5C' }); return }
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
       const s = Math.floor((diff % 60000) / 1000)
-      if (h > 4) { setText(`${h}h ${m}m`); setColor('#71717A') }
-      else if (h > 1) { setText(`${h}h ${m}m`); setColor('#EAB308') }
-      else { setText(`${m}m ${s}s`); setColor('#EF4444') }
+      if (h > 4) { setSla({ text: `${h}h ${m}m`, color: '#5C5C72' }) }
+      else if (h > 1) { setSla({ text: `${h}h ${m}m`, color: '#FFB547' }) }
+      else { setSla({ text: `${m}m ${s}s`, color: '#FF5C5C' }) }
     }
     update()
     const id = setInterval(update, 1000)
@@ -29,8 +30,8 @@ function SlaCountdown({ deadline }) {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: color }} />
-      <span className="font-mono text-sm font-bold tabular-nums" style={{ color }}>{text}</span>
+      <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: sla.color }} />
+      <span className="font-mono text-sm font-bold tabular-nums" style={{ color: sla.color }}>{sla.text}</span>
     </div>
   )
 }
@@ -38,7 +39,7 @@ function SlaCountdown({ deadline }) {
 /* ─── Confidence bar ─── */
 function ConfidenceBar({ value, label }) {
   const pct = Math.round((value || 0) * 100)
-  const color = pct > 80 ? '#22C55E' : pct > 50 ? '#EAB308' : '#EF4444'
+  const color = pct > 80 ? '#00E5A0' : pct > 50 ? '#FFB547' : '#FF5C5C'
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -46,7 +47,7 @@ function ConfidenceBar({ value, label }) {
         <span className="font-mono text-xs font-semibold" style={{ color }}>{pct}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-bg-active overflow-hidden">
-        <motion.div
+        <m.div
           className="h-full rounded-full"
           style={{ backgroundColor: color }}
           initial={{ width: 0 }}
@@ -60,7 +61,7 @@ function ConfidenceBar({ value, label }) {
 
 export default function TicketDetailDrawer({
   ticket,
-  similarTickets = [],
+  similarTickets = EMPTY_ARRAY,
   isLoading = false,
   similarLoading = false,
   onClose,
@@ -98,7 +99,7 @@ export default function TicketDetailDrawer({
   return (
     <>
       {/* Backdrop */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -107,7 +108,7 @@ export default function TicketDetailDrawer({
       />
 
       {/* Drawer */}
-      <motion.div
+      <m.div
         data-testid="ticket-detail-drawer"
         ref={drawerRef}
         initial={{ x: '100%' }}
@@ -217,7 +218,7 @@ export default function TicketDetailDrawer({
                         <div className="font-mono text-[10px] text-text-ghost uppercase mb-1">Next Steps</div>
                         <ol className="space-y-1">
                           {diagnostics.next_steps.map((s, i) => (
-                            <li key={i} className="text-xs text-text-secondary flex items-start gap-2">
+                            <li key={typeof s === 'string' ? `step-${i}` : s.description || `step-${i}`} className="text-xs text-text-secondary flex items-start gap-2">
                               <span className="text-accent font-semibold shrink-0">{i + 1}.</span>
                               {typeof s === 'string' ? s : s.description}
                             </li>
@@ -282,7 +283,7 @@ export default function TicketDetailDrawer({
             </div>
           )}
         </div>
-      </motion.div>
+      </m.div>
     </>
   )
 }

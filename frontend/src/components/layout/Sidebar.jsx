@@ -1,34 +1,55 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import {
-  LayoutDashboard, Users, Brain, Lightbulb, Ticket, BarChart3,
+  LayoutDashboard, Users, Brain, Ticket, Phone,
+  MessageSquare, GitBranch, BookOpen,
+  AlertTriangle, Workflow, BarChart3,
   Settings, PanelLeftClose, PanelLeft, Zap, Menu, X,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import useWebsocketStore from '../../stores/websocketStore'
 import useDashboardStore from '../../stores/dashboardStore'
 import { formatRelativeTime } from '../../utils/formatters'
 
-const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/customers', label: 'Customers', icon: Users },
-  { path: '/agents', label: 'Agents', icon: Brain },
-  { path: '/insights', label: 'Insights', icon: Lightbulb },
-  { path: '/tickets', label: 'Tickets', icon: Ticket },
-  { path: '/reports', label: 'Analytics', icon: BarChart3 },
+const NAV_SECTIONS = [
+  {
+    label: 'MAIN',
+    items: [
+      { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { path: '/customers', label: 'Customers', icon: Users },
+      { path: '/tickets', label: 'Tickets', icon: Ticket },
+    ],
+  },
+  {
+    label: 'AI SYSTEM',
+    items: [
+      { path: '/ask', label: 'Ask AI', icon: Sparkles },
+      { path: '/agents', label: 'AI Agents', icon: Brain },
+    ],
+  },
+  {
+    label: 'OPERATIONS',
+    items: [
+      { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
+      { path: '/executive', label: 'Executive', icon: BarChart3 },
+    ],
+  },
 ]
 
-const BOTTOM_ITEMS = [
-  { path: '/settings', label: 'Settings', icon: Settings },
+const BOTTOM_ITEMS = []
+
+// Flatten all nav items for active route matching
+const ALL_NAV_ITEMS = [
+  ...NAV_SECTIONS.flatMap((s) => s.items),
+  ...BOTTOM_ITEMS,
 ]
 
 function getActiveRoute(pathname) {
   if (pathname === '/') return '/'
-  const match = NAV_ITEMS.find((item) => item.path !== '/' && pathname.startsWith(item.path))
+  const match = ALL_NAV_ITEMS.find((item) => item.path !== '/' && pathname.startsWith(item.path))
   if (match) return match.path
-  const bottomMatch = BOTTOM_ITEMS.find((item) => pathname.startsWith(item.path))
-  if (bottomMatch) return bottomMatch.path
   return '/'
 }
 
@@ -42,12 +63,12 @@ function NavItem({ item, isActive, collapsed }) {
         'group relative flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150',
         isActive
           ? 'bg-accent-subtle text-text-primary'
-          : 'text-text-muted hover:text-text-secondary hover:bg-bg-active',
+          : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover',
         collapsed && 'justify-center px-0'
       )}
     >
       {isActive && (
-        <motion.div
+        <m.div
           layoutId="sidebar-indicator"
           className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-accent rounded-r-full"
           transition={{ type: 'spring', stiffness: 500, damping: 35 }}
@@ -102,19 +123,19 @@ export default function Sidebar({ collapsed, onToggle }) {
         <AnimatePresence>
           {mobileOpen && (
             <>
-              <motion.div
+              <m.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="fixed inset-0 z-50 bg-black/60"
                 onClick={() => setMobileOpen(false)}
               />
-              <motion.aside
+              <m.aside
                 initial={{ x: -280 }}
                 animate={{ x: 0 }}
                 exit={{ x: -280 }}
                 transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="fixed top-0 left-0 bottom-0 z-50 w-[280px] bg-bg-subtle border-r border-border flex flex-col"
+                className="fixed top-0 left-0 bottom-0 z-50 w-[280px] bg-bg-subtle border-r border-border-subtle flex flex-col"
               >
                 <SidebarContent
                   activeRoute={activeRoute}
@@ -123,7 +144,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                   latestEvents={latestEvents}
                   onClose={() => setMobileOpen(false)}
                 />
-              </motion.aside>
+              </m.aside>
             </>
           )}
         </AnimatePresence>
@@ -135,8 +156,8 @@ export default function Sidebar({ collapsed, onToggle }) {
     <aside
       data-testid="sidebar"
       className={cn(
-        'fixed top-0 left-0 bottom-0 z-30 bg-bg-subtle border-r border-border flex flex-col transition-[width] duration-200 ease-out-expo',
-        collapsed ? 'w-16' : 'w-60'
+        'fixed top-0 left-0 bottom-0 z-30 bg-bg-subtle border-r border-border-subtle flex flex-col transition-[width] duration-200 ease-out-expo',
+        collapsed ? 'w-16' : 'w-64'
       )}
     >
       <SidebarContent
@@ -155,7 +176,7 @@ function SidebarContent({ activeRoute, collapsed, onToggle, onClose, connected, 
     <>
       {/* Header */}
       <div className={cn(
-        'flex items-center h-14 border-b border-border flex-shrink-0',
+        'flex items-center h-14 border-b border-border-subtle flex-shrink-0',
         collapsed ? 'justify-center px-2' : 'justify-between px-4'
       )}>
         {!collapsed && (
@@ -163,7 +184,7 @@ function SidebarContent({ activeRoute, collapsed, onToggle, onClose, connected, 
             <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="text-sm font-semibold text-text-primary truncate">CS Control Plane</span>
+            <span className="text-sm font-semibold text-text-primary truncate">HivePro CS</span>
           </div>
         )}
         {collapsed && (
@@ -200,22 +221,42 @@ function SidebarContent({ activeRoute, collapsed, onToggle, onClose, connected, 
         )}
       </div>
 
-      {/* Main nav */}
-      <nav className={cn('flex-1 py-3 overflow-y-auto', collapsed ? 'px-2' : 'px-3')}>
-        <div className="space-y-1">
-          {NAV_ITEMS.map((item) => (
-            <NavItem
-              key={item.path}
-              item={item}
-              isActive={activeRoute === item.path}
-              collapsed={collapsed}
-            />
-          ))}
-        </div>
+      {/* Grouped nav sections */}
+      <nav className={cn('flex-1 py-2 overflow-y-auto', collapsed ? 'px-2' : 'px-3')}>
+        {NAV_SECTIONS.map((section, sectionIdx) => (
+          <div key={section.label}>
+            {/* Section label */}
+            {!collapsed && (
+              <div className={cn(
+                'px-3 mb-2',
+                sectionIdx === 0 ? 'mt-2' : 'mt-4'
+              )}>
+                <span className="font-mono text-xxs font-medium uppercase tracking-wider text-text-ghost">
+                  {section.label}
+                </span>
+              </div>
+            )}
+            {collapsed && sectionIdx > 0 && (
+              <div className="my-2 mx-2 border-t border-border-subtle" />
+            )}
+
+            {/* Nav items */}
+            <div className="space-y-0.5">
+              {section.items.map((item) => (
+                <NavItem
+                  key={item.path}
+                  item={item}
+                  isActive={activeRoute === item.path}
+                  collapsed={collapsed}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Bottom section */}
-      <div className={cn('border-t border-border py-3', collapsed ? 'px-2' : 'px-3')}>
+      <div className={cn('border-t border-border-subtle py-3', collapsed ? 'px-2' : 'px-3')}>
         {/* Settings */}
         {BOTTOM_ITEMS.map((item) => (
           <NavItem
@@ -228,7 +269,7 @@ function SidebarContent({ activeRoute, collapsed, onToggle, onClose, connected, 
 
         {/* Activity pulse + connection status */}
         {!collapsed && (
-          <div className="mt-3 pt-3 border-t border-border">
+          <div className="mt-3 pt-3 border-t border-border-subtle">
             <div className="flex items-center gap-2 px-3 mb-2">
               <span
                 className={cn(
@@ -254,7 +295,7 @@ function SidebarContent({ activeRoute, collapsed, onToggle, onClose, connected, 
         )}
 
         {collapsed && (
-          <div className="mt-3 pt-3 border-t border-border flex justify-center">
+          <div className="mt-3 pt-3 border-t border-border-subtle flex justify-center">
             <span
               className={cn(
                 'w-2 h-2 rounded-full',

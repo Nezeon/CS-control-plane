@@ -1,94 +1,95 @@
-import json
+"""
+Ticket Triage Agent — Tier 3 Specialist (Support Lane).
+
+Auto-classifies and prioritizes incoming support tickets.
+Reports to: Rachel Torres (support_lead)
+Traits: pattern_recognition, sla_awareness
+"""
+
 import logging
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
-from app.services import claude_service, rag_service
+from app.services import rag_service
 
-logger = logging.getLogger("agents.ticket_triage")
-
-TRIAGE_SYSTEM_PROMPT = """You are a Ticket Triage Agent for a cybersecurity SaaS company (HivePro).
-Analyze the incoming support ticket with customer context and similar past tickets.
-Classify, prioritize, and suggest actions.
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "category": "<scan_failure|connector_issue|deployment|configuration|performance|access_control|integration|other>",
-  "confirmed_severity": "<P1|P2|P3|P4>",
-  "suggested_action": "<1-2 sentence recommended next step>",
-  "potential_root_cause": "<1-2 sentence hypothesis>",
-  "is_duplicate": <true|false>,
-  "duplicate_of": "<ticket_id or null>",
-  "estimated_effort": "<low|medium|high>",
-  "requires_escalation": <true|false>,
-  "escalation_reason": "<reason or null>",
-  "confidence": <float 0.0-1.0>,
-  "reasoning": "<2-3 sentence explanation of triage decisions>"
-}"""
+logger = logging.getLogger("agents.triage_agent")
 
 
 class TicketTriageAgent(BaseAgent):
     """Auto-classifies and prioritizes incoming support tickets."""
 
-    agent_name = "ticket_triage"
-    agent_type = "support"
+    agent_id = "triage_agent"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        payload = event.get("payload", {})
+    def perceive(self, task: dict) -> dict:
+        payload = task.get("payload", {})
         summary = payload.get("summary", "")
-        description = payload.get("description", "")
-        severity = payload.get("severity", "P3")
 
         if not summary:
-            return {
-                "success": False,
-                "output": {"error": "No ticket summary in event payload"},
-                "reasoning_summary": "Event payload missing summary field.",
-            }
+            raise ValueError("No ticket summary in event payload")
 
-        # Query RAG for similar past tickets
+        self.memory.set_context("summary", summary)
+        self.memory.set_context("description", payload.get("description", ""))
+        self.memory.set_context("severity", payload.get("severity", "P3"))
+        self.memory.set_context("jira_id", payload.get("jira_id", "N/A"))
+        return task
+
+    def retrieve(self, task: dict) -> dict:
+        payload = task.get("payload", {})
+        summary = payload.get("summary", "")
+        description = payload.get("description", "")
+
+        # RAG: similar past tickets
         query_text = f"{summary} {description}"[:500]
         similar_tickets = rag_service.find_similar_tickets(query_text, n_results=5)
+        self.memory.set_context("similar_tickets", similar_tickets)
 
-        customer = customer_memory.get("customer", {})
-        tickets_context = customer_memory.get("tickets", {})
+        # Episodic + semantic memory
+        context = self.memory.assemble_context(query_text)
+        context["similar_tickets"] = similar_tickets
+        context["customer_memory"] = task.get("customer_memory", {})
+        return context
+
+    def think(self, task: dict, context: dict) -> dict:
+        payload = task.get("payload", {})
+        customer = context.get("customer_memory", {}).get("customer", {})
+        tickets_context = context.get("customer_memory", {}).get("tickets", {})
+        similar_tickets = context.get("similar_tickets", [])
 
         user_message = self._build_prompt(
-            summary=summary,
-            description=description,
-            severity=severity,
+            summary=payload.get("summary", ""),
+            description=payload.get("description", ""),
+            severity=payload.get("severity", "P3"),
             customer=customer,
             tickets_context=tickets_context,
             similar_tickets=similar_tickets,
             payload=payload,
         )
 
-        response = claude_service.generate_sync(
-            system_prompt=TRIAGE_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=2048,
-            temperature=0.2,
-        )
+        # Enrich with episodic context
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past Similar Triage Work\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse Claude response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=2048, temperature=0.2)
+        return self._parse_claude(response)
 
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("reasoning", "Ticket triaged."),
+            **thinking,
+            "reasoning_summary": thinking.get("reasoning", "Ticket triaged."),
         }
+
+    # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_prompt(
         self,
@@ -101,13 +102,13 @@ class TicketTriageAgent(BaseAgent):
         payload: dict,
     ) -> str:
         parts = [
-            f"## Incoming Ticket",
+            "## Incoming Ticket",
             f"Summary: {summary}",
             f"Description: {description[:2000]}",
             f"Reported Severity: {severity}",
             f"Jira ID: {payload.get('jira_id', 'N/A')}",
             "",
-            f"## Customer Context",
+            "## Customer Context",
             f"Customer: {customer.get('name', 'Unknown')}",
             f"Industry: {customer.get('industry', 'N/A')} | Tier: {customer.get('tier', 'N/A')}",
             f"Deployment: {customer.get('deployment_mode', 'N/A')} | Version: {customer.get('product_version', 'N/A')}",
@@ -117,7 +118,6 @@ class TicketTriageAgent(BaseAgent):
             f"## Open Tickets: {tickets_context.get('open_count', 0)} of {tickets_context.get('total_recent', 0)} recent",
         ]
 
-        # Add similar past tickets from RAG
         if similar_tickets:
             parts.append("")
             parts.append("## Similar Past Tickets (from vector search)")
@@ -132,3 +132,6 @@ class TicketTriageAgent(BaseAgent):
             parts.append("\n## No similar past tickets found in vector database.")
 
         return "\n".join(parts)
+
+
+AgentFactory.register("triage_agent", TicketTriageAgent)

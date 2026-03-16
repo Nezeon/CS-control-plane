@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { X, Plus, FileText, Calendar, ChevronDown } from 'lucide-react'
 import useReportStore from '../../stores/reportStore'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
@@ -53,7 +53,7 @@ function GenerateReportModal({ onClose }) {
   }, [type, periodStart, periodEnd, customerId, generateReport])
 
   return (
-    <motion.div
+    <m.div
       className="fixed inset-0 z-50 flex items-center justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -61,7 +61,7 @@ function GenerateReportModal({ onClose }) {
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <motion.div
+      <m.div
         ref={modalRef}
         className="relative bg-bg-elevated rounded-xl border border-border p-5 w-full max-w-[440px] mx-4"
         initial={{ scale: 0.95, y: 16 }}
@@ -150,8 +150,8 @@ function GenerateReportModal({ onClose }) {
             ) : 'Generate'}
           </button>
         </div>
-      </motion.div>
-    </motion.div>
+      </m.div>
+    </m.div>
   )
 }
 
@@ -185,7 +185,7 @@ function ReportRow({ report }) {
 
       <AnimatePresence>
         {expanded && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -210,7 +210,7 @@ function ReportRow({ report }) {
                 <div className="text-xs text-text-ghost/40 font-mono">No content preview available</div>
               )}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

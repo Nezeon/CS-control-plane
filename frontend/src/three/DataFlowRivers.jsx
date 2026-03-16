@@ -4,9 +4,9 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 const STREAMS = [
-  { label: 'JIRA', dest: 'TRIAGE', color: '#6366F1', yOffset: 1.2 },
-  { label: 'FATHOM', dest: 'CALL INT', color: '#06B6D4', yOffset: 0 },
-  { label: 'CRON', dest: 'HEALTH', color: '#22C55E', yOffset: -1.2 },
+  { label: 'JIRA', dest: 'TRIAGE', color: '#7C5CFC', yOffset: 1.2 },
+  { label: 'FATHOM', dest: 'CALL INT', color: '#3B9EFF', yOffset: 0 },
+  { label: 'CRON', dest: 'HEALTH', color: '#00E5A0', yOffset: -1.2 },
 ]
 
 const PARTICLES_PER_STREAM = 50
@@ -27,7 +27,7 @@ function CurveLines({ streams }) {
     const points = curve.getPoints(48)
     const geometry = new THREE.BufferGeometry().setFromPoints(points)
     return (
-      <line key={i} geometry={geometry}>
+      <line key={`stream-${i}`} geometry={geometry}>
         <lineBasicMaterial color={s.color} transparent opacity={0.08} />
       </line>
     )
@@ -122,7 +122,7 @@ function CenterDiamond() {
     <mesh ref={ref} position={[0, 0, 0]}>
       <octahedronGeometry args={[0.2, 0]} />
       <meshBasicMaterial
-        color="#6366F1"
+        color="#7C5CFC"
         wireframe
         transparent
         opacity={0.4}

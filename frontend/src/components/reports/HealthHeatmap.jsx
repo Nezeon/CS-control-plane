@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, memo } from 'react'
 import * as d3 from 'd3'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import useReportStore from '../../stores/reportStore'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import { healthColorScale, getCrossFilterOpacity } from '../../utils/chartHelpers'
@@ -170,7 +170,7 @@ export default memo(function HealthHeatmap({ data = [], isLoading }) {
               )
 
               return (
-                <motion.rect
+                <m.rect
                   key={`${row}-${col}`}
                   x={LABEL_W + col * STEP}
                   y={HEADER_H + row * STEP}

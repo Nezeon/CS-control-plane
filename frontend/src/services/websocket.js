@@ -1,6 +1,6 @@
 import useWebsocketStore from '../stores/websocketStore'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/api/ws'
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000/api/ws'
 const MAX_RECONNECT_ATTEMPTS = 10
 const MAX_BACKOFF = 30000
 

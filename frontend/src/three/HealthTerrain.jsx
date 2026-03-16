@@ -3,6 +3,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html } from '@react-three/drei'
 import * as THREE from 'three'
 
+const EMPTY_ARRAY = []
+
 const GRID_W = 64
 const GRID_H = 48
 const PLANE_W = 8
@@ -12,13 +14,13 @@ function healthToColor(score) {
   // Green peaks → amber mid → red valleys
   if (score >= 75) {
     const t = (score - 75) / 25
-    return new THREE.Color('#EAB308').lerp(new THREE.Color('#22C55E'), t)
+    return new THREE.Color('#FFB547').lerp(new THREE.Color('#00E5A0'), t)
   } else if (score >= 40) {
     const t = (score - 40) / 35
-    return new THREE.Color('#EF4444').lerp(new THREE.Color('#EAB308'), t)
+    return new THREE.Color('#FF5C5C').lerp(new THREE.Color('#FFB547'), t)
   } else {
     const t = score / 40
-    return new THREE.Color('#7F1D1D').lerp(new THREE.Color('#EF4444'), t)
+    return new THREE.Color('#7F1D1D').lerp(new THREE.Color('#FF5C5C'), t)
   }
 }
 
@@ -175,7 +177,7 @@ function TerrainMesh({ customers, onHoverCustomer }) {
       <mesh ref={wireRef} geometry={geometry.clone()}>
         <meshBasicMaterial
           wireframe
-          color="#6366F1"
+          color="#7C5CFC"
           transparent
           opacity={0.03}
         />
@@ -197,7 +199,7 @@ function TerrainMesh({ customers, onHoverCustomer }) {
 
             {/* Glow for high-risk */}
             {cp.score < 50 && (
-              <pointLight color="#EF4444" distance={1} intensity={0.2} />
+              <pointLight color="#FF5C5C" distance={1} intensity={0.2} />
             )}
 
             {/* Tooltip on hover */}
@@ -227,7 +229,7 @@ function TerrainMesh({ customers, onHoverCustomer }) {
   )
 }
 
-export default function HealthTerrain({ customers = [], onCustomerClick }) {
+export default function HealthTerrain({ customers = EMPTY_ARRAY, onCustomerClick }) {
   return (
     <group>
       <TerrainMesh customers={customers} onHoverCustomer={() => {}} />

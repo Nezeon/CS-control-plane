@@ -1,6 +1,8 @@
 import { CheckCircle2 } from 'lucide-react'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 
+const EMPTY_ARRAY = []
+
 function StatPill({ label, count, color }) {
   return (
     <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-bg-active border border-border-subtle">
@@ -39,7 +41,7 @@ function ActionItemRow({ item, onToggle }) {
 }
 
 export default function ActionTracker({
-  actionItems = [],
+  actionItems = EMPTY_ARRAY,
   summary = { pending: 0, overdue: 0, completed: 0 },
   isLoading = false,
   onToggleAction,
@@ -66,9 +68,9 @@ export default function ActionTracker({
 
       {/* Stats */}
       <div className="px-4 pb-3 space-y-1.5">
-        <StatPill label="Pending" count={summary.pending} color="#EAB308" />
-        <StatPill label="Overdue" count={summary.overdue} color="#EF4444" />
-        <StatPill label="Done" count={summary.completed} color="#22C55E" />
+        <StatPill label="Pending" count={summary.pending} color="#FFB547" />
+        <StatPill label="Overdue" count={summary.overdue} color="#FF5C5C" />
+        <StatPill label="Done" count={summary.completed} color="#00E5A0" />
       </div>
 
       {/* Divider */}

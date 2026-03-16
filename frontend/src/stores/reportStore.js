@@ -37,6 +37,21 @@ const useReportStore = create((set, get) => ({
 
   fetchAnalytics: async () => {
     set({ isLoading: true, error: null })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedAnalyticsKpis, seedTicketVolume, seedHealthTrend, seedAgentPerformance, seedSentimentStream } = await import('../data/analytics')
+        set({
+          kpis: seedAnalyticsKpis,
+          ticketVolume: seedTicketVolume,
+          healthTrend: seedHealthTrend,
+          agentPerformance: seedAgentPerformance,
+          sentimentStream: seedSentimentStream,
+          isLoading: false,
+        })
+      } catch { set({ isLoading: false }) }
+      return
+    }
     try {
       const [analyticsRes, sentimentRes] = await Promise.allSettled([
         reportApi.getAnalytics(),
@@ -90,25 +105,21 @@ const useReportStore = create((set, get) => ({
 
       set({ ...updates, isLoading: false })
     } catch (err) {
-      console.error('[Report] Failed to fetch analytics, loading seed data:', err)
-      try {
-        const { seedAnalyticsKpis, seedTicketVolume, seedHealthTrend, seedAgentPerformance, seedSentimentStream } = await import('../data/analytics')
-        set({
-          kpis: seedAnalyticsKpis,
-          ticketVolume: seedTicketVolume,
-          healthTrend: seedHealthTrend,
-          agentPerformance: seedAgentPerformance,
-          sentimentStream: seedSentimentStream,
-          isLoading: false,
-        })
-      } catch {
-        set({ isLoading: false, error: err.message })
-      }
+      console.error('[Report] Failed to fetch analytics:', err)
+      set({ isLoading: false, error: err.message })
     }
   },
 
   fetchReports: async () => {
     set({ reportsLoading: true })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedReports } = await import('../data/analytics')
+        set({ reports: seedReports, reportsTotal: seedReports.length, reportsLoading: false })
+      } catch { set({ reportsLoading: false }) }
+      return
+    }
     try {
       const params = {}
       const { reportTypeFilter } = get()
@@ -117,20 +128,15 @@ const useReportStore = create((set, get) => ({
       const items = data.reports || data.items || data || []
       set({ reports: items, reportsTotal: data.total ?? items.length, reportsLoading: false })
     } catch (err) {
-      console.error('[Report] Failed to fetch reports, loading seed data:', err)
-      try {
-        const { seedReports } = await import('../data/analytics')
-        set({ reports: seedReports, reportsTotal: seedReports.length, reportsLoading: false })
-      } catch {
-        set({ reportsLoading: false })
-      }
+      console.error('[Report] Failed to fetch reports:', err)
+      set({ reportsLoading: false })
     }
   },
 
   generateReport: async (type, periodStart, periodEnd, customerId = null) => {
     set({ generating: true })
     try {
-      const payload = { type, period_start: periodStart, period_end: periodEnd }
+      const payload = { report_type: type, period_start: periodStart, period_end: periodEnd }
       if (customerId) payload.customer_id = customerId
       const { data } = await reportApi.generate(payload)
       set({ generating: false, generateModalOpen: false })

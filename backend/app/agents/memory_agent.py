@@ -1,9 +1,20 @@
+"""
+Customer Memory Agent (Atlas) — Tier 4 Foundation.
+
+Service agent that builds structured customer context for other agents.
+Pipeline: perceive → act (only 2 stages per pipeline.yaml).
+Not personality-driven — returns data on demand.
+
+Reports to: Naveen Kapoor (cso_orchestrator)
+"""
+
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
 from app.models.action_item import ActionItem
 from app.models.alert import Alert
@@ -18,13 +29,133 @@ logger = logging.getLogger("agents.customer_memory")
 class CustomerMemoryAgent(BaseAgent):
     """Builds structured customer context for other agents."""
 
-    agent_name = "customer_memory"
-    agent_type = "control"
+    agent_id = "customer_memory"
+
+    def perceive(self, task: dict) -> dict:
+        customer_id = task.get("customer_id")
+        self.memory.set_context("customer_id", customer_id)
+        return task
+
+    def act(self, task: dict, thinking: dict) -> dict:
+        customer_id = task.get("customer_id")
+        if not customer_id:
+            return {"success": False, "error": "No customer_id provided"}
+
+        db_session = self._current_db
+        if not db_session:
+            return {"success": False, "error": "No database session"}
+
+        memory_dict = self.build_memory(db_session, customer_id)
+        if memory_dict.get("error"):
+            return {"success": False, **memory_dict}
+
+        return {"success": True, "output": memory_dict, "reasoning_summary": "Customer context assembled."}
+
+    def build_portfolio_memory(self, db_session: Session) -> dict:
+        """
+        Build a portfolio-level memory across ALL customers.
+        Optimized: TWO queries total (customers+health, tickets+alerts combined).
+        """
+        from sqlalchemy import text
+
+        # Query 1: customers + latest health score + ticket/alert counts
+        result = db_session.execute(text("""
+            SELECT
+                c.id, c.name, c.industry, c.tier, c.renewal_date,
+                h.score AS health_score, h.risk_level, h.risk_flags,
+                (SELECT COUNT(*) FROM tickets t WHERE t.customer_id = c.id AND t.status IN ('open', 'in_progress')) AS open_tickets,
+                (SELECT COUNT(*) FROM alerts a WHERE a.customer_id = c.id AND a.status IN ('open', 'acknowledged')) AS active_alerts
+            FROM customers c
+            LEFT JOIN LATERAL (
+                SELECT hs.score, hs.risk_level, hs.risk_flags
+                FROM health_scores hs
+                WHERE hs.customer_id = c.id
+                ORDER BY hs.calculated_at DESC
+                LIMIT 1
+            ) h ON true
+            ORDER BY h.score ASC NULLS LAST
+        """))
+        rows = result.fetchall()
+
+        if not rows:
+            return {"error": "No customers found"}
+
+        customer_health = []
+        for r in rows:
+            customer_health.append({
+                "id": str(r.id),
+                "name": r.name,
+                "industry": r.industry,
+                "tier": r.tier,
+                "renewal_date": str(r.renewal_date) if r.renewal_date else None,
+                "health_score": r.health_score,
+                "risk_level": r.risk_level or "unknown",
+                "risk_flags": r.risk_flags or [],
+                "open_tickets": r.open_tickets or 0,
+                "active_alerts": r.active_alerts or 0,
+            })
+
+        # Query 2: recent tickets + active alerts in one round-trip
+        combo = db_session.execute(text("""
+            SELECT * FROM (
+                SELECT 'ticket' AS _type, t.id, t.customer_id, t.summary, t.severity, t.status, t.ticket_type AS extra, NULL AS title
+                FROM tickets t ORDER BY t.created_at DESC LIMIT 15
+            ) tickets
+            UNION ALL
+            SELECT * FROM (
+                SELECT 'alert', a.id, a.customer_id, NULL, a.severity, a.status, a.alert_type, a.title
+                FROM alerts a WHERE a.status IN ('open', 'acknowledged') ORDER BY a.created_at DESC LIMIT 10
+            ) alerts
+        """))
+        combo_rows = combo.fetchall()
+
+        ticket_items = []
+        alert_items = []
+        for r in combo_rows:
+            if r._type == "ticket":
+                ticket_items.append({
+                    "id": str(r.id), "customer_id": str(r.customer_id),
+                    "summary": r.summary, "severity": r.severity,
+                    "status": r.status, "type": r.extra,
+                })
+            else:
+                alert_items.append({
+                    "id": str(r.id), "type": r.extra,
+                    "severity": r.severity, "title": r.title,
+                })
+
+        return {
+            "customer": {
+                "name": "Portfolio (All Customers)",
+                "industry": "Mixed",
+                "tier": "all",
+            },
+            "portfolio": {
+                "total_customers": len(customer_health),
+                "customers": customer_health,
+                "at_risk": [c for c in customer_health if c.get("risk_level") in ("high_risk", "critical")],
+                "watch_list": [c for c in customer_health if c.get("risk_level") == "watch"],
+            },
+            "health": {
+                "current_score": round(sum(c["health_score"] for c in customer_health if c["health_score"]) / max(1, len([c for c in customer_health if c["health_score"]])), 1) if customer_health else None,
+                "risk_level": "high_risk" if any(c.get("risk_level") in ("high_risk", "critical") for c in customer_health) else "watch",
+                "risk_flags": [],
+                "trend": [],
+            },
+            "tickets": {
+                "total_recent": len(ticket_items),
+                "open_count": sum(1 for t in ticket_items if t["status"] in ("open", "in_progress")),
+                "items": ticket_items[:10],
+            },
+            "calls": {"total_recent": 0, "items": []},
+            "alerts": alert_items,
+            "action_items": [],
+        }
 
     def build_memory(self, db_session: Session, customer_id) -> dict:
         """
         Query database to assemble a structured memory dict.
-        This is called directly (not through the event system).
+        Called directly by other agents and by the pipeline.
         """
         customer = db_session.query(Customer).filter(Customer.id == customer_id).first()
         if not customer:
@@ -167,10 +298,5 @@ class CustomerMemoryAgent(BaseAgent):
             ],
         }
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        """No-op — this agent is called directly via build_memory."""
-        return {
-            "success": True,
-            "output": {"message": "Memory agent is used via build_memory(), not events."},
-            "reasoning_summary": "No-op execution.",
-        }
+
+AgentFactory.register("customer_memory", CustomerMemoryAgent)

@@ -113,6 +113,21 @@ async def _update_alert_status(alert_id: UUID, new_status: str, db: AsyncSession
         "customer_id": str(alert.customer_id) if alert.customer_id else None,
     })
 
+    # Send Slack follow-up for status changes
+    try:
+        from app.services.slack_service import slack_service
+        if slack_service.configured and new_status in ("acknowledged", "resolved"):
+            # Eager-load customer for the notification
+            from sqlalchemy.orm import selectinload
+            result2 = await db.execute(
+                select(Alert).where(Alert.id == alert_id).options(selectinload(Alert.customer))
+            )
+            alert_with_customer = result2.scalar_one_or_none()
+            if alert_with_customer:
+                slack_service.notify_alert_update(alert_with_customer, new_status)
+    except Exception:
+        pass  # Non-critical — don't fail the status update
+
     return {"id": alert.id, "status": alert.status, "resolved_at": alert.resolved_at}
 
 

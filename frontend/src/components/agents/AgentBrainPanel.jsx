@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { X, Zap, Clock, CheckCircle, Activity } from 'lucide-react'
 import StatusIndicator from '../shared/StatusIndicator'
 import ReasoningLog from './ReasoningLog'
@@ -35,7 +35,7 @@ export default function AgentBrainPanel({ agent, logs, logsLoading, onClose }) {
   return (
     <>
       {/* Backdrop */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -44,7 +44,7 @@ export default function AgentBrainPanel({ agent, logs, logsLoading, onClose }) {
       />
 
       {/* Drawer (right side) */}
-      <motion.div
+      <m.div
         data-testid="agent-brain-panel"
         ref={panelRef}
         initial={{ x: '100%' }}
@@ -93,8 +93,8 @@ export default function AgentBrainPanel({ agent, logs, logsLoading, onClose }) {
             {/* Stats */}
             <div className="grid grid-cols-4 gap-2">
               <StatBox icon={Zap} label="Tasks" value={agent.tasks_today ?? 0} color={laneColor} />
-              <StatBox icon={Clock} label="Avg" value={agent.avg_response_ms != null ? `${(agent.avg_response_ms / 1000).toFixed(1)}s` : '—'} color="#06B6D4" />
-              <StatBox icon={CheckCircle} label="Success" value={agent.success_rate != null ? `${Math.round(agent.success_rate)}%` : '—'} color="#22C55E" />
+              <StatBox icon={Clock} label="Avg" value={agent.avg_response_ms != null ? `${(agent.avg_response_ms / 1000).toFixed(1)}s` : '—'} color="#3B9EFF" />
+              <StatBox icon={CheckCircle} label="Success" value={agent.success_rate != null ? `${Math.round(agent.success_rate)}%` : '—'} color="#00E5A0" />
               <StatBox icon={Activity} label="Total" value={agent.total_executions ?? 0} />
             </div>
 
@@ -128,7 +128,7 @@ export default function AgentBrainPanel({ agent, logs, logsLoading, onClose }) {
                 <h4 className="text-[10px] font-mono text-text-ghost uppercase tracking-wider mb-2">Capabilities</h4>
                 <div className="flex flex-wrap gap-1.5">
                   {agent.capabilities.map((cap, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-bg-active text-text-muted border border-border-subtle">
+                    <span key={cap} className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-bg-active text-text-muted border border-border-subtle">
                       {cap}
                     </span>
                   ))}
@@ -153,7 +153,7 @@ export default function AgentBrainPanel({ agent, logs, logsLoading, onClose }) {
             </div>
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </>
   )
 }

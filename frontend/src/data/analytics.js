@@ -40,7 +40,7 @@ export const seedAgentPerformance = [
   { agent: 'Memory Agent', tasks_completed: 1623, avg_duration_ms: 85, lane: 'control' },
   { agent: 'Health Monitor', tasks_completed: 892, avg_duration_ms: 200, lane: 'control' },
   { agent: 'Escalation Agent', tasks_completed: 234, avg_duration_ms: 150, lane: 'control' },
-  { agent: 'Call Intelligence', tasks_completed: 567, avg_duration_ms: 3200, lane: 'value' },
+  { agent: 'Fathom Agent', tasks_completed: 567, avg_duration_ms: 3200, lane: 'value' },
   { agent: 'QBR Generator', tasks_completed: 89, avg_duration_ms: 8500, lane: 'value' },
   { agent: 'Ticket Triage', tasks_completed: 1234, avg_duration_ms: 450, lane: 'support' },
   { agent: 'Troubleshooter', tasks_completed: 678, avg_duration_ms: 2800, lane: 'support' },

@@ -1,15 +1,59 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useDashboardStore from '../../stores/dashboardStore'
+import useSettingsStore from '../../stores/settingsStore'
 import StatusIndicator from '../shared/StatusIndicator'
+import AgentAvatar from '../shared/AgentAvatar'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 
-const LANE_LABELS = { control: 'Control', value: 'Value', support: 'Support', delivery: 'Delivery' }
-const LANE_COLORS = { control: 'border-l-accent', value: 'border-l-status-success', support: 'border-l-status-warning', delivery: 'border-l-data' }
+const NeuralSphere = lazy(() => import('../../three/NeuralSphere'))
+
+const LANE_COLORS = {
+  control: 'border-l-accent',
+  value: 'border-l-status-success',
+  support: 'border-l-status-warning',
+  delivery: 'border-l-data',
+}
+
+function Agent2DGrid({ agents, navigate }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-1">
+      {agents.map((agent) => {
+        const laneColor = LANE_COLORS[agent.lane] || 'border-l-border'
+        return (
+          <button
+            key={agent.id || agent.name}
+            onClick={() => navigate('/agents')}
+            className={`text-left px-3 py-2.5 rounded-lg bg-bg-active/40 border border-border-subtle ${laneColor} border-l-2 hover:bg-bg-active/70 transition-colors`}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <AgentAvatar
+                name={agent.human_name || agent.display_name || agent.name}
+                tier={agent.tier || 3}
+                size="sm"
+                status={agent.status}
+                className="w-5 h-5 text-[9px]"
+              />
+              <span className="text-xs font-medium text-text-primary truncate">
+                {(agent.human_name || agent.display_name || agent.name || '')
+                  .replace('CS ', '')
+                  .replace(' Agent', '')}
+              </span>
+            </div>
+            <p className="text-xxs text-text-ghost font-mono tabular-nums">
+              {agent.tasks_today || 0} tasks
+            </p>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function NeuralSphereWrapper() {
   const agents = useDashboardStore((s) => s.agents)
   const navigate = useNavigate()
+  const reducedMotion = useSettingsStore?.((s) => s.reducedMotion) ?? false
 
   const { activeCount, idleCount, totalTasks } = useMemo(() => {
     if (!agents?.length) return { activeCount: 0, idleCount: 0, totalTasks: 0 }
@@ -23,7 +67,7 @@ export default function NeuralSphereWrapper() {
   if (!agents?.length) {
     return (
       <div className="card p-4">
-        <LoadingSkeleton variant="rect" width="100%" height={220} />
+        <LoadingSkeleton variant="rect" width="100%" height={360} />
       </div>
     )
   }
@@ -40,31 +84,18 @@ export default function NeuralSphereWrapper() {
         </button>
       </div>
 
-      {/* Agent grid — 2 cols on mobile, 5 on desktop */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 flex-1">
-        {agents.map((agent) => {
-          const isActive = agent.status === 'active' || agent.status === 'processing'
-          const laneColor = LANE_COLORS[agent.lane] || 'border-l-border'
-          const shortName = (agent.display_name || agent.name || '')
-            .replace('CS ', '')
-            .replace(' Agent', '')
-
-          return (
-            <button
-              key={agent.name || agent.id}
-              onClick={() => navigate('/agents')}
-              className={`text-left px-3 py-2.5 rounded-lg bg-bg-active/40 border border-border-subtle ${laneColor} border-l-2 hover:bg-bg-active/70 transition-colors`}
-            >
-              <div className="flex items-center gap-1.5 mb-1">
-                <StatusIndicator status={agent.status} size="sm" />
-                <span className="text-xs font-medium text-text-primary truncate">{shortName}</span>
-              </div>
-              <p className="text-xxs text-text-ghost font-mono tabular-nums">
-                {agent.tasks_today || 0} tasks
-              </p>
-            </button>
-          )
-        })}
+      {/* 3D scene with 2D fallback */}
+      <div className="flex-1 min-h-0">
+        {reducedMotion ? (
+          <Agent2DGrid agents={agents} navigate={navigate} />
+        ) : (
+          <Suspense fallback={<Agent2DGrid agents={agents} navigate={navigate} />}>
+            <NeuralSphere
+              agents={agents}
+              onAgentClick={() => navigate('/agents')}
+            />
+          </Suspense>
+        )}
       </div>
 
       {/* Footer stats */}

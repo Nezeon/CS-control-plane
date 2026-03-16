@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { Monitor, Wifi, WifiOff, User, LogOut } from 'lucide-react'
 import useSettingsStore from '../stores/settingsStore'
 import useWebsocketStore from '../stores/websocketStore'
@@ -58,10 +58,10 @@ export default function SettingsPage() {
   const stats = useDashboardStore((s) => s.stats)
 
   const activeAgents = stats?.active_agents ?? stats?.agents_active ?? '—'
-  const totalAgents = stats?.total_agents ?? 10
+  const totalAgents = stats?.total_agents ?? 13
 
   return (
-    <motion.div
+    <m.div
       data-testid="settings-page"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -89,7 +89,7 @@ export default function SettingsPage() {
           label="WebSocket"
           icon={wsConnected ? Wifi : WifiOff}
           value={wsConnected ? 'Connected' : 'Disconnected'}
-          color={wsConnected ? '#22C55E' : '#EF4444'}
+          color={wsConnected ? '#00E5A0' : '#FF5C5C'}
         />
         <StatusRow
           label="Agents"
@@ -124,6 +124,6 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
-    </motion.div>
+    </m.div>
   )
 }

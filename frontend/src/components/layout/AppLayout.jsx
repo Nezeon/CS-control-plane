@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import CommandPalette from './CommandPalette'
@@ -65,14 +65,14 @@ export default function AppLayout({ children }) {
 
       <div className={cn(
         'min-h-screen transition-[margin-left] duration-200 ease-out-expo',
-        sidebarCollapsed ? 'ml-16' : 'ml-60',
+        sidebarCollapsed ? 'ml-16' : 'ml-64',
         'max-md:ml-0'
       )}>
         <TopBar onOpenCommandPalette={openPalette} />
 
         <main id="main-content" data-testid="main-content" className="relative">
           <AnimatePresence mode="wait">
-            <motion.div
+            <m.div
               key={location.pathname}
               variants={pageVariants}
               initial="initial"
@@ -80,7 +80,7 @@ export default function AppLayout({ children }) {
               exit="exit"
             >
               {children}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
         </main>
       </div>

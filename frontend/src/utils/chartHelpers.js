@@ -1,23 +1,23 @@
 import * as d3 from 'd3'
 import { getLaneColor } from './formatters'
 
-/* ─── Color constants — Void Precision palette ─── */
+/* ─── Color constants — Obsidian Luxe palette ─── */
 
 export const SEVERITY_COLORS = {
-  P1: '#EF4444',
-  P2: '#EAB308',
-  P3: '#06B6D4',
-  P4: '#71717A',
-  critical: '#EF4444',
-  high: '#EAB308',
-  medium: '#06B6D4',
-  low: '#71717A',
+  P1: '#FF5C5C',
+  P2: '#FFB547',
+  P3: '#3B9EFF',
+  P4: '#5C5C72',
+  critical: '#FF5C5C',
+  high: '#FFB547',
+  medium: '#3B9EFF',
+  low: '#5C5C72',
 }
 
 export const SENTIMENT_COLORS = {
-  positive: '#22C55E',
-  neutral: '#71717A',
-  negative: '#EF4444',
+  positive: '#00E5A0',
+  neutral: '#5C5C72',
+  negative: '#FF5C5C',
 }
 
 export const AGENT_LANE_MAP = {
@@ -26,8 +26,8 @@ export const AGENT_LANE_MAP = {
   memory_agent: 'control',
   health_monitor: 'control',
   escalation_agent: 'control',
-  call_intel: 'value',
-  call_intelligence: 'value',
+  fathom: 'value',
+  fathom_agent: 'value',
   qbr_generator: 'value',
   qbr_prep: 'value',
   ticket_triage: 'support',
@@ -42,7 +42,7 @@ export const AGENT_LANE_MAP = {
 
 /* ─── Health color scale ─── */
 
-const healthInterpolator = d3.interpolateRgbBasis(['#EF4444', '#EAB308', '#22C55E'])
+const healthInterpolator = d3.interpolateRgbBasis(['#FF5C5C', '#FFB547', '#00E5A0'])
 const _healthScale = d3.scaleSequential([0, 100], healthInterpolator)
 
 export function healthColorScale(score) {

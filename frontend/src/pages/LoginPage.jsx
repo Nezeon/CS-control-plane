@@ -1,20 +1,8 @@
-import { useState, useEffect, Suspense, lazy, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Eye, EyeOff, Loader2, Shield, Cpu, Activity, Users } from 'lucide-react'
+import { m } from 'framer-motion'
+import { Zap, Eye, EyeOff, Loader2 } from 'lucide-react'
 import useAuthStore from '../stores/authStore'
-import { seedDashboardStats, seedAgents } from '../data/dashboard'
-
-const NeuralSphere3D = lazy(() => import('../three/NeuralSphere'))
-
-// Map seed agents to the format NeuralSphere expects
-const sphereAgents = seedAgents.map((a) => ({
-  name: a.id,
-  display_name: a.name,
-  lane: a.lane,
-  status: a.status,
-  tasks_today: a.tasks_today,
-}))
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -22,6 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [demoLoading, setDemoLoading] = useState(false)
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true })
@@ -36,157 +25,229 @@ export default function LoginPage() {
     } catch { /* Error set in store */ }
   }
 
-  const stats = seedDashboardStats
-  const activeCount = seedAgents.filter((a) => a.status === 'active').length
+  const handleDemo = () => {
+    setDemoLoading(true)
+    // Demo mode: bypass API entirely, set demo token directly
+    localStorage.setItem('access_token', 'demo-token')
+    useAuthStore.setState({
+      user: { id: 'demo-001', email: 'demo@hivepro.com', full_name: 'Demo User', role: 'cs_manager' },
+      accessToken: 'demo-token',
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    })
+    navigate('/', { replace: true })
+  }
+
+  const trustedCompanies = ['Acme Corp', 'Beta Financial', 'Gamma Telecom', 'Delta Health', 'Epsilon Insurance']
 
   return (
-    <div data-testid="login-page" className="relative flex min-h-screen bg-bg overflow-hidden">
-      {/* Subtle gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-accent/[0.03] via-transparent to-data/[0.02]" />
+    <div data-testid="login-page" className="flex min-h-screen bg-void overflow-hidden">
+      {/* Left panel — gradient branding (60%) */}
+      <div className="hidden lg:flex lg:w-[60%] relative items-center justify-center overflow-hidden">
+        {/* Animated gradient background */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: [
+              'radial-gradient(ellipse 80% 60% at 30% 70%, rgba(124, 92, 252, 0.15) 0%, transparent 60%)',
+              'radial-gradient(ellipse 60% 80% at 70% 30%, rgba(0, 229, 196, 0.10) 0%, transparent 60%)',
+              'radial-gradient(ellipse 50% 50% at 50% 50%, rgba(59, 158, 255, 0.06) 0%, transparent 70%)',
+            ].join(', '),
+            animation: 'atmosphereShift 30s ease-in-out infinite alternate',
+          }}
+        />
 
-      {/* Left panel — 3D sphere + branding */}
-      <div className="hidden lg:flex flex-1 relative items-center justify-center overflow-hidden">
-        {/* 3D Neural Sphere */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-60">
-          <Suspense fallback={null}>
-            <div className="w-full h-full max-w-[600px] max-h-[600px]">
-              <NeuralSphere3D agents={sphereAgents} />
-            </div>
-          </Suspense>
-        </div>
+        {/* Secondary moving gradient */}
+        <div
+          className="absolute inset-0 opacity-60"
+          style={{
+            background: [
+              'radial-gradient(ellipse 50% 40% at 60% 80%, rgba(124, 92, 252, 0.08) 0%, transparent 50%)',
+              'radial-gradient(ellipse 40% 50% at 20% 20%, rgba(0, 229, 196, 0.06) 0%, transparent 50%)',
+            ].join(', '),
+            animation: 'atmosphereShift 24s ease-in-out infinite alternate-reverse',
+          }}
+        />
 
-        {/* Content overlay */}
-        <div className="relative z-10 text-center px-12 mt-32">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
+        {/* Content */}
+        <div className="relative z-10 text-center px-12">
+          <m.div
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center"
           >
-            <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mx-auto mb-5">
-              <Shield className="w-7 h-7 text-accent" />
+            {/* Logo */}
+            <div className="w-20 h-20 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-8">
+              <Zap className="w-10 h-10 text-accent" />
             </div>
-            <h2 className="text-2xl font-semibold text-text-primary mb-2">CS Control Plane</h2>
-            <p className="text-sm text-text-muted max-w-md mx-auto leading-relaxed">
-              AI-powered customer success orchestration platform
+
+            {/* Title */}
+            <h1 className="font-display text-4xl font-bold text-text-primary mb-3">
+              HivePro CS
+            </h1>
+
+            {/* Tagline */}
+            <p className="text-lg text-text-secondary max-w-md leading-relaxed">
+              AI-Powered Customer Success
             </p>
-          </motion.div>
 
-          {/* Live KPI cards */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-            className="flex items-center justify-center gap-3 mt-8"
+            {/* Decorative line */}
+            <div className="w-16 h-px bg-gradient-to-r from-transparent via-accent/40 to-transparent mt-8 mb-8" />
+
+            <p className="text-sm text-text-muted max-w-sm leading-relaxed">
+              Orchestrate 13 AI agents across 4 tiers to automate customer success workflows in real-time.
+            </p>
+          </m.div>
+
+          {/* Trusted by */}
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.5 }}
+            className="absolute bottom-12 left-0 right-0 px-12"
           >
-            <KpiPill icon={Activity} value={`${Math.round(stats.avg_health)}%`} label="Avg Health" />
-            <KpiPill icon={Users} value={stats.total_customers} label="Customers" />
-            <KpiPill icon={Cpu} value={`${activeCount}/${stats.total_agents}`} label="Agents Active" />
-          </motion.div>
+            <p className="text-xxs font-mono uppercase tracking-widest text-text-ghost mb-4">
+              Trusted by
+            </p>
+            <div className="flex items-center justify-center gap-6 flex-wrap">
+              {trustedCompanies.map((name) => (
+                <span
+                  key={name}
+                  className="text-xs text-text-ghost/80 font-medium"
+                >
+                  {name}
+                </span>
+              ))}
+            </div>
+          </m.div>
         </div>
       </div>
 
-      {/* Right panel — login form */}
-      <div className="flex-1 lg:max-w-md flex items-center justify-center px-6 py-12 relative z-10">
-        <motion.div
-          initial={{ opacity: 0, x: 12 }}
+      {/* Right panel — login form (40%) */}
+      <div className="flex-1 lg:w-[40%] flex items-center justify-center px-6 py-12 bg-bg-subtle/30">
+        <m.div
+          initial={{ opacity: 0, x: 16 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.4, delay: 0.15 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
           className="w-full max-w-sm"
         >
           {/* Mobile-only header */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="w-11 h-11 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center mx-auto mb-3">
-              <Shield className="w-5 h-5 text-accent" />
+          <div className="lg:hidden text-center mb-10">
+            <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mx-auto mb-4">
+              <Zap className="w-7 h-7 text-accent" />
             </div>
-            <h1 className="text-lg font-semibold text-text-primary">CS Control Plane</h1>
+            <h1 className="font-display text-2xl font-bold text-text-primary">HivePro CS</h1>
+            <p className="text-sm text-text-secondary mt-1">AI-Powered Customer Success</p>
           </div>
 
-          {/* Desktop form header */}
-          <div className="hidden lg:block mb-6">
-            <h1 className="text-xl font-semibold text-text-primary">Sign in</h1>
-            <p className="text-sm text-text-muted mt-1">Enter your credentials to continue</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label htmlFor="login-email" className="block text-xs font-medium text-text-muted mb-1.5">
-                Email
-              </label>
-              <input
-                id="login-email"
-                data-testid="login-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@hivepro.com"
-                className="w-full px-3.5 py-2.5 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-ghost focus:border-accent focus:outline-none transition-colors"
-                autoComplete="email"
-              />
+          {/* Glass card form */}
+          <div className="glass-near p-8">
+            {/* Header */}
+            <div className="mb-6">
+              <h2 className="font-display text-xl font-semibold text-text-primary">
+                Welcome back
+              </h2>
+              <p className="text-sm text-text-secondary mt-1">
+                Sign in to your account
+              </p>
             </div>
 
-            <div>
-              <label htmlFor="login-password" className="block text-xs font-medium text-text-muted mb-1.5">
-                Password
-              </label>
-              <div className="relative">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Email */}
+              <div>
+                <label htmlFor="login-email" className="block text-xs font-medium text-text-muted mb-1.5">
+                  Email
+                </label>
                 <input
-                  id="login-password"
-                  data-testid="login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  className="w-full px-3.5 py-2.5 pr-10 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-ghost focus:border-accent focus:outline-none transition-colors"
-                  autoComplete="current-password"
+                  id="login-email"
+                  data-testid="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@hivepro.com"
+                  className="w-full px-3.5 py-2.5 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-ghost focus:border-accent focus:outline-none transition-colors"
+                  autoComplete="email"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-ghost hover:text-text-muted transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="login-password" className="block text-xs font-medium text-text-muted mb-1.5">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="login-password"
+                    data-testid="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="w-full px-3.5 py-2.5 pr-10 rounded-lg bg-bg-subtle border border-border text-sm text-text-primary placeholder:text-text-ghost focus:border-accent focus:outline-none transition-colors"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-ghost hover:text-text-muted transition-colors"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <p data-testid="login-error" className="text-xs text-status-danger text-center py-1">
+                  {error}
+                </p>
+              )}
+
+              {/* Sign in button */}
+              <button
+                data-testid="login-submit"
+                type="submit"
+                disabled={isLoading || !email || !password}
+                className="btn-gradient w-full py-2.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+              >
+                {isLoading && !demoLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Signing in...
+                  </span>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </form>
+
+            {/* Separator */}
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xxs text-text-ghost">or</span>
+              <div className="flex-1 h-px bg-border" />
             </div>
 
-            {error && (
-              <p data-testid="login-error" className="text-xs text-status-danger text-center py-1">{error}</p>
-            )}
-
+            {/* Continue as Demo */}
             <button
-              data-testid="login-submit"
-              type="submit"
-              disabled={isLoading || !email || !password}
-              className="w-full py-2.5 mt-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={handleDemo}
+              disabled={isLoading || demoLoading}
+              className="w-full py-2.5 rounded-xl text-sm font-medium text-text-secondary border border-border hover:border-accent hover:text-text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {isLoading ? (
+              {demoLoading ? (
                 <span className="flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Signing in...
+                  Loading demo...
                 </span>
               ) : (
-                'Sign in'
+                'Continue as Demo'
               )}
             </button>
-          </form>
-
-          <p className="text-xxs text-text-ghost text-center mt-6">
-            Demo mode — any email and password will work
-          </p>
-        </motion.div>
-      </div>
-    </div>
-  )
-}
-
-function KpiPill({ icon: Icon, value, label }) {
-  return (
-    <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg bg-bg-subtle/80 border border-border backdrop-blur-sm">
-      <Icon className="w-3.5 h-3.5 text-text-ghost" />
-      <div>
-        <p className="text-sm font-semibold text-text-primary font-mono tabular-nums">{value}</p>
-        <p className="text-xxs text-text-ghost">{label}</p>
+          </div>
+        </m.div>
       </div>
     </div>
   )

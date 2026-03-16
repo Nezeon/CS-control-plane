@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import { X, CheckCircle, AlertTriangle, Info, XCircle } from 'lucide-react'
 import useToastStore from '../../stores/toastStore'
 
@@ -21,7 +21,7 @@ export default function ToastContainer() {
           const Icon = config.icon
 
           return (
-            <motion.div
+            <m.div
               key={toast.id}
               initial={{ opacity: 0, x: 80, scale: 0.96 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -46,7 +46,7 @@ export default function ToastContainer() {
                   <X className="w-3.5 h-3.5 text-text-ghost" />
                 </button>
               </div>
-            </motion.div>
+            </m.div>
           )
         })}
       </AnimatePresence>

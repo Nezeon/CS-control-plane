@@ -1,9 +1,9 @@
 # HivePro CS Control Plane — Premium Visual Specification
 
-**Design Tier:** Award-winning enterprise spatial dashboard  
-**Author:** Ayushmaan Singh Naruka  
-**Version:** 2.0 (Premium Redesign)  
-**Date:** February 27, 2026
+**Design Tier:** Award-winning enterprise spatial dashboard
+**Author:** Ayushmaan Singh Naruka
+**Version:** 3.0 (Agentic Architecture Rebuild)
+**Date:** March 2, 2026
 
 ---
 
@@ -46,6 +46,12 @@ BIOLUMINESCENT ACCENTS (Primary palette — self-glowing)
   --bio-emerald:        #34D399          Success/healthy accent
   --bio-rose:           #FB7185          Danger/critical accent
 
+AGENT TIER COLORS (Hierarchy depth — maps to org structure)
+  --tier-1:             #00F5D4          Supervisor (teal — matches bio-teal)
+  --tier-2:             #8B5CF6          Lane Leads (violet — matches bio-violet)
+  --tier-3:             #22D3EE          Specialists (cyan — matches bio-cyan)
+  --tier-4:             #64748B          Foundation (slate — grounded, always-on)
+
 GLOW INTENSITIES (per color — 3 levels)
   --glow-subtle:        0 0 20px rgba(0, 245, 212, 0.08)
   --glow-medium:        0 0 40px rgba(0, 245, 212, 0.15)
@@ -68,8 +74,8 @@ SEVERITY MAPPING
 
 AGENT LANE COLORS
   --lane-control:       #00F5D4          Orchestrator + Memory (teal)
+  --lane-support:       #FBBF24          Triage, Troubleshoot, Escalation (amber)
   --lane-value:         #34D399          Health, Call Intel, QBR (emerald)
-  --lane-support:       #FBBF24          Ticket Triage, Troubleshoot, Escalation (amber)
   --lane-delivery:      #22D3EE          SOW, Deployment Intel (cyan)
 
 TEXT
@@ -203,28 +209,37 @@ Three depth levels. Cards don't have hard borders — they emerge from the void 
 
 #### 3D-1: NEURAL SPHERE (Command Center hero)
 
-A slowly rotating 3D sphere/globe made of interconnected nodes and edges. The 10 AI agents are plotted as glowing nodes ON the sphere surface.
+A slowly rotating 3D sphere/globe made of interconnected nodes and edges. The **13 AI agents** are plotted as glowing nodes on the sphere surface, **organized by tier** — creating a visual hierarchy from inner core to outer shell.
 
 **Implementation:** React Three Fiber (`@react-three/fiber` + `@react-three/drei`)
 
 **Geometry:**
 - Sphere wireframe: IcosahedronGeometry(radius=3, detail=2), wireframe material, --bio-teal at 4% opacity
-- Agent nodes: SphereGeometry(radius=0.15) with emissive material, color = lane color
-- Connection lines: BufferGeometry lines connecting Orchestrator to each agent, dashed
-- Orchestrator node: at top ("north pole"), 1.5x size of other nodes
+- Agent nodes organized in **4 concentric tiers:**
+  - **Inner core (Tier 1):** Naveen Kapoor (Orchestrator) — single large node at the "north pole", 2x size, --tier-1 color (#00F5D4), intense glow
+  - **Middle ring (Tier 2):** Rachel Torres, Damon Reeves, Priya Mehta — 3 nodes at 45° latitude, evenly spaced 120° apart, 1.5x size, --tier-2 color (#8B5CF6)
+  - **Outer ring (Tier 3):** 8 Specialists — positioned on equator, clustered near their Lane Lead, 1x size, --tier-3 color (#22D3EE)
+    - Near Rachel: Kai Nakamura, Leo Petrov, Maya Santiago
+    - Near Damon: Dr. Aisha Okafor, Jordan Ellis, Sofia Marquez
+    - Near Priya: Ethan Brooks, Zara Kim
+  - **Center core (Tier 4):** Atlas (Customer Memory) — node inside the sphere at center, subtle pulse, --tier-4 color (#64748B), orbiting data particles around it
+- Connection lines: hierarchical — T1→T2 (thick, bright), T2→T3 (medium), T3→T4 (thin, dashed), all animated particle flow
+- Lane Lead → Specialist connections use lane colors (amber/emerald/cyan)
 
 **Behavior:**
 - Idle: sphere rotates at 0.1 deg/sec on Y-axis
 - Mouse drag: rotate freely with OrbitControls (dampingFactor=0.05)
-- Hover node: node scales to 1.3x, emissive intensity increases, tooltip appears (HTML overlay via drei Html component), connected lines glow brighter
-- Click node: camera animates (smooth tween via gsap or drei) to zoom into node, then transitions to Agent Detail view
+- Hover node: node scales to 1.3x, emissive intensity increases, tooltip appears (HTML overlay via drei Html component) showing agent name + human_name + tier badge, connected lines glow brighter
+- Click node: camera animates (smooth tween via gsap) to zoom into node, then transitions to Agent Nexus with that agent selected
 - Active agent: node pulsing aura (animated emissive), emits tiny particles (drei Sparkles)
-- Data flow: when event routes, a glowing particle (small sphere) travels along the connection line from Orchestrator to target agent (animated position along curve)
+- Delegation flow: when task routes, a glowing particle travels along hierarchical connections: T1→T2→T3 path, with brief flash at each node on arrival
+- Tier visual distinction: inner tiers glow brighter, outer tiers are cooler/dimmer — creates a "hot core" feeling
 
 **Lighting:**
 - Ambient light: intensity 0.1
 - Point light at camera position: intensity 0.3, --bio-teal color
-- Each active node: PointLight with small range, node's lane color
+- Each active node: PointLight with small range, node's tier color
+- Center core (Atlas): soft omni-directional glow illuminating the sphere interior
 
 **Performance:** InstancedMesh for nodes, max 30 connection particles at once, requestAnimationFrame throttled to 60fps.
 
@@ -404,11 +419,60 @@ Tickets as stars in 3D space.
 #### Command Palette (Cmd+K)
 - Center-screen modal, 600px width, surface-near card
 - Search input at top: large, no border, just bottom divider line
-- Results below: categorized (Pages, Customers, Tickets, Agents, Actions)
+- Results below: categorized (Pages, Customers, Tickets, Agents, Pipeline Runs, Messages, Actions)
 - Each result: icon + text + category badge
 - Keyboard navigation: arrow keys, Enter to select
 - Fuzzy search (fuse.js)
 - Opens with fade+scale from 0.95 to 1
+
+#### Pipeline Stage Card (NEW)
+- Compact horizontal card showing one stage of an agent's pipeline run
+- Layout: [stage icon] [stage name] [duration] [status indicator]
+- Stage icon: perceive=eye, retrieve=search, think=brain, act=bolt, reflect=mirror, quality_gate=shield, finalize=check
+- Status: pending (ghost), running (teal pulse), completed (emerald), failed (rose)
+- Active stage has a progress bar animation at the bottom edge
+- Completed stages show subtle checkmark overlay
+- Font: stage name in IBM Plex Mono 500 text-xs, duration in IBM Plex Mono 400 text-xs --text-ghost
+
+#### Message Thread (NEW)
+- Vertical chain of inter-agent messages within a thread
+- Each message: [agent avatar] [agent name + tier badge] [timestamp] → [content]
+- Message type badge: task_assignment=blue, deliverable=emerald, request=cyan, escalation=rose, feedback=amber
+- Thread line: thin vertical line connecting messages, color = --surface-border
+- Indent nested replies by 24px with connecting elbow line
+- New messages slide in from bottom with fade, 300ms
+
+#### Memory Entry (NEW)
+- Card showing a single episodic or semantic memory item
+- Layout: surface-far card, 2 lines
+  - Line 1: [agent avatar sm] [agent name] [importance badge 1-10] [timestamp]
+  - Line 2: memory content preview (Inter 400, text-sm, 2 lines truncated)
+- Importance badge: 1-3 (slate), 4-6 (cyan), 7-8 (amber), 9-10 (teal glow)
+- Hover: expand to show full content + metadata (customer, execution_id, lane)
+
+#### Hierarchy Node (NEW)
+- Interactive node for the agent hierarchy tree
+- Layout: circular avatar (40px) with tier-colored ring + name label below
+- Tier ring thickness: T1=4px, T2=3px, T3=2px, T4=1px
+- Active: glow pulse in tier color, inner avatar shows activity sparkle
+- Idle: dim ring, no glow
+- Connection lines to children: animated dash pattern flowing downward
+- Hover: scale 1.15x, show tooltip with human_name + role + current task
+
+#### Trait Badge (NEW)
+- Small pill badge showing an agent trait
+- Layout: [icon] [trait name] — surface-far pill, 24px height
+- Icons: confidence_scoring=target, escalation_detection=alert-triangle, sla_awareness=clock, strategic_oversight=compass, quality_evaluation=check-circle, delegation=git-branch, workflow_coordination=workflow, synthesis=layers, customer_sentiment=heart
+- Color: subtle tint matching the trait's primary tier association
+- Font: IBM Plex Mono 400, text-xs
+
+#### Agent Avatar (NEW)
+- Unique per-agent visual identity, circular
+- Sizes: sm=24px, md=32px, lg=48px, xl=64px
+- Each agent gets a unique geometric icon inside the circle (hexagon for Orchestrator, brain for Memory, eye for Health, shield for Triage, wrench for Troubleshooter, flame for Escalation, chart for QBR, phone for Call Intel, doc for SOW, satellite for Deployment, etc.)
+- Border: 2px ring in tier color
+- Background: surface-mid
+- Active state: tier-color glow halo
 
 ---
 
@@ -446,16 +510,20 @@ Layout (bottom-center, fixed position):
 
 **Parallax:** Entire arc shifts very slightly (±5px) based on mouse horizontal position.
 
+**Sub-Navigation (Agent Nexus):** The Agent Nexus page contains 6 sub-views (Hierarchy, Pipeline, Messages, Memory, Traces, Workflows). These are accessed via a **secondary tab bar** inside the Agent Nexus page, NOT as separate orbital nav items. See Section 3.4 for details.
+
 ### 2.2 Command Palette (Cmd+K / Ctrl+K)
 
 Always available global search. Power-user navigation.
 
 **Categories:**
-- 🏠 Pages — Dashboard, Customers, Agents, etc.
-- 👤 Customers — Search by name
-- 🎫 Tickets — Search by Jira ID or summary
-- 🤖 Agents — Jump to agent detail
-- ⚡ Actions — Run Health Check, Sync Fathom, Generate Report
+- Pages — Dashboard, Customers, Agents, etc.
+- Customers — Search by name
+- Tickets — Search by Jira ID or summary
+- Agents — Jump to agent detail (by human name or codename)
+- Pipeline Runs — Search by execution_id or agent name
+- Messages — Search by content or thread
+- Actions — Run Health Check, Sync Fathom, Generate Report
 
 ### 2.3 Breadcrumb Trail (top-left, floating)
 
@@ -496,10 +564,11 @@ No sidebar. No traditional grid. Content fills the entire viewport with 3D eleme
 │    ╭─────╮         │             │         ╭─────╮             │
 │    │ 23  │         │  (3D Globe  │         │ 71% │             │
 │    │TKTS │         │   rotating  │         │HLTH │             │
-│    │ -4↓ │         │   with 10   │         │ +5↑ │             │
+│    │ -4↓ │         │   with 13   │         │ +5↑ │             │
 │    ╰─────╯         │   agent     │         ╰─────╯             │
-│                     │   nodes)   │                              │
-│                     │             │                              │
+│                     │   nodes    │                              │
+│                     │   in 4     │                              │
+│                     │   tiers)   │                              │
 │                     │  ~500px ⌀  │                              │
 │                     └──────────────┘                              │
 │                                                                  │
@@ -507,6 +576,12 @@ No sidebar. No traditional grid. Content fills the entire viewport with 3D eleme
 │  Jira  ~~●●~~●~>  ◆ ORCHESTRATOR  ~~●●~>  Triage  ~~●~>  ✓    │
 │  Fathom ~●~~●●~>  ◆ ORCHESTRATOR  ~~●~>  CallInt  ~●~>  ✓    │
 │  Cron  ~~~●~~●~>  ◆ ORCHESTRATOR  ~~●●~>  Health  ~~●●~>  ⚠   │
+│                                                                  │
+│  ┌─────────────────────── ACTIVE PIPELINES ─────────────────┐   │
+│  │ ● Kai Nakamura  [perceive ✓][retrieve ✓][think ▶]       │   │
+│  │ ● Dr. Aisha     [perceive ✓][retrieve ✓][think ✓][act ▶]│   │
+│  │ ● Jordan Ellis  [perceive ▶]                              │   │
+│  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌───────────────────────────┐  ┌────────────────────────────┐  │
 │  │                           │  │                            │  │
@@ -537,16 +612,29 @@ No sidebar. No traditional grid. Content fills the entire viewport with 3D eleme
 
 **Section: Neural Sphere (Center, ~40% of viewport height)**
 - THE hero. The showpiece.
-- See 3D-1 specification above
+- See 3D-1 specification above — now with 13 agents in 4 tiers
 - Canvas element: `<Canvas>` from @react-three/fiber
 - Overlaid with HTML labels for agent names via drei `<Html>`
+- Tier badges visible next to agent names (T1/T2/T3/T4 micro-badges)
 
 **Section: Data Flow Rivers (Below sphere, ~80px band)**
 - 3 horizontal particle streams
 - Source icons on left edge (Jira icon, Fathom icon, Cron icon) — static, labeled
-- Particles flow → center (Orchestrator diamond) → branch to agent icons on right
+- Particles flow → center (Orchestrator diamond) → branch to Lane Leads → branch to Specialists
+- Delegation path visible: T1 → T2 → T3 particle chain
 - See 3D-4 specification above
 - If no 3D: CSS-only version with animated dots on SVG paths
+
+**Section: Active Pipelines Strip (NEW — between Rivers and bottom panels)**
+- surface-mid card, full-width, ~80px height
+- Header: "ACTIVE PIPELINES" (IBM Plex Mono 500, text-xs, --text-muted)
+- Shows up to 3 currently running pipeline executions
+- Each row: [Agent Avatar sm] [Agent human_name] [stage progress bar: 7 segments for each stage type]
+- Stage segment states: completed (emerald fill), active (teal pulse + progress animation), pending (ghost outline)
+- Stage labels: perceive, retrieve, think, act, reflect, quality_gate, finalize — abbreviated to 1-2 char icons
+- Click row → navigates to Pipeline Execution View in Agent Nexus
+- Empty state: "No active pipelines" with dormant progress bar outline
+- Updates via WebSocket (`pipeline:stage_started`, `pipeline:stage_completed`)
 
 **Section: Health Terrain (Bottom-left, ~50% width)**
 - surface-near card, 280px height
@@ -564,6 +652,7 @@ No sidebar. No traditional grid. Content fills the entire viewport with 3D eleme
   - Continuously scrolls right-to-left
 - Bottom half: Latest 5-6 event text entries (scrollable)
 - Each entry: [dot] [HH:MM] [description] [customer pill]
+- Includes delegation events (task_assigned, deliverable) with tier-colored dots
 
 ---
 
@@ -674,26 +763,94 @@ Full-screen immersive view. The page is a vertical scroll journey — each secti
 
 ---
 
-### 3.4 Agent Nexus
+### 3.4 Agent Nexus — Hierarchy & Multi-View Command Center
 
-Full-viewport interactive neural network showing all 10 agents and their connections.
+Full-viewport interactive agent command center. **Redesigned from a flat neural network to a 4-tier hierarchical tree** with 6 sub-views accessible via a tab bar.
+
+**Sub-Navigation Tab Bar (top of page, below breadcrumbs):**
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory]       │
+│  [📊 Traces]  [🔄 Workflows]                                     │
+└──────────────────────────────────────────────────────────────────┘
+```
+- surface-mid backing strip, pill-shaped tabs
+- Active tab: --bio-teal underline glow + bright text
+- Inactive: --text-muted, hover brightens
+- Default tab: Hierarchy
+
+#### 3.4.1 Hierarchy View (Default)
+
+Full-viewport hierarchical tree showing all 13 agents organized by tier.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus]                   [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│                        ╭───────────╮                             │
+│                        │  NAVEEN   │  ← Tier 1 (teal)           │
+│                        │  KAPOOR   │     Supervisor              │
+│                        │ ◆ Active  │                             │
+│                        ╰─────┬─────╯                             │
+│                   ┌──────────┼──────────┐                        │
+│                   │          │          │                         │
+│              ╭────▼────╮╭───▼─────╮╭───▼────╮                   │
+│              │ RACHEL  ││  DAMON  ││ PRIYA  │ ← Tier 2 (violet) │
+│              │ TORRES  ││ REEVES  ││ MEHTA  │   Lane Leads       │
+│              │ Support ││  Value  ││Deliver │                    │
+│              ╰──┬─┬─┬──╯╰──┬─┬─┬─╯╰──┬──┬─╯                   │
+│              ┌──┘ │ └──┐┌──┘ │ └──┐┌──┘  └──┐                  │
+│              │    │    ││    │    ││         │                    │
+│           ╭──▼╮╭─▼─╮╭─▼▼╮╭─▼─╮╭─▼─╮╭──▼─╮╭─▼──╮╭──▼─╮        │
+│           │KAI││LEO││MAYA││AISH││JORD││SOFI││ETHN││ZARA│← T3   │
+│           │tri││tbl││esc ││hlth││call││qbr ││sow ││dep │  cyan  │
+│           ╰───╯╰───╯╰───╯╰───╯╰───╯╰───╯╰────╯╰────╯        │
+│                           │                                      │
+│                      ╭────▼─────╮                                │
+│                      │  ATLAS   │  ← Tier 4 (slate)             │
+│                      │ Memory   │     Foundation                 │
+│                      │  ◆ Idle  │                                │
+│                      ╰──────────╯                                │
+│                                                                  │
+│  ┌──────────── AGENT BRAIN PANEL (on node click) ────────────┐  │
+│  │ [3D Icon] Kai Nakamura        │ REASONING LOG              │  │
+│  │ "Triage Specialist"           │ > Perceiving ticket #456   │  │
+│  │ Tier 3 · Support Lane         │ > Retrieved 3 similar...   │  │
+│  │ ● 12 tasks · 98% success     │ > Thinking: severity 7...  │  │
+│  │                                │ > Acting: creating triage  │  │
+│  │ Traits: [confidence] [sla]    │ > Reflecting on outcome    │  │
+│  │ Tools: [search_tickets] ...   │                            │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 **Main Visualization (70% viewport):**
-- Full-screen Three.js canvas (or high-quality D3 force-directed graph)
-- Orchestrator: large center node, teal, pulsing
-- Other 9 agents: arranged by lane in clusters
-- Connection lines: animated particles traveling along them when data flows
-- Node size: proportional to tasks_today
-- Node pulse rate: proportional to current activity
-- Lane color coding on each node
-- Background: very subtle grid (wireframe plane beneath the graph)
+- Top-down hierarchical tree layout (D3 tree or custom positioned divs/SVG)
+- Nodes use the **Hierarchy Node** component (see 1.7)
+- **Tier 1 (top, center):** Naveen Kapoor — large node (64px), --tier-1 ring, pulsing if active
+- **Tier 2 (second row):** 3 Lane Lead nodes (48px), --tier-2 ring, spaced evenly, labeled with lane name
+- **Tier 3 (third row):** 8 Specialist nodes (36px), --tier-3 ring, clustered beneath their Lane Lead
+- **Tier 4 (bottom, center):** Atlas node (40px), --tier-4 ring, connected to ALL Tier 3 nodes via dashed lines
+- Connection lines: solid lines down the hierarchy, animated particle flow when delegation is active
+- Lane coloring: background glow behind each lane cluster (amber for Support, emerald for Value, cyan for Delivery)
+- Active delegation: bright animated particle traveling down from T1 → T2 → T3, with brief flash at each node
+
+**Live Delegation Flow (real-time via WebSocket):**
+- When `delegation:task_assigned` arrives: particle emits from sender → travels connection → arrives at receiver with glow burst
+- When `delegation:deliverable` arrives: particle travels upward (T3→T2→T1) in lane color
+- When `delegation:escalation` arrives: particle is rose-colored, travels upward with urgency pulse
 
 **Agent Brain Panel (slides up from bottom on node click, 30% viewport height):**
 - Frosted surface-near card, rounded top corners, drag handle to resize
 - Three columns:
-  - **Left (25%):** 3D animated agent icon (unique per agent — hexagon for Orchestrator, brain shape for Memory, eye for Health, etc.) + Status dot + "12 tasks today" + "98% success rate"
-  - **Center (50%):** Reasoning Log — terminal-style scrolling text (IBM Plex Mono 400, text-sm, --text-primary on surface-far background). Auto-scrolls. Shows the agent's decision trail.
-  - **Right (25%):** Mini stat gauges — Tasks Today (radial), Avg Response Time (number), Success Rate (horizontal bar), Last Active (timestamp)
+  - **Left (25%):** Agent Avatar (xl, 64px) + Human name (Space Grotesk 600, text-lg) + Codename (IBM Plex Mono 400, text-sm, --text-muted) + Tier badge + Lane badge + Status dot + Stats row ("12 tasks today" · "98% success") + Trait badges (using Trait Badge component) + Tools list (IBM Plex Mono text-xs)
+  - **Center (50%):** Reasoning Log — terminal-style scrolling text (IBM Plex Mono 400, text-sm, --text-primary on surface-far background). Auto-scrolls. Shows the agent's current or last pipeline execution trail with stage labels.
+  - **Right (25%):** Mini stat gauges — Tasks Today (radial), Avg Response Time (number), Success Rate (horizontal bar), Current Pipeline Stage (stage badge), Last Active (timestamp)
 - Panel slides up with spring animation (400ms, slight bounce)
 - Click outside or drag down to dismiss
 
@@ -727,7 +884,7 @@ Call insights displayed with a waveform/radio signal aesthetic.
   - Overdue items: rose text + "OVERDUE" badge
 - Decisions: Inter 400, text-sm, --text-primary
 - Risks: rose-tinted surface-far pills
-- Footer: [📋 Copy Recap] [📄 View Transcript] buttons — surface-far pill buttons with icon
+- Footer: [Copy Recap] [View Transcript] buttons — surface-far pill buttons with icon
 
 **Action Tracker (floating side panel, right edge):**
 - Fixed position, surface-near card, 260px width
@@ -746,7 +903,7 @@ Dual-mode: Constellation (3D default) + Warroom Table (2D).
 - Three.js canvas, full section area
 - See 3D-5 specification
 - Filter pills floating at top: Status (colored dots), Severity, Customer, Type
-- Toggle: "⚡ Constellation" / "📊 Warroom Table" — right side of filter bar
+- Toggle: "Constellation" / "Warroom Table" — right side of filter bar
 
 **Warroom Table View:**
 - surface-near card with premium table
@@ -802,16 +959,497 @@ Interactive data exploration with cross-filtering charts.
 
 **Chart 4 (Bottom-right): AGENT THROUGHPUT**
 - Radial bar chart
-- 10 rings (one per agent), each ring's length = tasks completed
-- Ring color = agent lane color
+- 13 rings (one per agent), grouped by tier with tier-colored section dividers
+- Each ring's length = tasks completed
+- Ring color = agent tier color (T1=teal, T2=violet, T3=cyan, T4=slate)
 - Center: total tasks number
 - Animated fill on page load (rings grow outward)
-- Hover ring: agent name + exact count
+- Hover ring: agent human_name + exact count + success rate
 
 **Cross-Filtering:**
 - Selecting data in any chart highlights corresponding data in ALL other charts
 - Non-selected data dims to 20% opacity
 - Clear selection: click empty area or "Reset" pill button
+
+---
+
+### 3.8 Pipeline Execution View (Agent Nexus sub-view)
+
+Real-time visualization of active and recent pipeline executions. Accessed via the "Pipeline" tab in Agent Nexus.
+
+**Corresponds to:** PRD F12 (Pipeline Execution Viewer)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus > Pipeline]        [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│  ┌────────── ACTIVE EXECUTIONS ──────────────────────────────┐  │
+│  │                                                            │  │
+│  │  ┌─── exec_abc123 ── Kai Nakamura (Triage) ────────────┐ │  │
+│  │  │                                                       │ │  │
+│  │  │  [perceive ✓]──[retrieve ✓]──[think ▶▓▓░░]──[act ○] │ │  │
+│  │  │  ──[reflect ○]──[quality_gate ○]──[finalize ○]       │ │  │
+│  │  │                                                       │ │  │
+│  │  │  Stage: think  │  Duration: 2.3s  │  Confidence: --  │ │  │
+│  │  │  Tools called: search_similar_tickets ✓               │ │  │
+│  │  │  Memory retrieved: 3 episodic, 2 semantic             │ │  │
+│  │  └───────────────────────────────────────────────────────┘ │  │
+│  │                                                            │  │
+│  │  ┌─── exec_def456 ── Dr. Aisha Okafor (Health) ────────┐ │  │
+│  │  │  [perceive ✓]──[retrieve ✓]──[think ✓]──[act ▶▓░░]  │ │  │
+│  │  │  Tools called: query_health_scores ✓, query_customer  │ │  │
+│  │  └───────────────────────────────────────────────────────┘ │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌────────── RECENT COMPLETIONS ─────────────────────────────┐  │
+│  │ Agent            │ Event      │ Stages │ Duration │ Conf  │  │
+│  │ Jordan Ellis     │ call_sync  │  7/7   │  4.2s    │ 0.87  │  │
+│  │ Leo Petrov       │ ticket_new │  7/7   │  6.1s    │ 0.92  │  │
+│  │ Sofia Marquez    │ qbr_prep   │  5/5   │  8.4s    │ 0.79  │  │
+│  │ Rachel Torres    │ delegate   │  5/5   │  3.1s    │ 0.94  │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Active Executions Panel (top, ~55% height):**
+- surface-near card, scrollable if >3 active
+- Each execution: surface-mid card with:
+  - Header: execution_id (IBM Plex Mono text-xs --text-ghost) + Agent Avatar + human_name + codename
+  - **Stage Timeline:** horizontal connected Pipeline Stage Cards (see 1.7)
+    - 7 segments: perceive → retrieve → think → act → reflect → quality_gate → finalize
+    - Completed: emerald fill + checkmark
+    - Active: teal fill with animated progress bar, pulsing glow
+    - Pending: ghost outline
+    - Failed: rose fill + X mark
+  - **Detail Row:** Current stage name, elapsed duration, confidence (if available)
+  - **Tools Row:** List of tools called with status (IBM Plex Mono text-xs)
+  - **Memory Row:** Count of episodic + semantic memories retrieved
+- Real-time updates via WebSocket: `pipeline:stage_started` advances the active stage, `pipeline:stage_completed` fills it, `pipeline:tool_called` appends to tools row
+- Click execution → navigates to Execution Trace View (Section 3.11)
+
+**Recent Completions Table (bottom, ~45% height):**
+- surface-near card with premium table
+- Columns: Agent (avatar + name), Event Type, Stages Completed, Total Duration, Confidence Score
+- Sorted by completion time (newest first)
+- Row hover: glow border, click → Execution Trace View
+- Confidence column: color-coded (>0.8 emerald, 0.6-0.8 amber, <0.6 rose)
+
+**Filter Bar:**
+- Agent filter dropdown, Event type filter, Date range
+- "Active Only" / "All" toggle
+
+---
+
+### 3.9 Message Board View (Agent Nexus sub-view)
+
+Feed of inter-agent communications with threading and type filtering. Accessed via the "Messages" tab in Agent Nexus.
+
+**Corresponds to:** PRD F13 (Inter-Agent Message Board)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus > Messages]        [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│  ┌── FILTERS ──────────────────────────────────────────────────┐ │
+│  │ [All Types ▼] [All Agents ▼] [All Events ▼] [Search...]    │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ┌── MESSAGE FEED ─────────────────────┐  ┌── THREAD DETAIL ──┐ │
+│  │                                      │  │                    │ │
+│  │  ┌─ TASK ─────────────────────────┐ │  │  Thread: exec_abc  │ │
+│  │  │ 📋 Naveen → Rachel Torres      │ │  │                    │ │
+│  │  │ "Triage ticket JIRA-789 for    │ │  │  14:20 Naveen→     │ │
+│  │  │  Acme Corp, report severity"   │ │  │  Rachel:           │ │
+│  │  │ 14:20 · Event: ticket_new      │ │  │  "Triage JIRA-789" │ │
+│  │  │ [3 replies]                     │ │  │  ────────────────  │ │
+│  │  └────────────────────────────────┘ │  │  14:20 Rachel→     │ │
+│  │                                      │  │  Kai:              │ │
+│  │  ┌─ DELIVERABLE ─────────────────┐ │  │  "Run triage on    │ │
+│  │  │ ✅ Kai → Rachel Torres         │ │  │   this ticket"     │ │
+│  │  │ "Triaged: severity 7,         │ │  │  ────────────────  │ │
+│  │  │  category: integration_failure"│ │  │  14:22 Kai→        │ │
+│  │  │ 14:22 · Confidence: 0.91      │ │  │  Rachel:           │ │
+│  │  └────────────────────────────────┘ │  │  "Severity 7,      │ │
+│  │                                      │  │   integration      │ │
+│  │  ┌─ ESCALATION ──────────────────┐ │  │   failure"          │ │
+│  │  │ 🔴 Maya → Rachel Torres       │ │  │  ────────────────  │ │
+│  │  │ "Customer threatening churn,   │ │  │  14:23 Rachel→     │ │
+│  │  │  needs Naveen's attention"     │ │  │  Naveen:           │ │
+│  │  │ 14:23 · Priority: 9           │ │  │  "Escalating —     │ │
+│  │  └────────────────────────────────┘ │  │   churn risk"      │ │
+│  │                                      │  │                    │ │
+│  │  ┌─ FEEDBACK ────────────────────┐ │  │                    │ │
+│  │  │ 💬 Damon → Dr. Aisha          │ │  │                    │ │
+│  │  │ "Good analysis, also check    │ │  │                    │ │
+│  │  │  the call sentiment trend"    │ │  │                    │ │
+│  │  │ 14:25 · Event: health_check   │ │  │                    │ │
+│  │  └────────────────────────────────┘ │  │                    │ │
+│  └──────────────────────────────────────┘  └────────────────────┘ │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Layout:** 60/40 split — Message Feed (left) + Thread Detail (right)
+
+**Message Feed (left, 60%):**
+- surface-near card, full height, scrollable
+- Messages displayed using **Message Thread** component (see 1.7)
+- Each message card:
+  - **Type badge** (left edge, colored bar like Severity Marker):
+    - task_assignment: blue (#3B82F6) bar
+    - deliverable: emerald (#34D399) bar
+    - request: cyan (#22D3EE) bar
+    - escalation: rose (#FB7185) bar + pulsing glow
+    - feedback: amber (#FBBF24) bar
+  - **Header:** [Type icon] [From Agent Avatar + name] → [To Agent Avatar + name]
+  - **Content:** Message body preview (Inter 400, text-sm, 2 lines)
+  - **Footer:** Timestamp (IBM Plex Mono text-xs) · Event reference · Reply count badge
+  - Click message → opens thread in right panel
+- New messages slide in from top with teal flash, 300ms
+- Escalation messages have a subtle rose background tint + "URGENT" micro-badge
+- Real-time updates via WebSocket: `delegation:task_assigned`, `delegation:deliverable`, `delegation:escalation`
+
+**Thread Detail (right, 40%):**
+- surface-near card, full height
+- Header: Thread ID + originating event reference
+- Full message chain displayed chronologically with connecting thread line
+- Each message: [Agent Avatar] [name + tier badge] [timestamp] → full content
+- Indentation shows delegation depth (Naveen → Rachel → Kai = 3 levels)
+- Empty state: "Select a message to view thread" with ghost thread illustration
+
+**Filter Bar:**
+- Type filter: pill toggles for each message type (colored dot + label)
+- Agent filter: dropdown with agent avatars
+- Event filter: dropdown
+- Search: fuzzy search across message content
+
+---
+
+### 3.10 Memory Inspector View (Agent Nexus sub-view)
+
+Browse and search the 3-tier agent memory system. Accessed via the "Memory" tab in Agent Nexus.
+
+**Corresponds to:** PRD F14 (Memory Inspector)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus > Memory]          [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│  ┌── MEMORY TYPE TABS ──┐  ┌── SEARCH ──────────────────────┐  │
+│  │ [Episodic] [Semantic] │  │ 🔍 Search memories...          │  │
+│  └───────────────────────┘  └────────────────────────────────┘  │
+│                                                                  │
+│  ┌── AGENT SELECTOR ────────────────────────────────────────┐   │
+│  │ [All] [Naveen] [Rachel] [Damon] [Priya] [Kai] [Leo] ... │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌── EPISODIC MEMORY TIMELINE ──────────┐  ┌── DETAIL ───────┐ │
+│  │                                       │  │                  │ │
+│  │  ● 14:22 — Kai Nakamura              │  │  Memory Entry    │ │
+│  │    "Triaged JIRA-789 for Acme Corp.  │  │                  │ │
+│  │     Severity 7, integration failure. │  │  Agent: Kai      │ │
+│  │     Similar to JIRA-456 from Delta." │  │  Importance: 7   │ │
+│  │    [importance: 7] [customer: Acme]  │  │  Customer: Acme  │ │
+│  │                                       │  │  Execution:      │ │
+│  │  ● 14:18 — Dr. Aisha Okafor         │  │    exec_abc123   │ │
+│  │    "Health check for Beta Corp.      │  │                  │ │
+│  │     Score dropped 78→72, triggered   │  │  Full Content:   │ │
+│  │     by 3 unresolved P2 tickets."     │  │  "Triaged ticket │ │
+│  │    [importance: 6] [customer: Beta]  │  │   JIRA-789 for  │ │
+│  │                                       │  │   Acme Corp.    │ │
+│  │  ● 14:10 — Jordan Ellis             │  │   Severity 7..."  │ │
+│  │    "Processed Fathom call for Gamma. │  │                  │ │
+│  │     Negative sentiment detected,     │  │  Related:        │ │
+│  │     3 action items extracted."       │  │  [View Execution] │ │
+│  │    [importance: 5] [customer: Gamma] │  │  [View Thread]   │ │
+│  │                                       │  │                  │ │
+│  │  ● 13:55 — Maya Santiago            │  │                  │ │
+│  │    "Escalated Acme Corp ticket..."   │  │                  │ │
+│  └───────────────────────────────────────┘  └──────────────────┘ │
+│                                                                  │
+│  ┌── KNOWLEDGE POOL (Semantic view) ────────────────────────┐   │
+│  │ [Support Lane]  [Value Lane]  [Delivery Lane]  [Global]  │   │
+│  │                                                           │   │
+│  │  Shows when "Semantic" tab is active — grid of           │   │
+│  │  shared knowledge entries grouped by lane                 │   │
+│  └───────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Memory Type Tabs:**
+- Two tabs: "Episodic" (per-agent diary) and "Semantic" (shared knowledge pools)
+- Active tab: --bio-teal underline
+
+**Episodic Memory View (default):**
+- **Agent Selector:** Horizontal scrollable pill bar with agent avatars, "All" selected by default
+- **Timeline (left, 65%):** Chronological list of Memory Entry components (see 1.7)
+  - Each entry on a vertical timeline line (thin --surface-border left border)
+  - Timeline dot: 8px circle, color = importance level (slate→cyan→amber→teal)
+  - Entries sorted newest-first
+  - Importance heatmap: subtle left-border glow intensity matches importance (1-10)
+  - Click entry → shows detail in right panel
+- **Detail Panel (right, 35%):** surface-near card
+  - Full memory content (no truncation)
+  - Metadata: agent, importance score, customer, execution_id, timestamp
+  - Links: "View Execution" → Trace View, "View Thread" → Messages
+  - Related memories: 2-3 similar entries (semantic search result)
+
+**Semantic Memory View (Knowledge Pools):**
+- **Lane Tabs:** Support, Value, Delivery, Global — each with lane color dot
+- **Knowledge Grid:** Cards in 2-column grid
+  - Each card: surface-mid, title (Inter 600), content preview (2 lines), published_by agent avatar, customer tag, timestamp
+  - Hover: expand to full content
+  - Lane-specific background tint (very subtle lane color at 3% opacity)
+
+**Search:**
+- Full-text + semantic search across all memory types
+- Results ranked by tri-factor: 35% relevance + 25% recency + 40% importance
+- Results show which memory tier (episodic/semantic) and which agent
+
+---
+
+### 3.11 Execution Trace View (Agent Nexus sub-view)
+
+Detailed drill-down into any completed or active agent pipeline execution. Accessed via the "Traces" tab in Agent Nexus, or by clicking an execution from the Pipeline view.
+
+**Corresponds to:** PRD F15 (Execution Trace Viewer)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus > Traces]          [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│  ┌── EXECUTION SELECTOR ────────────────────────────────────┐   │
+│  │ exec_abc123 · Kai Nakamura · ticket_new · 4.2s · 0.91   │   │
+│  │ [▼ Select different execution]                            │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌── STAGE TIMELINE ─────────────────────────────────────────┐  │
+│  │                                                            │  │
+│  │  [perceive]──[retrieve]──[think]──[act]──[reflect]──      │  │
+│  │  ──[quality_gate]──[finalize]                              │  │
+│  │                                                            │  │
+│  │  Each stage: click to expand detail below                  │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌── STAGE DETAIL (expanded "think" stage) ──────────────────┐  │
+│  │                                                            │  │
+│  │  ┌── INPUT ─────────────┐  ┌── OUTPUT ──────────────────┐ │  │
+│  │  │ Task context from     │  │ "Based on the ticket       │ │  │
+│  │  │ perceive stage:       │  │  description and 3 similar │ │  │
+│  │  │ ticket details,       │  │  past cases, I assess      │ │  │
+│  │  │ customer context,     │  │  severity as 7 (high).     │ │  │
+│  │  │ 3 episodic memories,  │  │  Category: integration_    │ │  │
+│  │  │ 2 knowledge entries   │  │  failure. Confidence: 91%" │ │  │
+│  │  └──────────────────────┘  └─────────────────────────────┘ │  │
+│  │                                                            │  │
+│  │  ┌── TOOLS CALLED ──────────────────────────────────────┐ │  │
+│  │  │ search_similar_tickets(query="OVA integration...")    │ │  │
+│  │  │   → 3 results, 1.2s                                  │ │  │
+│  │  │ query_customer_db(customer_id="cust_acme")           │ │  │
+│  │  │   → deployment_mode: OVA, version: 4.2               │ │  │
+│  │  └──────────────────────────────────────────────────────┘ │  │
+│  │                                                            │  │
+│  │  Duration: 2.3s │ Tokens: 1,247 in / 892 out │ Conf: 91% │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Execution Selector (top):**
+- Dropdown showing recent executions: execution_id + agent + event_type + duration + confidence
+- Can also arrive pre-selected from Pipeline View click
+
+**Stage Timeline (horizontal):**
+- 7 connected Pipeline Stage Cards in a horizontal strip
+- Click any stage to expand its detail below
+- Active stage highlighted with teal glow
+- Stage connections show elapsed time between stages
+- Overview stats: total duration, total tokens, final confidence
+
+**Stage Detail Panel (expandable, below timeline):**
+- surface-near card, expands with spring animation
+- **Three sections side-by-side:**
+  - **Input (left, 40%):** surface-far card showing what context/data the stage received
+    - For perceive: raw event data
+    - For retrieve: memory query results (episodic + semantic entries)
+    - For think: accumulated context from previous stages
+    - For act: the reasoning output that led to action
+  - **Output (right, 40%):** surface-far card showing stage result
+    - The agent's output for that stage (text, structured data)
+    - For quality_gate: pass/fail verdict + reasoning
+    - For reflect: self-assessment text
+  - **Metadata (bottom strip, full width):**
+    - Duration (ms), token count (in/out), confidence score, tools called
+    - Tools section: expandable list showing each tool call with input args → output result → duration
+
+**Tool Call Detail (expandable within metadata):**
+- Each tool call: IBM Plex Mono text-sm
+- Format: `tool_name(arg1="val1", arg2="val2")` → result preview
+- Click to expand full result JSON in a code block (surface-far, monospace)
+
+---
+
+### 3.12 Workflow Viewer (Agent Nexus sub-view)
+
+Visualization of how events flow through the agent hierarchy as defined workflows. Accessed via the "Workflows" tab in Agent Nexus.
+
+**Corresponds to:** PRD F16 (Workflow Viewer)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ [Breadcrumb: Agents > Nexus > Workflows]       [⌘K]  [🔔]  [👤] │
+│ [🌳 Hierarchy]  [⚡ Pipeline]  [💬 Messages]  [🧠 Memory] ...    │
+│                                                                  │
+│  ┌── WORKFLOW SELECTOR ─────────────────────────────────────┐   │
+│  │ [ticket_triage_flow] [call_analysis_flow] [health_check] │   │
+│  │ [qbr_preparation] [escalation_flow]                       │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌── WORKFLOW DIAGRAM (ticket_triage_flow) ──────────────────┐  │
+│  │                                                            │  │
+│  │  ╭─────────╮                                               │  │
+│  │  │  EVENT  │  "ticket_new"                                 │  │
+│  │  │  (Jira) │                                               │  │
+│  │  ╰────┬────╯                                               │  │
+│  │       ▼                                                    │  │
+│  │  ╭─────────╮     ╭──────────────╮                         │  │
+│  │  │ Naveen  │────>│ Decompose &  │                         │  │
+│  │  │  (T1)   │     │ Delegate     │                         │  │
+│  │  ╰────┬────╯     ╰──────────────╯                         │  │
+│  │       ▼                                                    │  │
+│  │  ╭─────────╮     ╭──────────────╮                         │  │
+│  │  │ Rachel  │────>│ Route to     │                         │  │
+│  │  │  (T2)   │     │ Specialist   │                         │  │
+│  │  ╰────┬────╯     ╰──────────────╯                         │  │
+│  │       ▼                                                    │  │
+│  │  ╭─────────╮     ╭──────────────╮                         │  │
+│  │  │  Kai    │────>│ Triage &     │                         │  │
+│  │  │  (T3)   │     │ Categorize   │                         │  │
+│  │  ╰────┬────╯     ╰──────────────╯                         │  │
+│  │       ▼                                                    │  │
+│  │  ╭─────────╮     ╭──────────────╮     ╭───────────╮      │  │
+│  │  │  Leo    │────>│ Troubleshoot │────>│ Deliverable│      │  │
+│  │  │  (T3)   │     │ (if needed)  │     │ → Rachel   │      │  │
+│  │  ╰─────────╯     ╰──────────────╯     ╰─────┬─────╯      │  │
+│  │                                               ▼            │  │
+│  │                                         ╭───────────╮      │  │
+│  │                                         │ Synthesis  │      │  │
+│  │                                         │ → Naveen   │      │  │
+│  │                                         ╰───────────╯      │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌── ACTIVE INSTANCES ───────────────────────────────────────┐  │
+│  │ Instance    │ Workflow        │ Current Step │ Started     │  │
+│  │ wf_001      │ ticket_triage   │ Kai (triage) │ 14:20      │  │
+│  │ wf_002      │ health_check    │ Aisha (act)  │ 14:18      │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│          ╭──╮  ╭──╮  ╭────╮  ╭──╮  ╭──╮                       │
+│          │⚙│  │👥│  │ ◆◆ │  │🎙│  │🎫│     ORBITAL NAV       │
+│          ╰──╯  ╰──╯  ╰────╯  ╰──╯  ╰──╯                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Workflow Selector (top):**
+- Horizontal pill bar with workflow names from workflows.yaml
+- Each pill: surface-far, IBM Plex Mono text-sm
+- Active workflow: --bio-teal fill + glow
+- Active workflows have a live count badge
+
+**Workflow Diagram (center, ~60% height):**
+- SVG or D3 flow diagram showing the defined workflow steps
+- Each step: Hierarchy Node (agent avatar + tier) connected to action description box
+- Connections: directional arrows with tier colors
+- Flow direction: top-to-bottom
+- Decision branches shown with diamond nodes (if/else conditions like "if severity > 7")
+- Active instances highlighted: the current step glows with teal pulse, completed steps show emerald checkmark
+- Hover node: tooltip with agent details + step description
+- Interactive: click node → opens that agent in Hierarchy View
+
+**Active Instances Table (bottom, ~35% height):**
+- surface-near card with premium table
+- Columns: Instance ID, Workflow Name, Current Step (agent + action), Event, Started At, Duration
+- Active instances have a teal pulse dot in first column
+- Row hover: glow border
+- Click row → highlights that instance's progress on the diagram above
+
+**Historical Runs (toggle):**
+- "Active" / "History" tab toggle above the table
+- History shows completed workflow instances with final outcome and total duration
+
+---
+
+### 3.13 Agent Profile Cards (Component Specification)
+
+Reusable component for displaying agent identity, used in hierarchy nodes, brain panel, message headers, and profile modals.
+
+**Card Layout (when used as expanded profile):**
+```
+┌──────────────────────────────────────┐
+│  ╭──────╮                            │
+│  │ ICON │  Naveen Kapoor             │
+│  │ (3D) │  CS Orchestrator           │
+│  ╰──────╯  ● Active                  │
+│                                       │
+│  Tier: [T1 Supervisor]  Lane: Control │
+│                                       │
+│  "Strategic, composed, sees the big   │
+│   picture. Delegates decisively..."   │
+│                                       │
+│  Traits:                              │
+│  [strategic_oversight] [quality_eval] │
+│  [delegation]                         │
+│                                       │
+│  Tools:                               │
+│  query_customer_db · search_knowledge │
+│  · read_agent_output                  │
+│                                       │
+│  ┌─ Stats ──────────────────────────┐ │
+│  │ Tasks: 142  Success: 97%        │ │
+│  │ Avg Time: 3.2s  Active: now     │ │
+│  └──────────────────────────────────┘ │
+│                                       │
+│  Manages: Rachel, Damon, Priya        │
+│  Reports to: —                        │
+└──────────────────────────────────────┘
+```
+
+**Variants:**
+- **Full (profile modal/brain panel):** All fields shown. surface-near card, ~350px width.
+- **Compact (message headers, table rows):** [Avatar sm] [Name] [Tier badge] — single line, inline.
+- **Node (hierarchy tree):** [Avatar md with tier ring] [Name below] — stacked vertical.
+
+**Fields:**
+- Avatar: Agent Avatar component (see 1.7), size varies by variant
+- Human name: Space Grotesk 600, text-lg (full) or Inter 500, text-sm (compact)
+- Codename: IBM Plex Mono 400, text-sm, --text-muted
+- Status: Status Indicator component
+- Tier badge: pill with tier number + tier color background (e.g., "T1" in --tier-1)
+- Lane badge: pill with lane name + lane color dot
+- Personality: Inter 400, text-sm, --text-primary, 3 lines max
+- Traits: row of Trait Badge components (see 1.7)
+- Tools: IBM Plex Mono 400, text-xs, --text-muted, dot-separated
+- Stats: surface-mid mini card with key metrics
+- Manages: list of direct reports (avatar + name pills)
+- Reports to: single agent reference (avatar + name)
 
 ---
 
@@ -824,6 +1462,7 @@ Interactive data exploration with cross-filtering charts.
 | Customers → Customer Detail | Camera "fly-in" — selected card scales up and fills viewport while others blur and recede. 600ms. |
 | Customer Detail → Back | Reverse fly-out — content shrinks back to card size. 500ms. |
 | Any → Any (Orbital nav) | Current content fades + slides in direction of nav rotation. New content fades in from opposite. 400ms. |
+| Agent Nexus tab switch | Crossfade with subtle slide in tab direction. 300ms ease-out. |
 
 ### Scroll Animations (Customer Detail)
 | Section | Animation | Trigger |
@@ -835,6 +1474,18 @@ Interactive data exploration with cross-filtering charts.
 | Deployment DNA | Nodes fade in + connections draw | IntersectionObserver (threshold 0.3) |
 | Journey timeline | Draw left-to-right | IntersectionObserver (threshold 0.2) |
 | Intel panels | Slide up + fade in | IntersectionObserver (threshold 0.3) |
+
+### Pipeline & Delegation Animations
+| Element | Animation |
+|---------|-----------|
+| Pipeline stage progress | Active stage: progress bar fills left-to-right (duration proportional to avg stage time). Completed: emerald fill sweeps in 200ms. |
+| Delegation particle | Glowing sphere (8px) travels along hierarchy connection line at 200px/sec. Brief flash (scale 1→2→1, 300ms) on arrival. |
+| Escalation particle | Rose-colored sphere with trail particles, travels upward at 300px/sec (faster = urgent). Receiving node flashes rose. |
+| Message arrival | New message card slides in from top + teal edge flash (200ms). Escalations get a rose flash + subtle screen-edge pulse. |
+| Memory write | Outward ripple from agent node in hierarchy (concentric rings, 600ms). Episodic = agent tier color. Semantic = lane color. |
+| Tool call | Brief inline flash on the tool name text (teal highlight sweep, 400ms). Result appears with fade-in. |
+| Quality gate pass | Green checkmark scale-in + brief confetti burst (10 emerald particles, 500ms). |
+| Quality gate fail | Rose X mark + shake animation (3px horizontal oscillation, 300ms). |
 
 ### Micro-Interactions
 | Element | Interaction | Animation |
@@ -849,6 +1500,8 @@ Interactive data exploration with cross-filtering charts.
 | Notification toast | Dismiss | Particles scatter, opacity → 0. 400ms. |
 | Detail drawer | Open | Slide from right + slight blur on background. 400ms spring. |
 | Agent Brain panel | Open | Slide up from bottom with slight bounce. 400ms spring. |
+| Hierarchy node | Click | Node scales 1→1.1→1 (bounce), tier-colored ring pulse. 300ms. |
+| Tab bar tab | Switch | Underline glow slides from old tab to new tab. 300ms ease. |
 | Empty state | Idle | Dormant visualization with faint outlines + floating text. Subtle pulse. |
 | Loading skeleton | Active | Wave of teal-tinted light passing through. 1.5s loop. |
 
@@ -857,28 +1510,38 @@ Interactive data exploration with cross-filtering charts.
 ## 5. Responsive Behavior
 
 ### Breakpoints
-- **Desktop Full (> 1440px):** All 3D elements active. Full Orbital nav. Max visual fidelity.
+- **Desktop Full (> 1440px):** All 3D elements active. Full Orbital nav. Max visual fidelity. All 6 Agent Nexus sub-views available.
 - **Desktop (1280-1440px):** 3D active but reduced particles. Full Orbital nav.
-- **Laptop (1024-1280px):** 3D simplified (lower polygon count, fewer particles). Orbital nav.
-- **Tablet (768-1024px):** 3D replaced with premium 2D fallbacks. Orbital nav → bottom tab bar (5 icons).
-- **Mobile (< 768px):** Full 2D. Bottom tab bar. Cards stack vertically. Swipe between sections.
+- **Laptop (1024-1280px):** 3D simplified (lower polygon count, fewer particles). Orbital nav. Message Board switches to single-column (feed only, thread opens as overlay).
+- **Tablet (768-1024px):** 3D replaced with premium 2D fallbacks. Orbital nav → bottom tab bar (5 icons). Agent Nexus sub-views: Hierarchy + Pipeline only, others accessible via "More" menu.
+- **Mobile (< 768px):** Full 2D. Bottom tab bar. Cards stack vertically. Swipe between sections. Agent Nexus shows simplified hierarchy list view.
 
 ### 3D → 2D Fallback Strategy
 | 3D Element | 2D Fallback |
 |-----------|-------------|
-| Neural Sphere | Static SVG network graph with animated connection lines (CSS) |
+| Neural Sphere | Static SVG network graph with animated connection lines (CSS), 13 nodes in tier layout |
 | Health Terrain | Heat map grid (colored cells) |
 | Floating Orbs | Radial gradient circles with float animation |
 | Data Flow Rivers | Animated SVG dots on paths |
 | Ticket Constellation | Premium table view (default on tablet/mobile) |
 | 3D Health Ring | SVG arc (already exists as component) |
+| Hierarchy Tree (3D) | Indented list with tier-colored left borders (mobile) |
+
+### Agent Nexus Responsive Behavior
+| Breakpoint | Hierarchy | Pipeline | Messages | Memory | Traces | Workflows |
+|-----------|-----------|----------|----------|--------|--------|-----------|
+| Desktop Full | Full tree | Full view | 60/40 split | Timeline + detail | Full stage detail | Diagram + table |
+| Desktop | Full tree | Full view | 60/40 split | Timeline + detail | Full stage detail | Diagram + table |
+| Laptop | Compact tree | Full view | Single column | Timeline only | Collapsed stages | Simplified diagram |
+| Tablet | Flat list | Card stack | Single column | Search only | Summary view | List only |
+| Mobile | Flat list | Card stack | Single column | Search only | Summary view | List only |
 
 ### Accessibility
 - **Reduce Motion toggle:** Settings page + respects `prefers-reduced-motion` media query
-- When reduced motion: all 3D elements switch to 2D fallbacks, animations replaced with simple fades
-- Color-blind safe: every status uses shape + icon + color (never color alone)
-- Keyboard navigation: all 3D scenes have keyboard controls (arrow keys), Orbital nav supports left/right arrows
-- Screen reader: all 3D canvases have aria-labels, interactive elements described
+- When reduced motion: all 3D elements switch to 2D fallbacks, animations replaced with simple fades, delegation particles become instant state changes
+- Color-blind safe: every status uses shape + icon + color (never color alone). Tier badges use T1/T2/T3/T4 text labels in addition to color. Message type badges use icons + color.
+- Keyboard navigation: all 3D scenes have keyboard controls (arrow keys), Orbital nav supports left/right arrows, Agent Nexus tabs support Tab + arrow keys, Pipeline stages navigable with left/right arrows
+- Screen reader: all 3D canvases have aria-labels, interactive elements described, message feed has ARIA live region for real-time updates
 
 ---
 
@@ -897,7 +1560,7 @@ gsap                        # Complex timeline animations (sphere camera, page t
 
 # Charts
 recharts                    # Health trend, ticket volume
-d3                          # Sentiment river (stream graph), deployment DNA, heatmap
+d3                          # Sentiment river (stream graph), deployment DNA, heatmap, workflow diagrams
 
 # Interactions
 @dnd-kit/core               # Drag-and-drop (ticket board fallback)
@@ -914,3 +1577,5 @@ fuse.js                     # Fuzzy search for command palette
 - Initial page load (2D fallback): < 2 seconds
 - Three.js bundle: lazy-loaded (code-split), not in main bundle
 - 3D loads after 2D skeleton renders (progressive enhancement)
+- Agent Nexus sub-views: lazy-loaded per tab (only Hierarchy loads initially)
+- WebSocket message processing: < 16ms per frame (no dropped frames during delegation storms)

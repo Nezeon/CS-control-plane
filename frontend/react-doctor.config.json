@@ -1,0 +1,8 @@
+{
+  "ignore": {
+    "rules": ["no-unknown-property"],
+    "files": [
+      "src/three/**"
+    ]
+  }
+}

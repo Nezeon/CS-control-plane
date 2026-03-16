@@ -1,25 +1,31 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import Fuse from 'fuse.js'
 import {
-  Search, LayoutDashboard, Users, Brain, Lightbulb, Ticket, BarChart3,
-  Settings, Activity, Mic, FileText,
+  Search, LayoutDashboard, Users, Brain, Ticket, Phone, BarChart3,
+  Settings, Activity, Mic, FileText, MessageSquare, GitBranch, BookOpen,
+  AlertTriangle, Workflow,
 } from 'lucide-react'
 import useCustomerStore from '../../stores/customerStore'
 
 const PAGES = [
   { id: 'page-dashboard', label: 'Dashboard', description: 'Overview & metrics', icon: LayoutDashboard, action: '/', category: 'Pages' },
   { id: 'page-customers', label: 'Customers', description: 'Customer portfolio', icon: Users, action: '/customers', category: 'Pages' },
-  { id: 'page-agents', label: 'Agents', description: 'AI agent monitoring', icon: Brain, action: '/agents', category: 'Pages' },
-  { id: 'page-insights', label: 'Insights', description: 'Call intelligence', icon: Lightbulb, action: '/insights', category: 'Pages' },
   { id: 'page-tickets', label: 'Tickets', description: 'Support tickets', icon: Ticket, action: '/tickets', category: 'Pages' },
-  { id: 'page-reports', label: 'Analytics', description: 'Charts & reports', icon: BarChart3, action: '/reports', category: 'Pages' },
+  { id: 'page-calls', label: 'Calls', description: 'Fathom call insights', icon: Phone, action: '/calls', category: 'Pages' },
+  { id: 'page-agents', label: 'AI Agents', description: 'AI agent monitoring', icon: Brain, action: '/agents', category: 'Pages' },
+  { id: 'page-conversations', label: 'Conversations', description: 'Agent communication feed', icon: MessageSquare, action: '/conversations', category: 'Pages' },
+  { id: 'page-pipelines', label: 'Pipelines', description: 'Pipeline executions', icon: GitBranch, action: '/pipelines', category: 'Pages' },
+  { id: 'page-knowledge', label: 'Knowledge', description: 'Knowledge base & RAG', icon: BookOpen, action: '/knowledge', category: 'Pages' },
+  { id: 'page-alerts', label: 'Alerts', description: 'System alerts', icon: AlertTriangle, action: '/alerts', category: 'Pages' },
+  { id: 'page-workflows', label: 'Workflows', description: 'Workflow automation', icon: Workflow, action: '/workflows', category: 'Pages' },
+  { id: 'page-analytics', label: 'Analytics', description: 'Charts & reports', icon: BarChart3, action: '/analytics', category: 'Pages' },
   { id: 'page-settings', label: 'Settings', description: 'Preferences', icon: Settings, action: '/settings', category: 'Pages' },
 ]
 
 const AGENTS = [
-  'CS Orchestrator', 'Customer Memory Agent', 'Call Intelligence Agent',
+  'CS Orchestrator', 'Customer Memory Agent', 'Fathom Agent',
   'Health Monitor', 'Ticket Triage Agent', 'Troubleshooter',
   'Escalation Manager', 'QBR Generator', 'SOW Analyzer', 'Deployment Intel',
 ].map((name, i) => ({
@@ -66,15 +72,18 @@ export default function CommandPalette({ isOpen, onClose }) {
     return fuse.search(query).slice(0, 15).map((r) => r.item)
   }, [query, fuse, allItems])
 
+  const prevIsOpen = useRef(false)
+  if (isOpen && !prevIsOpen.current) {
+    if (query !== '') setQuery('')
+    if (selectedIndex !== 0) setSelectedIndex(0)
+  }
+  prevIsOpen.current = isOpen
+
   useEffect(() => {
     if (isOpen) {
-      setQuery('')
-      setSelectedIndex(0)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [isOpen])
-
-  useEffect(() => { setSelectedIndex(0) }, [query])
 
   const handleSelect = useCallback((item) => {
     onClose()
@@ -112,14 +121,14 @@ export default function CommandPalette({ isOpen, onClose }) {
     <AnimatePresence>
       {isOpen && (
         <>
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
             onClick={onClose}
           />
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.96, y: -8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: -8 }}
@@ -138,7 +147,7 @@ export default function CommandPalette({ isOpen, onClose }) {
                   data-testid="command-palette-input"
                   type="text"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0) }}
                   onKeyDown={handleKeyDown}
                   placeholder="Search commands, customers, agents..."
                   className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-ghost"
@@ -189,7 +198,7 @@ export default function CommandPalette({ isOpen, onClose }) {
                 )}
               </div>
             </div>
-          </motion.div>
+          </m.div>
         </>
       )}
     </AnimatePresence>

@@ -24,129 +24,227 @@ from app.schemas.agent import (
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
-# Static registry of all 10 agents
+# Static registry of all 13 agents (4-tier hierarchy)
 AGENT_REGISTRY = [
+    # Tier 1: Supervisor
     {
-        "name": "cs_orchestrator",
+        "name": "cso_orchestrator",
+        "agent_key": "cso_orchestrator",
         "display_name": "CS Orchestrator",
-        "description": "Routes events to the correct agent",
+        "human_name": "Naveen Kapoor",
+        "tier": 1,
         "lane": "control",
+        "role": "CS Manager",
+        "description": "Strategic decomposition, delegation, quality evaluation, synthesis",
+        "manages": ["support_lead", "value_lead", "delivery_lead"],
     },
+    # Tier 2: Lane Leads
+    {
+        "name": "support_lead",
+        "agent_key": "support_lead",
+        "display_name": "Support Operations Lead",
+        "human_name": "Rachel Torres",
+        "tier": 2,
+        "lane": "support",
+        "role": "Support Operations Lead",
+        "description": "Manages support workflow, SLA tracking, ticket prioritization",
+        "manages": ["triage_agent", "troubleshooter_agent", "escalation_agent"],
+    },
+    {
+        "name": "value_lead",
+        "agent_key": "value_lead",
+        "display_name": "Value & Insights Lead",
+        "human_name": "Damon Reeves",
+        "tier": 2,
+        "lane": "value",
+        "role": "Value & Insights Lead",
+        "description": "Customer health analytics, churn prediction, value delivery insights",
+        "manages": ["health_monitor_agent", "fathom_agent", "qbr_agent"],
+    },
+    {
+        "name": "delivery_lead",
+        "agent_key": "delivery_lead",
+        "display_name": "Delivery Operations Lead",
+        "human_name": "Priya Mehta",
+        "tier": 2,
+        "lane": "delivery",
+        "role": "Delivery Operations Lead",
+        "description": "Delivery management, SOW tracking, deployment coordination",
+        "manages": ["sow_agent", "deployment_intel_agent"],
+    },
+    # Tier 3: Specialists — Support
+    {
+        "name": "triage_agent",
+        "agent_key": "triage_agent",
+        "display_name": "Ticket Triage Specialist",
+        "human_name": "Kai Nakamura",
+        "tier": 3,
+        "lane": "support",
+        "role": "Triage Specialist",
+        "description": "Auto-classifies and prioritizes tickets",
+        "manages": [],
+    },
+    {
+        "name": "troubleshooter_agent",
+        "agent_key": "troubleshooter_agent",
+        "display_name": "Troubleshooting Engineer",
+        "human_name": "Leo Petrov",
+        "tier": 3,
+        "lane": "support",
+        "role": "Troubleshooting Engineer",
+        "description": "Root-cause analysis, RAG-powered troubleshooting",
+        "manages": [],
+    },
+    {
+        "name": "escalation_agent",
+        "agent_key": "escalation_agent",
+        "display_name": "Escalation Manager",
+        "human_name": "Maya Santiago",
+        "tier": 3,
+        "lane": "support",
+        "role": "Escalation Manager",
+        "description": "Escalation management, stakeholder communication",
+        "manages": [],
+    },
+    # Tier 3: Specialists — Value
+    {
+        "name": "health_monitor_agent",
+        "agent_key": "health_monitor_agent",
+        "display_name": "Customer Health Analyst",
+        "human_name": "Dr. Aisha Okafor",
+        "tier": 3,
+        "lane": "value",
+        "role": "Health Analyst",
+        "description": "Calculates customer health scores, trend analysis",
+        "manages": [],
+    },
+    {
+        "name": "fathom_agent",
+        "agent_key": "fathom_agent",
+        "display_name": "Fathom Agent",
+        "human_name": "Jordan Ellis",
+        "tier": 3,
+        "lane": "value",
+        "role": "Call Analyst",
+        "description": "Extracts insights from call transcripts",
+        "manages": [],
+    },
+    {
+        "name": "qbr_agent",
+        "agent_key": "qbr_agent",
+        "display_name": "QBR & Review Specialist",
+        "human_name": "Sofia Marquez",
+        "tier": 3,
+        "lane": "value",
+        "role": "QBR Specialist",
+        "description": "Generates quarterly business review content",
+        "manages": [],
+    },
+    # Tier 3: Specialists — Delivery
+    {
+        "name": "sow_agent",
+        "agent_key": "sow_agent",
+        "display_name": "Scope & SOW Specialist",
+        "human_name": "Ethan Brooks",
+        "tier": 3,
+        "lane": "delivery",
+        "role": "SOW Specialist",
+        "description": "SOW analysis, milestone tracking, scope management",
+        "manages": [],
+    },
+    {
+        "name": "deployment_intel_agent",
+        "agent_key": "deployment_intel_agent",
+        "display_name": "Deployment Intelligence Analyst",
+        "human_name": "Zara Kim",
+        "tier": 3,
+        "lane": "delivery",
+        "role": "Deployment Analyst",
+        "description": "Monitors deployment health and patterns",
+        "manages": [],
+    },
+    # Tier 4: Foundation
     {
         "name": "customer_memory",
-        "display_name": "Customer Memory Agent",
-        "description": "Builds structured customer context",
+        "agent_key": "customer_memory",
+        "display_name": "Customer Memory Manager",
+        "human_name": "Atlas",
+        "tier": 4,
         "lane": "control",
-    },
-    {
-        "name": "call_intelligence",
-        "display_name": "Call Intelligence Agent",
-        "description": "Extracts insights from call transcripts",
-        "lane": "value",
-    },
-    {
-        "name": "health_monitor",
-        "display_name": "Health Monitor Agent",
-        "description": "Calculates customer health scores",
-        "lane": "value",
-    },
-    {
-        "name": "ticket_triage",
-        "display_name": "Ticket Triage Agent",
-        "description": "Auto-classifies and prioritizes tickets",
-        "lane": "support",
-    },
-    {
-        "name": "troubleshooter",
-        "display_name": "Troubleshooter Agent",
-        "description": "Analyzes support bundles for root cause",
-        "lane": "support",
-    },
-    {
-        "name": "escalation_summary",
-        "display_name": "Escalation Summary Agent",
-        "description": "Generates escalation packages",
-        "lane": "support",
-    },
-    {
-        "name": "qbr_value",
-        "display_name": "QBR Value Agent",
-        "description": "Generates quarterly business review content",
-        "lane": "value",
-    },
-    {
-        "name": "sow_prerequisite",
-        "display_name": "SOW Prerequisite Agent",
-        "description": "Pre-deployment checklists and readiness",
-        "lane": "value",
-    },
-    {
-        "name": "deployment_intelligence",
-        "display_name": "Deployment Intelligence Agent",
-        "description": "Monitors deployment health and patterns",
-        "lane": "value",
+        "role": "Memory Manager",
+        "description": "Institutional memory, context retrieval, cross-agent knowledge",
+        "manages": [],
     },
 ]
 
 AGENT_NAMES = {a["name"] for a in AGENT_REGISTRY}
 
 
-async def _enrich_agent(agent_meta: dict, db: AsyncSession) -> AgentInfo:
-    """Enrich a static agent entry with live stats from AgentLog."""
-    name = agent_meta["name"]
+async def _batch_agent_stats(db: AsyncSession) -> dict:
+    """Fetch all agent stats in a single query instead of N+1."""
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Today's task count
-    today_result = await db.execute(
-        select(func.count())
-        .select_from(AgentLog)
-        .where(AgentLog.agent_name == name, AgentLog.created_at >= today)
-    )
-    tasks_today = today_result.scalar() or 0
-
-    # Total task count
-    total_result = await db.execute(
-        select(func.count()).select_from(AgentLog).where(AgentLog.agent_name == name)
-    )
-    tasks_total = total_result.scalar() or 0
-
-    # Average duration
-    avg_result = await db.execute(
-        select(func.avg(AgentLog.duration_ms))
-        .where(AgentLog.agent_name == name, AgentLog.duration_ms.isnot(None))
-    )
-    avg_ms = avg_result.scalar()
-    avg_response_ms = int(avg_ms) if avg_ms else None
-
-    # Success rate
-    if tasks_total > 0:
-        success_result = await db.execute(
-            select(func.count())
-            .select_from(AgentLog)
-            .where(AgentLog.agent_name == name, AgentLog.status == "completed")
+    result = await db.execute(
+        select(
+            AgentLog.agent_name,
+            func.count().label("tasks_total"),
+            func.count().filter(AgentLog.created_at >= today).label("tasks_today"),
+            func.avg(AgentLog.duration_ms).filter(AgentLog.duration_ms.isnot(None)).label("avg_ms"),
+            func.count().filter(AgentLog.status == "completed").label("success_count"),
+            func.max(AgentLog.created_at).label("last_active"),
         )
-        success_count = success_result.scalar() or 0
-        success_rate = round(success_count / tasks_total, 3)
-    else:
-        success_rate = None
-
-    # Last active
-    last_result = await db.execute(
-        select(func.max(AgentLog.created_at)).where(AgentLog.agent_name == name)
+        .group_by(AgentLog.agent_name)
     )
-    last_active = last_result.scalar()
+    rows = result.all()
+
+    stats = {}
+    for row in rows:
+        total = row.tasks_total or 0
+        stats[row.agent_name] = {
+            "tasks_today": row.tasks_today or 0,
+            "tasks_total": total,
+            "avg_response_ms": int(row.avg_ms) if row.avg_ms else None,
+            "success_rate": round((row.success_count or 0) / total, 3) if total > 0 else None,
+            "last_active": row.last_active,
+        }
+    return stats
+
+
+async def _enrich_agent(agent_meta: dict, db: AsyncSession) -> AgentInfo:
+    """Enrich a single agent with live stats (used for detail endpoint)."""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    name = agent_meta["name"]
+
+    result = await db.execute(
+        select(
+            func.count().label("tasks_total"),
+            func.count().filter(AgentLog.created_at >= today).label("tasks_today"),
+            func.avg(AgentLog.duration_ms).filter(AgentLog.duration_ms.isnot(None)).label("avg_ms"),
+            func.count().filter(AgentLog.status == "completed").label("success_count"),
+            func.max(AgentLog.created_at).label("last_active"),
+        )
+        .where(AgentLog.agent_name == name)
+    )
+    row = result.one()
+    total = row.tasks_total or 0
 
     return AgentInfo(
+        id=agent_meta.get("agent_key", name),
+        agent_key=agent_meta.get("agent_key", name),
         name=name,
         display_name=agent_meta["display_name"],
+        human_name=agent_meta.get("human_name"),
         description=agent_meta["description"],
+        tier=agent_meta.get("tier", 3),
         lane=agent_meta["lane"],
-        status="active" if tasks_today > 0 else "idle",
-        tasks_today=tasks_today,
-        tasks_total=tasks_total,
-        avg_response_ms=avg_response_ms,
-        success_rate=success_rate,
-        last_active=last_active,
+        role=agent_meta.get("role"),
+        status="active" if (row.tasks_today or 0) > 0 else "idle",
+        tasks_today=row.tasks_today or 0,
+        tasks_total=total,
+        avg_response_ms=int(row.avg_ms) if row.avg_ms else None,
+        success_rate=round((row.success_count or 0) / total, 3) if total > 0 else None,
+        last_active=row.last_active,
+        manages=agent_meta.get("manages", []),
     )
 
 
@@ -155,11 +253,32 @@ async def list_agents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all agents with live stats."""
+    """List all agents with live stats (single batch query)."""
+    stats = await _batch_agent_stats(db)
     agents = []
-    for meta in AGENT_REGISTRY:
-        info = await _enrich_agent(meta, db)
-        agents.append(info)
+    for i, meta in enumerate(AGENT_REGISTRY):
+        s = stats.get(meta["name"], {})
+        tasks_today = s.get("tasks_today", 0)
+        agents.append(
+            AgentInfo(
+                id=f"agent-{i + 1:02d}",
+                agent_key=meta.get("agent_key", meta["name"]),
+                name=meta["name"],
+                display_name=meta["display_name"],
+                human_name=meta.get("human_name"),
+                description=meta["description"],
+                tier=meta.get("tier", 3),
+                lane=meta["lane"],
+                role=meta.get("role"),
+                status="active" if tasks_today > 0 else "idle",
+                tasks_today=tasks_today,
+                tasks_total=s.get("tasks_total", 0),
+                avg_response_ms=s.get("avg_response_ms"),
+                success_rate=s.get("success_rate"),
+                last_active=s.get("last_active"),
+                manages=meta.get("manages", []),
+            )
+        )
     return AgentListResponse(agents=agents)
 
 
@@ -280,7 +399,7 @@ async def trigger_agent(
     # Map agent_name to event_type for orchestrator routing
     agent_to_event = {
         "health_monitor": "manual_health_check",
-        "call_intelligence": "zoom_call_completed",
+        "fathom_agent": "zoom_call_completed",
         "ticket_triage": "jira_ticket_created",
         "troubleshooter": "support_bundle_uploaded",
         "escalation_summary": "ticket_escalated",
@@ -354,7 +473,7 @@ async def trigger_agent(
                 agent_inst = orchestrator.get_agent(routed_agent)
                 if routed_agent == "health_monitor" and hasattr(agent_inst, "save_score"):
                     agent_inst.save_score(sync_db, body.customer_id, agent_result)
-                elif routed_agent == "call_intelligence" and hasattr(agent_inst, "save_insight"):
+                elif routed_agent == "fathom_agent" and hasattr(agent_inst, "save_insight"):
                     agent_inst.save_insight(sync_db, body.customer_id, event_dict.get("payload", {}), agent_result)
                 elif routed_agent == "troubleshooter" and hasattr(agent_inst, "save_result"):
                     ticket_id = event_dict.get("payload", {}).get("ticket_id")
@@ -382,9 +501,9 @@ async def trigger_agent(
             await manager.broadcast("event_processed", {
                 "event_id": str(event_record.id),
                 "event_type": event_type,
-                "agent": routed_agent,
-                "success": agent_result.get("success", False),
-                "customer_id": str(body.customer_id) if body.customer_id else None,
+                "routed_to": routed_agent,
+                "customer": str(body.customer_id) if body.customer_id else None,
+                "status": "completed" if agent_result.get("success") else "failed",
             })
 
             msg = f"Agent {agent_name} executed synchronously (Celery unavailable)"

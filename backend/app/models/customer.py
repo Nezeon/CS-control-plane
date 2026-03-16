@@ -19,6 +19,7 @@ class Customer(Base):
     primary_contact_name = sa.Column(sa.String(255), nullable=True)
     primary_contact_email = sa.Column(sa.String(255), nullable=True)
     cs_owner_id = sa.Column(sa.Uuid, sa.ForeignKey("users.id"), nullable=True)
+    jira_project_key = sa.Column(sa.String(20), nullable=True)  # e.g. "CS", "ACME"
     deployment_mode = sa.Column(sa.String(50), server_default="OVA")
     product_version = sa.Column(sa.String(50), nullable=True)
     integrations = sa.Column(JSONB, server_default=sa.text("'[]'::jsonb"))

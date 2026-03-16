@@ -20,14 +20,20 @@ class DashboardStats(BaseModel):
 
 
 class DashboardAgentItem(BaseModel):
+    id: str | None = None
+    agent_key: str | None = None
     name: str
     display_name: str
+    human_name: str | None = None
+    tier: int = 3
     lane: str
+    role: str | None = None
     status: str = "idle"
     current_task: str | None = None
     tasks_today: int = 0
     avg_response_ms: int | None = None
     last_active: datetime | None = None
+    manages: list[str] = []
 
 
 class DashboardEventItem(BaseModel):

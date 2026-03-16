@@ -10,11 +10,15 @@ Creates:
 - Action items for at-risk customers
 - 50 tickets (5 per customer, ~30% with troubleshoot_result)
 - 100 call insights (10 per customer)
-- 200 agent logs (all 9 agents)
+- 200 agent logs (all 13 agents)
 - 50 events (all 11 event types)
 - 15 alerts
 - 8 reports (3 weekly_digest, 3 monthly_report, 2 qbr)
 - ChromaDB embeddings for tickets and insights
+- 50 agent execution rounds (5 pipeline runs × ~10 stages)
+- 40 agent messages (5 delegation threads)
+- 30 episodic memories (ChromaDB)
+- 15 shared knowledge entries (ChromaDB)
 """
 
 import random
@@ -35,6 +39,8 @@ from app.models.health_score import HealthScore
 from app.models.report import Report
 from app.models.ticket import Ticket
 from app.models.user import User
+from app.models.agent_execution_round import AgentExecutionRound
+from app.models.agent_message import AgentMessage
 from app.utils.security import hash_password
 
 engine = create_engine(settings.SYNC_DATABASE_URL, echo=False)
@@ -63,6 +69,7 @@ CUSTOMERS = [
         "industry": "Banking",
         "tier": "enterprise",
         "cs_owner_email": "vignesh@hivepro.com",
+        "jira_project_key": "ACME",
         "target_health": 42,
         "deployment_mode": "OVA",
         "product_version": "4.2.1",
@@ -76,6 +83,7 @@ CUSTOMERS = [
         "industry": "Finance",
         "tier": "enterprise",
         "cs_owner_email": "vignesh@hivepro.com",
+        "jira_project_key": "BETA",
         "target_health": 78,
         "deployment_mode": "Cloud",
         "product_version": "4.3.0",
@@ -89,6 +97,7 @@ CUSTOMERS = [
         "industry": "Telecom",
         "tier": "enterprise",
         "cs_owner_email": "chaitanya@hivepro.com",
+        "jira_project_key": "GAMMA",
         "target_health": 55,
         "deployment_mode": "Hybrid",
         "product_version": "4.2.0",
@@ -102,6 +111,7 @@ CUSTOMERS = [
         "industry": "Healthcare",
         "tier": "mid_market",
         "cs_owner_email": "chaitanya@hivepro.com",
+        "jira_project_key": "DELTA",
         "target_health": 91,
         "deployment_mode": "Cloud",
         "product_version": "4.3.0",
@@ -115,6 +125,7 @@ CUSTOMERS = [
         "industry": "Insurance",
         "tier": "enterprise",
         "cs_owner_email": "vignesh@hivepro.com",
+        "jira_project_key": "EPSI",
         "target_health": 38,
         "deployment_mode": "OVA",
         "product_version": "4.1.5",
@@ -128,6 +139,7 @@ CUSTOMERS = [
         "industry": "Retail",
         "tier": "mid_market",
         "cs_owner_email": "chaitanya@hivepro.com",
+        "jira_project_key": "ZETA",
         "target_health": 67,
         "deployment_mode": "Cloud",
         "product_version": "4.2.1",
@@ -141,6 +153,7 @@ CUSTOMERS = [
         "industry": "Pharma",
         "tier": "enterprise",
         "cs_owner_email": "vignesh@hivepro.com",
+        "jira_project_key": "ETA",
         "target_health": 85,
         "deployment_mode": "On-Premise",
         "product_version": "4.3.0",
@@ -154,6 +167,7 @@ CUSTOMERS = [
         "industry": "Energy",
         "tier": "mid_market",
         "cs_owner_email": "chaitanya@hivepro.com",
+        "jira_project_key": "THETA",
         "target_health": 72,
         "deployment_mode": "Hybrid",
         "product_version": "4.2.0",
@@ -167,6 +181,7 @@ CUSTOMERS = [
         "industry": "Defense",
         "tier": "enterprise",
         "cs_owner_email": "vignesh@hivepro.com",
+        "jira_project_key": "IOTA",
         "target_health": 44,
         "deployment_mode": "On-Premise",
         "product_version": "4.1.5",
@@ -180,6 +195,7 @@ CUSTOMERS = [
         "industry": "Logistics",
         "tier": "smb",
         "cs_owner_email": "chaitanya@hivepro.com",
+        "jira_project_key": "KAPPA",
         "target_health": 60,
         "deployment_mode": "Cloud",
         "product_version": "4.3.0",
@@ -271,17 +287,17 @@ INSIGHT_DECISIONS = [
 ]
 
 AGENT_NAMES = [
-    "health_monitor", "call_intelligence", "ticket_triage", "customer_memory",
+    "health_monitor", "fathom_agent", "ticket_triage", "customer_memory",
     "troubleshooter", "escalation_summary", "qbr_value", "sow_prerequisite", "deployment_intelligence",
 ]
 AGENT_TYPES = {
-    "health_monitor": "value", "call_intelligence": "value", "ticket_triage": "support",
+    "health_monitor": "value", "fathom_agent": "value", "ticket_triage": "support",
     "customer_memory": "control", "troubleshooter": "support", "escalation_summary": "support",
     "qbr_value": "value", "sow_prerequisite": "delivery", "deployment_intelligence": "delivery",
 }
 EVENT_TYPES = {
     "health_monitor": "daily_health_check",
-    "call_intelligence": "fathom_recording_ready",
+    "fathom_agent": "fathom_recording_ready",
     "ticket_triage": "jira_ticket_created",
     "customer_memory": "daily_health_check",
     "troubleshooter": "support_bundle_uploaded",
@@ -364,6 +380,15 @@ def generate_factors(total_score: int) -> dict:
     return factors
 
 
+def is_seeded() -> bool:
+    """Check if the database already has seed data."""
+    with Session(engine) as session:
+        existing = session.execute(
+            select(User).where(User.email == "ayushmaan@hivepro.com")
+        ).scalar_one_or_none()
+        return existing is not None
+
+
 def seed():
     random.seed(42)
     with Session(engine) as session:
@@ -414,6 +439,7 @@ def seed():
                 product_version=c["product_version"],
                 integrations=c["integrations"],
                 known_constraints=c["known_constraints"],
+                jira_project_key=c.get("jira_project_key"),
             )
             session.add(customer)
             customer_objects.append((customer, c))
@@ -680,8 +706,8 @@ def seed():
             ("jira_ticket_updated", "jira_webhook", "ticket_triage"),
             ("ticket_escalated", "api", "escalation_summary"),
             ("support_bundle_uploaded", "api", "troubleshooter"),
-            ("zoom_call_completed", "fathom_sync", "call_intelligence"),
-            ("fathom_recording_ready", "fathom_sync", "call_intelligence"),
+            ("zoom_call_completed", "fathom_sync", "fathom_agent"),
+            ("fathom_recording_ready", "fathom_sync", "fathom_agent"),
             ("daily_health_check", "cron", "health_monitor"),
             ("manual_health_check", "manual", "health_monitor"),
             ("renewal_approaching", "cron", "qbr_value"),
@@ -951,8 +977,718 @@ def seed():
     except Exception as e:
         print(f"ChromaDB embedding failed (non-fatal): {e}")
 
+    # --- V2: Agent Execution Rounds + Messages ---
+    _seed_execution_rounds(engine)
+    _seed_agent_messages(engine)
+    _seed_episodic_memories()
+    _seed_shared_knowledge()
+    _seed_meeting_knowledge()
+
     print("\nSeed complete!")
 
 
+# ═══════════════════════════════════════════════════════════════════
+# V2 Seed Data: Agentic Architecture
+# ═══════════════════════════════════════════════════════════════════
+
+# Agent identity lookup
+AGENT_NAMES_V2 = {
+    "cso_orchestrator": "Naveen Kapoor",
+    "support_lead": "Rachel Torres",
+    "value_lead": "Damon Reeves",
+    "delivery_lead": "Priya Mehta",
+    "triage_agent": "Kai Nakamura",
+    "troubleshooter_agent": "Leo Petrov",
+    "escalation_agent": "Maya Santiago",
+    "health_monitor_agent": "Dr. Aisha Okafor",
+    "fathom_agent": "Jordan Ellis",
+    "qbr_agent": "Sofia Marquez",
+    "sow_agent": "Ethan Brooks",
+    "deployment_intel_agent": "Zara Kim",
+    "customer_memory": "Atlas",
+}
+
+AGENT_TIERS = {
+    "cso_orchestrator": 1,
+    "support_lead": 2, "value_lead": 2, "delivery_lead": 2,
+    "triage_agent": 3, "troubleshooter_agent": 3, "escalation_agent": 3,
+    "health_monitor_agent": 3, "fathom_agent": 3, "qbr_agent": 3,
+    "sow_agent": 3, "deployment_intel_agent": 3,
+    "customer_memory": 4,
+}
+
+AGENT_LANES = {
+    "cso_orchestrator": None,
+    "support_lead": "support", "value_lead": "value", "delivery_lead": "delivery",
+    "triage_agent": "support", "troubleshooter_agent": "support", "escalation_agent": "support",
+    "health_monitor_agent": "value", "fathom_agent": "value", "qbr_agent": "value",
+    "sow_agent": "delivery", "deployment_intel_agent": "delivery",
+    "customer_memory": None,
+}
+
+# Pipeline stage definitions per tier
+TIER_STAGES = {
+    1: [
+        ("Event Analysis", "perceive"),
+        ("Context Gathering", "retrieve"),
+        ("Strategic Decomposition", "think"),
+        ("Delegation", "act"),
+        ("Quality Evaluation", "quality_gate"),
+        ("Synthesis", "finalize"),
+    ],
+    2: [
+        ("Task Reception", "perceive"),
+        ("Context Retrieval", "retrieve"),
+        ("Task Planning", "think"),
+        ("Specialist Coordination", "act"),
+        ("Lane Synthesis", "finalize"),
+    ],
+    3: [
+        ("Task Perception", "perceive"),
+        ("Memory Retrieval", "retrieve"),
+        ("Analysis", "think"),
+        ("Execution", "act"),
+        ("Self-Reflection", "reflect"),
+    ],
+    4: [
+        ("Request Parsing", "perceive"),
+        ("Data Retrieval", "act"),
+    ],
+}
+
+
+def _seed_execution_rounds(engine):
+    """Create 5 sample pipeline runs (~50 total rounds)."""
+    print("\nSeeding agent execution rounds...")
+
+    # 5 pipeline runs across different tiers/agents
+    pipeline_runs = [
+        {
+            "agent_id": "cso_orchestrator",
+            "event_type": "jira_ticket_created",
+            "customer": "Acme Corp",
+        },
+        {
+            "agent_id": "support_lead",
+            "event_type": "jira_ticket_created",
+            "customer": "Acme Corp",
+        },
+        {
+            "agent_id": "triage_agent",
+            "event_type": "jira_ticket_created",
+            "customer": "Acme Corp",
+        },
+        {
+            "agent_id": "fathom_agent",
+            "event_type": "fathom_call_recorded",
+            "customer": "TechVault",
+        },
+        {
+            "agent_id": "health_monitor_agent",
+            "event_type": "cron_health_check",
+            "customer": "CyberNova",
+        },
+    ]
+
+    with Session(engine) as session:
+        # Get some event IDs and customer IDs to reference
+        events = session.execute(select(Event.id).limit(5)).scalars().all()
+        customers = session.execute(
+            select(Customer.id, Customer.name)
+        ).all()
+        customer_map = {c.name: c.id for c in customers}
+
+        round_count = 0
+        for i, run in enumerate(pipeline_runs):
+            execution_id = uuid.uuid4()
+            agent_id = run["agent_id"]
+            tier = AGENT_TIERS[agent_id]
+            stages = TIER_STAGES[tier]
+            event_id = events[i] if i < len(events) else None
+            customer_id = customer_map.get(run["customer"])
+            base_time = datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 48))
+
+            for stage_num, (stage_name, stage_type) in enumerate(stages, 1):
+                duration = random.randint(200, 3000)
+                tokens = random.randint(500, 4000)
+
+                # Build realistic tools_called for act stages
+                tools_called = []
+                if stage_type == "act":
+                    tools_called = [
+                        {
+                            "tool_name": "query_customer_db",
+                            "arguments": {"customer_id": str(customer_id) if customer_id else "cust-001"},
+                            "result_preview": f"{run['customer']}, Enterprise tier",
+                            "duration_ms": random.randint(50, 200),
+                        }
+                    ]
+                elif stage_type == "retrieve":
+                    tools_called = [
+                        {
+                            "tool_name": "search_knowledge_base",
+                            "arguments": {"query": f"recent issues {run['customer']}"},
+                            "result_preview": "3 relevant entries found",
+                            "duration_ms": random.randint(100, 400),
+                        }
+                    ]
+
+                # Metadata varies by stage type
+                metadata = {}
+                if stage_type == "retrieve":
+                    metadata = {"memory_retrieved": random.randint(1, 5)}
+                elif stage_type == "act" and tier <= 2:
+                    metadata = {"delegated_to": ["triage_agent", "troubleshooter_agent"]}
+                elif stage_type == "quality_gate":
+                    metadata = {"quality_gate_passed": True, "retry_count": 0}
+
+                status = "completed"
+                if i == 0 and stage_num == len(stages):
+                    status = "running"  # Last run still in progress
+
+                confidence = None
+                if stage_type == "reflect":
+                    confidence = round(random.uniform(0.7, 0.95), 2)
+
+                session.add(AgentExecutionRound(
+                    execution_id=execution_id,
+                    event_id=event_id,
+                    agent_id=agent_id,
+                    agent_name=AGENT_NAMES_V2[agent_id],
+                    tier=tier,
+                    stage_number=stage_num,
+                    stage_name=stage_name,
+                    lane=AGENT_LANES[agent_id],
+                    stage_type=stage_type,
+                    input_summary=f"Processing {run['event_type']} for {run['customer']}",
+                    output_summary=f"Stage {stage_name} completed — {stage_type} output generated",
+                    tools_called=tools_called,
+                    tokens_used=tokens,
+                    duration_ms=duration,
+                    confidence=confidence,
+                    status=status,
+                    metadata_=metadata,
+                    created_at=base_time + timedelta(seconds=stage_num * 5),
+                ))
+                round_count += 1
+
+        session.commit()
+        print(f"Created {round_count} execution rounds across {len(pipeline_runs)} pipeline runs")
+
+
+def _seed_agent_messages(engine):
+    """Create 5 delegation threads (~40 messages total)."""
+    print("Seeding agent messages...")
+
+    with Session(engine) as session:
+        events = session.execute(select(Event.id).limit(5)).scalars().all()
+        customers = session.execute(
+            select(Customer.id, Customer.name)
+        ).all()
+
+        msg_count = 0
+        threads = [
+            # Thread 1: Ticket triage flow (8 messages)
+            {
+                "event_idx": 0,
+                "customer": "Acme Corp",
+                "messages": [
+                    ("cso_orchestrator", "support_lead", "task_assignment", "down", 7,
+                     "New P1 ticket from Acme Corp — scan failure on subnet 10.0.1.x. Please coordinate triage and troubleshooting. SLA: 4 hours."),
+                    ("support_lead", "triage_agent", "task_assignment", "down", 7,
+                     "Incoming P1 from Acme Corp. Classify this ticket, check for similar past issues, and provide severity assessment."),
+                    ("triage_agent", "support_lead", "deliverable", "up", 5,
+                     "Classification complete. Type: scan_failure, Severity: P1-Critical. Found 3 similar tickets — all resolved by restarting scan engine. Recommend immediate troubleshooting."),
+                    ("support_lead", "troubleshooter_agent", "task_assignment", "down", 7,
+                     "P1 scan failure for Acme Corp. Triage suggests scan engine restart. Investigate root cause and provide resolution steps."),
+                    ("troubleshooter_agent", "support_lead", "deliverable", "up", 5,
+                     "Root cause identified: scan engine memory leak after v4.2.1 patch. Resolution: restart scan engine, apply hotfix KB-2024-0312. ETA: 30 minutes."),
+                    ("support_lead", "cso_orchestrator", "deliverable", "up", 5,
+                     "Ticket triaged and diagnosed. Root cause: scan engine memory leak (v4.2.1). Resolution in progress — hotfix being applied. ETA: 30 min."),
+                    ("cso_orchestrator", "support_lead", "feedback", "down", 5,
+                     "Good work. Fast turnaround on the P1. Make sure the hotfix application is tracked and customer is notified of resolution."),
+                    ("support_lead", "escalation_agent", "request", "down", 4,
+                     "Monitor Acme Corp ticket HIVE-4521 for SLA compliance. Alert me if resolution exceeds 4-hour window."),
+                ],
+            },
+            # Thread 2: Call intelligence flow (7 messages)
+            {
+                "event_idx": 1,
+                "customer": "TechVault",
+                "messages": [
+                    ("cso_orchestrator", "value_lead", "task_assignment", "down", 6,
+                     "New call recording from TechVault QBR prep meeting. Extract intelligence and flag any risks."),
+                    ("value_lead", "fathom_agent", "task_assignment", "down", 6,
+                     "Analyze TechVault QBR prep call. Extract: sentiment, action items, risk signals, competitor mentions."),
+                    ("fathom_agent", "value_lead", "deliverable", "up", 5,
+                     "Call analysis complete. Sentiment: mixed (0.45). Key risk: customer mentioned evaluating CrowdStrike for endpoint. Action items: 3 follow-ups needed. Decision: delay renewal discussion until product roadmap shared."),
+                    ("value_lead", "health_monitor_agent", "request", "sideways", 6,
+                     "TechVault showing competitor evaluation signals. Please check latest health score and flag if trending down."),
+                    ("health_monitor_agent", "value_lead", "deliverable", "sideways", 6,
+                     "TechVault health: 58 (watch zone). Down 12 points in 14 days. Factors: engagement declining, sentiment dropping. Recommend immediate attention."),
+                    ("value_lead", "cso_orchestrator", "deliverable", "up", 7,
+                     "TechVault intelligence: Mixed sentiment call, competitor evaluation (CrowdStrike), health score 58 and declining. This customer needs proactive engagement — recommend executive outreach."),
+                    ("cso_orchestrator", "value_lead", "feedback", "down", 5,
+                     "Critical finding. I'll flag this for the CS team. Please have Sofia start a QBR prep focused on competitive positioning."),
+                ],
+            },
+            # Thread 3: Health alert escalation (8 messages)
+            {
+                "event_idx": 2,
+                "customer": "CyberNova",
+                "messages": [
+                    ("cso_orchestrator", "value_lead", "task_assignment", "down", 8,
+                     "URGENT: CyberNova health score dropped to 35. Renewal in 60 days. Full health analysis and escalation assessment needed."),
+                    ("value_lead", "health_monitor_agent", "task_assignment", "down", 8,
+                     "CyberNova critical health alert. Run full analysis — what's driving the decline? Provide 30-day trend breakdown."),
+                    ("health_monitor_agent", "value_lead", "deliverable", "up", 7,
+                     "CyberNova 30-day analysis: Score dropped from 72 to 35. Primary drivers: 4 unresolved P1 tickets (resolution_rate tanked), 2 missed SLAs, engagement score zero (no calls in 3 weeks). This is a churn risk."),
+                    ("value_lead", "cso_orchestrator", "escalation", "up", 9,
+                     "ESCALATION: CyberNova is a churn risk. Health 35, down from 72. 4 unresolved P1s, 2 SLA breaches, zero engagement in 3 weeks. Renewal in 60 days. Recommend immediate executive intervention."),
+                    ("cso_orchestrator", "support_lead", "task_assignment", "down", 9,
+                     "CyberNova emergency: 4 unresolved P1 tickets need immediate attention. Get status on all 4 and create resolution plan. This is churn-critical."),
+                    ("support_lead", "troubleshooter_agent", "task_assignment", "down", 9,
+                     "CyberNova — investigate all 4 open P1 tickets. I need root cause for each and estimated resolution timeline. Priority override: drop everything else."),
+                    ("troubleshooter_agent", "support_lead", "deliverable", "up", 7,
+                     "CyberNova P1 investigation complete. 2 tickets are blocked on customer infra access (need VPN credentials). 1 is a known product bug (fix in v4.3). 1 can be resolved today with config change. Recommended: emergency call with customer IT."),
+                    ("support_lead", "cso_orchestrator", "deliverable", "up", 8,
+                     "CyberNova P1 status: 1 resolvable today, 1 awaiting product fix (v4.3), 2 blocked on customer access. Recommend emergency call to unblock VPN access and demonstrate commitment."),
+                ],
+            },
+            # Thread 4: QBR generation (9 messages)
+            {
+                "event_idx": 3,
+                "customer": "DataShield",
+                "messages": [
+                    ("cso_orchestrator", "value_lead", "task_assignment", "down", 5,
+                     "Quarterly review due for DataShield. Coordinate QBR report generation."),
+                    ("cso_orchestrator", "delivery_lead", "task_assignment", "down", 5,
+                     "DataShield QBR — need deployment status and SOW compliance for the report."),
+                    ("value_lead", "qbr_agent", "task_assignment", "down", 5,
+                     "Generate QBR report for DataShield. Include health trends, ticket summary, call insights, and recommendations."),
+                    ("value_lead", "fathom_agent", "request", "down", 4,
+                     "Pull last 3 months of call summaries for DataShield QBR."),
+                    ("delivery_lead", "deployment_intel_agent", "task_assignment", "down", 5,
+                     "DataShield QBR — provide deployment health summary and any SOW milestone updates."),
+                    ("fathom_agent", "value_lead", "deliverable", "up", 4,
+                     "DataShield call summary (Q4): 8 calls, avg sentiment 0.72, key themes: product adoption, feature requests for API integration. No competitor mentions."),
+                    ("deployment_intel_agent", "delivery_lead", "deliverable", "up", 4,
+                     "DataShield deployment: Healthy. All 3 SOW milestones on track. v4.2 deployed last month, no rollback issues. Risk: low."),
+                    ("qbr_agent", "value_lead", "deliverable", "up", 5,
+                     "QBR report generated for DataShield. Health: 78 (stable). 12 tickets (all resolved). Positive engagement trend. Recommendation: upsell API integration module."),
+                    ("value_lead", "cso_orchestrator", "deliverable", "up", 5,
+                     "DataShield QBR complete. Health stable at 78, all tickets resolved, positive engagement. Delivery on track. Upsell opportunity: API integration."),
+                ],
+            },
+            # Thread 5: Deployment risk (8 messages)
+            {
+                "event_idx": 4,
+                "customer": "SecureNet",
+                "messages": [
+                    ("cso_orchestrator", "delivery_lead", "task_assignment", "down", 7,
+                     "SecureNet just deployed v4.3 hotfix. Monitor for any issues — last deployment caused scan failures."),
+                    ("delivery_lead", "deployment_intel_agent", "task_assignment", "down", 7,
+                     "SecureNet v4.3 deployment. Run post-deployment health check and correlate with any new tickets in the last 24 hours."),
+                    ("deployment_intel_agent", "delivery_lead", "deliverable", "up", 6,
+                     "SecureNet post-deployment check: 1 new ticket (scan timeout on large subnets). Similar to pre-hotfix issue pattern. Deployment health: degraded. Recommend rollback assessment."),
+                    ("delivery_lead", "cso_orchestrator", "escalation", "up", 8,
+                     "SecureNet deployment concern: v4.3 hotfix may not have resolved the scan timeout issue. New ticket matching old pattern. Recommending support lane involvement."),
+                    ("cso_orchestrator", "support_lead", "task_assignment", "down", 8,
+                     "SecureNet: deployment team flagged recurring scan timeout after v4.3. Check the new ticket and compare to pre-hotfix tickets."),
+                    ("support_lead", "troubleshooter_agent", "task_assignment", "down", 8,
+                     "SecureNet scan timeout recurring post v4.3. Compare new ticket to HIVE-3891 and HIVE-3920. Is this the same root cause?"),
+                    ("troubleshooter_agent", "support_lead", "deliverable", "up", 6,
+                     "Compared tickets: same subnet range, same timeout threshold. Root cause is different — v4.3 fixed the memory leak but introduced a new timeout on subnets >500 hosts. Engineering ticket needed."),
+                    ("support_lead", "cso_orchestrator", "deliverable", "up", 7,
+                     "SecureNet analysis: v4.3 fixed original issue but introduced new timeout bug for large subnets. Engineering ticket required. Customer impact: moderate (2 of 12 subnets affected)."),
+                ],
+            },
+        ]
+
+        for thread_data in threads:
+            thread_id = uuid.uuid4()
+            execution_id = uuid.uuid4()
+            event_id = events[thread_data["event_idx"]] if thread_data["event_idx"] < len(events) else None
+
+            # Find customer_id
+            customer_name = thread_data["customer"]
+            customer_row = next((c for c in customers if c.name == customer_name), None)
+            customer_id = customer_row.id if customer_row else None
+
+            parent_id = None
+            for j, (from_a, to_a, msg_type, direction, priority, content) in enumerate(thread_data["messages"]):
+                msg_id = uuid.uuid4()
+                if j == 0:
+                    parent_id = None  # Thread starter has no parent
+
+                lane = AGENT_LANES.get(from_a)
+                msg = AgentMessage(
+                    id=msg_id,
+                    thread_id=thread_id,
+                    parent_id=parent_id,
+                    from_agent=from_a,
+                    from_name=AGENT_NAMES_V2[from_a],
+                    to_agent=to_a,
+                    to_name=AGENT_NAMES_V2[to_a],
+                    message_type=msg_type,
+                    direction=direction,
+                    content=content,
+                    priority=priority,
+                    event_id=event_id,
+                    execution_id=execution_id,
+                    customer_id=customer_id,
+                    status="completed" if j < len(thread_data["messages"]) - 1 else "pending",
+                    metadata_={"lane": lane, "tags": [customer_name.lower().replace(" ", "-")]},
+                )
+                session.add(msg)
+                parent_id = msg_id  # Next message references this one
+                msg_count += 1
+
+        session.commit()
+        print(f"Created {msg_count} agent messages across {len(threads)} threads")
+
+
+def _seed_episodic_memories():
+    """Seed 30 episodic memory entries in ChromaDB (~3 per agent)."""
+    print("Seeding episodic memories into ChromaDB...")
+
+    try:
+        from app.chromadb_client import episodic_memory
+
+        if episodic_memory is None:
+            print("  Skipped — episodic_memory collection not available")
+            return
+
+        memories = [
+            # Triage Agent (Kai)
+            ("triage_agent", "Kai Nakamura", "Acme Corp", "jira_ticket_created", 7,
+             "Triaged P1 scan failure for Acme Corp. Found 3 similar past tickets — all resolved by restarting scan engine. Classification confidence: 0.92. Pattern: scan engine memory leak after v4.2.1 patch."),
+            ("triage_agent", "Kai Nakamura", "TechVault", "jira_ticket_created", 5,
+             "Triaged P3 dashboard loading issue for TechVault. Low severity, likely browser cache. No similar past tickets found. Recommended basic troubleshooting steps."),
+            ("triage_agent", "Kai Nakamura", "CyberNova", "jira_ticket_created", 8,
+             "Triaged P1 authentication failure for CyberNova. Critical — blocking all scans. Similar to HIVE-2891 from 3 months ago. Escalated immediately to troubleshooting."),
+            # Troubleshooter Agent (Leo)
+            ("troubleshooter_agent", "Leo Petrov", "Acme Corp", "jira_ticket_created", 8,
+             "Root cause analysis for Acme Corp scan failure. Memory leak in scan engine v4.2.1. Resolution: restart + hotfix KB-2024-0312. Total investigation time: 15 min. Confidence: 0.94."),
+            ("troubleshooter_agent", "Leo Petrov", "SecureNet", "jira_ticket_created", 9,
+             "Complex troubleshooting for SecureNet. v4.3 hotfix introduced new timeout on subnets >500 hosts. Different root cause than original issue. Engineering ticket required. Lesson: always test with large subnet configs."),
+            ("troubleshooter_agent", "Leo Petrov", "DataShield", "jira_ticket_created", 4,
+             "Investigated DataShield report generation timeout. Simple fix — increased DB query timeout from 30s to 60s. Low complexity issue."),
+            # Health Monitor (Dr. Aisha)
+            ("health_monitor_agent", "Dr. Aisha Okafor", "CyberNova", "cron_health_check", 9,
+             "Critical health decline detected for CyberNova: 72 → 35 in 30 days. Primary drivers: 4 unresolved P1 tickets, 2 SLA breaches, zero engagement in 3 weeks. Flagged as churn risk with renewal in 60 days."),
+            ("health_monitor_agent", "Dr. Aisha Okafor", "TechVault", "cron_health_check", 7,
+             "TechVault health declining: 70 → 58 in 14 days. Engagement dropping, sentiment negative in recent call. Competitor evaluation signals detected. Recommend proactive outreach."),
+            ("health_monitor_agent", "Dr. Aisha Okafor", "DataShield", "cron_health_check", 3,
+             "DataShield routine health check. Score stable at 78. All metrics within normal ranges. No action needed."),
+            # Call Intel (Jordan)
+            ("fathom_agent", "Jordan Ellis", "TechVault", "fathom_call_recorded", 8,
+             "Analyzed TechVault QBR prep call. Mixed sentiment (0.45). Critical finding: customer evaluating CrowdStrike for endpoint. 3 action items extracted. Recommendation: share product roadmap to counter competitive threat."),
+            ("fathom_agent", "Jordan Ellis", "Acme Corp", "fathom_call_recorded", 5,
+             "Analyzed Acme Corp weekly sync. Positive sentiment (0.78). Customer satisfied with recent P1 resolution. Minor feature request for automated scan scheduling."),
+            ("fathom_agent", "Jordan Ellis", "DataShield", "fathom_call_recorded", 4,
+             "DataShield quarterly check-in. Sentiment positive (0.82). Strong product adoption. Key topic: API integration interest. Upsell opportunity flagged."),
+            # Escalation Agent (Maya)
+            ("escalation_agent", "Maya Santiago", "CyberNova", "jira_ticket_created", 9,
+             "Escalated CyberNova to executive level. 4 P1 tickets unresolved, 2 SLA breaches, renewal in 60 days. Severity: critical. Stakeholders notified. Emergency call scheduled."),
+            ("escalation_agent", "Maya Santiago", "SecureNet", "jira_ticket_created", 7,
+             "Near-escalation for SecureNet deployment issue. Held off pending troubleshooting result. Deployment risk flagged but customer impact moderate (2/12 subnets). Monitoring SLA."),
+            ("escalation_agent", "Maya Santiago", "Acme Corp", "jira_ticket_created", 5,
+             "SLA monitoring for Acme Corp P1 ticket HIVE-4521. Resolution completed within 2-hour window. No escalation needed. SLA compliance: met."),
+            # QBR Agent (Sofia)
+            ("qbr_agent", "Sofia Marquez", "DataShield", "cron_qbr_schedule", 6,
+             "Generated Q4 QBR for DataShield. Health stable at 78, 12 tickets all resolved, positive call sentiment (0.82 avg). Upsell recommendation: API integration module. Report length: 2,400 words."),
+            ("qbr_agent", "Sofia Marquez", "Acme Corp", "cron_qbr_schedule", 7,
+             "Generated Q4 QBR for Acme Corp. Health recovered to 68 after P1 resolution. Key narrative: responsive support during crisis built trust. Recommendation: proactive scan engine monitoring."),
+            ("qbr_agent", "Sofia Marquez", "TechVault", "cron_qbr_schedule", 8,
+             "Generated Q4 QBR for TechVault. Health declining — 58 and trending down. Key concern: competitive evaluation. QBR strategy: lead with product roadmap, address feature gaps."),
+            # SOW Agent (Ethan)
+            ("sow_agent", "Ethan Brooks", "DataShield", "manual_sow_request", 5,
+             "SOW review for DataShield: All 3 milestones on track. Deliverable 1 completed ahead of schedule. No scope creep detected. Next milestone due in 3 weeks."),
+            ("sow_agent", "Ethan Brooks", "SecureNet", "manual_sow_request", 7,
+             "SOW review for SecureNet: 1 of 4 milestones delayed due to deployment issues. Scope creep detected — customer requesting additional subnet coverage not in original SOW. Recommend change order."),
+            ("sow_agent", "Ethan Brooks", "CyberNova", "manual_sow_request", 6,
+             "SOW review for CyberNova: 2 of 3 milestones completed. Final milestone (API integration) blocked on customer IT resources. Deadline at risk — escalated to delivery lead."),
+            # Deployment Intel (Zara)
+            ("deployment_intel_agent", "Zara Kim", "SecureNet", "jira_deployment_event", 8,
+             "Post-deployment analysis for SecureNet v4.3. Hotfix resolved original memory leak but introduced timeout on large subnets. Correlated with 1 new ticket. Risk assessment: medium. Lesson: large subnet configs need dedicated testing."),
+            ("deployment_intel_agent", "Zara Kim", "DataShield", "jira_deployment_event", 3,
+             "DataShield v4.2 deployment. Clean deployment, no rollback needed. All health metrics stable post-deploy. Risk: low."),
+            ("deployment_intel_agent", "Zara Kim", "Acme Corp", "jira_deployment_event", 6,
+             "Acme Corp hotfix deployment for scan engine. Applied KB-2024-0312 successfully. Scan engine restarted, memory usage normalized. Monitoring for 24 hours."),
+            # Support Lead (Rachel)
+            ("support_lead", "Rachel Torres", "Acme Corp", "jira_ticket_created", 6,
+             "Coordinated P1 resolution for Acme Corp. Triage + troubleshooting completed in 90 minutes. SLA met. Team performance: excellent. Kai's pattern matching was critical for fast triage."),
+            ("support_lead", "Rachel Torres", "CyberNova", "jira_ticket_created", 9,
+             "Emergency coordination for CyberNova. 4 P1 tickets investigated. 2 blocked on customer access, 1 product bug, 1 quick fix. Escalated to orchestrator for executive intervention."),
+            # Value Lead (Damon)
+            ("value_lead", "Damon Reeves", "TechVault", "fathom_call_recorded", 8,
+             "TechVault cross-signal analysis: declining health (58), negative call sentiment (0.45), competitor evaluation detected. Coordinated call intel + health monitor for comprehensive assessment. Recommended executive outreach."),
+            ("value_lead", "Damon Reeves", "DataShield", "cron_qbr_schedule", 5,
+             "DataShield QBR coordination. Gathered data from call intel, health monitor, and delivery lane. Smooth cross-lane collaboration. Report highlights upsell opportunity."),
+            # Orchestrator (Naveen)
+            ("cso_orchestrator", "Naveen Kapoor", "CyberNova", "cron_health_check", 10,
+             "CyberNova crisis management. Delegated to value lane (health analysis) and support lane (ticket resolution). Escalation triggered. Key learning: monitor customers with >3 open P1s weekly, not daily."),
+            ("cso_orchestrator", "Naveen Kapoor", "Acme Corp", "jira_ticket_created", 6,
+             "Standard P1 routing for Acme Corp. Support lane handled efficiently — resolved in 90 minutes. Good example of smooth Tier 1→2→3→2→1 delegation flow."),
+        ]
+
+        documents = []
+        metadatas = []
+        ids = []
+
+        for agent_id, agent_name, customer, event_type, importance, content in memories:
+            exec_id = str(uuid.uuid4())
+            mem_id = f"ep-{agent_id}-{uuid.uuid4().hex[:8]}"
+            documents.append(content)
+            metadatas.append({
+                "agent_id": agent_id,
+                "agent_name": agent_name,
+                "customer_name": customer,
+                "event_type": event_type,
+                "execution_id": exec_id,
+                "importance": importance,
+                "tier": AGENT_TIERS[agent_id],
+                "lane": AGENT_LANES[agent_id] or "none",
+                "timestamp": (datetime.now(timezone.utc) - timedelta(days=random.randint(1, 30))).isoformat(),
+            })
+            ids.append(mem_id)
+
+        episodic_memory.add(documents=documents, metadatas=metadatas, ids=ids)
+        print(f"Created {len(documents)} episodic memories in ChromaDB")
+
+    except Exception as e:
+        print(f"Episodic memory seeding failed (non-fatal): {e}")
+
+
+def _seed_shared_knowledge():
+    """Seed 15 shared knowledge entries in ChromaDB (5 per lane)."""
+    print("Seeding shared knowledge into ChromaDB...")
+
+    try:
+        from app.chromadb_client import shared_knowledge
+
+        if shared_knowledge is None:
+            print("  Skipped — shared_knowledge collection not available")
+            return
+
+        entries = [
+            # Support Lane (5)
+            ("triage_agent", "Kai Nakamura", "support", "pattern", 8,
+             ["scan-failure", "memory-leak", "v4.2"],
+             "Scan engine memory leak pattern: affects v4.2.x deployments. Symptoms appear 48-72 hours after restart. Resolution: apply hotfix KB-2024-0312 and restart. Seen in 4 customers."),
+            ("troubleshooter_agent", "Leo Petrov", "support", "best_practice", 7,
+             ["troubleshooting", "subnet", "timeout"],
+             "When investigating scan timeouts, always check subnet size first. Subnets >500 hosts have different timeout behavior in v4.3+. Test with customer's actual subnet configuration."),
+            ("escalation_agent", "Maya Santiago", "support", "pattern", 9,
+             ["escalation", "churn-signal", "sla"],
+             "Escalation trigger pattern: 3+ unresolved P1 tickets + declining health score + upcoming renewal = immediate executive escalation. Don't wait for SLA breach — proactive escalation saves accounts."),
+            ("triage_agent", "Kai Nakamura", "support", "customer_pattern", 6,
+             ["authentication", "ldap", "enterprise"],
+             "Enterprise customers with LDAP integration frequently report authentication timeouts during peak hours. Root cause: connection pool exhaustion. Standard fix: increase pool size in config."),
+            ("troubleshooter_agent", "Leo Petrov", "support", "best_practice", 7,
+             ["deployment", "rollback", "testing"],
+             "Post-deployment verification checklist: 1) Run scan on small subnet 2) Check memory usage after 1 hour 3) Verify large subnet timeout settings 4) Compare ticket volume to pre-deployment baseline."),
+
+            # Value Lane (5)
+            ("fathom_agent", "Jordan Ellis", "value", "pattern", 8,
+             ["competitor", "churn-signal", "sentiment"],
+             "Competitor mention correlation: when a customer mentions evaluating competitors in a call, health score drops an average of 15 points in the following 2 weeks. Immediate proactive outreach recommended."),
+            ("health_monitor_agent", "Dr. Aisha Okafor", "value", "pattern", 9,
+             ["health", "churn", "engagement"],
+             "Churn prediction signal: zero engagement (no calls, no portal logins) for 3+ weeks combined with health score <50 predicts churn with 78% accuracy. Flag immediately for executive outreach."),
+            ("qbr_agent", "Sofia Marquez", "value", "best_practice", 6,
+             ["qbr", "narrative", "upsell"],
+             "QBR structure that drives renewals: 1) Start with wins (resolved tickets, health improvements) 2) Acknowledge challenges honestly 3) Show product roadmap alignment with their needs 4) End with expansion opportunity."),
+            ("health_monitor_agent", "Dr. Aisha Okafor", "value", "customer_pattern", 7,
+             ["health", "seasonal", "year-end"],
+             "Seasonal pattern: customer engagement and health scores typically dip in December (holidays) and recover in January. Don't over-react to December dips — compare YoY instead."),
+            ("fathom_agent", "Jordan Ellis", "value", "pattern", 7,
+             ["sentiment", "tone-shift", "risk"],
+             "Tone shift detection: when a previously positive customer's sentiment drops below 0.5, there's usually an underlying issue not yet reported as a ticket. Proactive check-in within 48 hours prevents escalation."),
+
+            # Delivery Lane (5)
+            ("deployment_intel_agent", "Zara Kim", "delivery", "pattern", 8,
+             ["deployment", "risk", "correlation"],
+             "Deployment-ticket correlation: 60% of P1 tickets are filed within 72 hours of a deployment. Always cross-reference new tickets with recent deployment events before troubleshooting."),
+            ("sow_agent", "Ethan Brooks", "delivery", "best_practice", 7,
+             ["sow", "scope-creep", "change-order"],
+             "Scope creep early detection: if a customer requests 2+ items not in the original SOW within a single quarter, proactively propose a change order rather than absorbing the work. Prevents timeline slippage."),
+            ("deployment_intel_agent", "Zara Kim", "delivery", "customer_pattern", 6,
+             ["deployment", "enterprise", "scheduling"],
+             "Enterprise deployment pattern: customers with >10 subnets should schedule deployments during maintenance windows only. Weekend deployments for large environments reduce risk of cascading scan failures."),
+            ("sow_agent", "Ethan Brooks", "delivery", "pattern", 7,
+             ["milestone", "delay", "dependency"],
+             "Milestone delay pattern: 80% of SOW delays are caused by customer IT resource availability, not HivePro execution. Build 2-week buffer into any milestone that requires customer-side infrastructure changes."),
+            ("deployment_intel_agent", "Zara Kim", "delivery", "best_practice", 8,
+             ["hotfix", "regression", "testing"],
+             "Hotfix regression prevention: after applying any hotfix, run the full regression suite on a staging environment that mirrors the customer's subnet topology. Quick hotfixes that skip staging cause 40% of re-opened tickets."),
+        ]
+
+        documents = []
+        metadatas = []
+        ids = []
+
+        for agent_id, agent_name, lane, knowledge_type, importance, tags, content in entries:
+            entry_id = f"sk-{lane}-{uuid.uuid4().hex[:8]}"
+            documents.append(content)
+            metadatas.append({
+                "agent_id": agent_id,
+                "agent_name": agent_name,
+                "lane": lane,
+                "tags": ",".join(tags),  # ChromaDB metadata values must be str/int/float
+                "importance": importance,
+                "knowledge_type": knowledge_type,
+                "timestamp": (datetime.now(timezone.utc) - timedelta(days=random.randint(1, 60))).isoformat(),
+            })
+            ids.append(entry_id)
+
+        shared_knowledge.add(documents=documents, metadatas=metadatas, ids=ids)
+        print(f"Created {len(documents)} shared knowledge entries in ChromaDB")
+
+    except Exception as e:
+        print(f"Shared knowledge seeding failed (non-fatal): {e}")
+
+
+def _seed_meeting_knowledge():
+    """Seed the meeting_knowledge ChromaDB collection from external data files."""
+    import json
+    from pathlib import Path
+
+    print("\n--- Meeting Knowledge (ChromaDB) ---")
+
+    data_dir = Path(__file__).parent.parent.parent / "data" / "meeting_knowledge"
+    metadata_path = data_dir / "vector_metadata.json"
+    chunks_path = data_dir / "chunks_for_lookup.json"
+
+    if not metadata_path.exists() or not chunks_path.exists():
+        print("Meeting knowledge data files not found — skipping")
+        print(f"  Expected: {metadata_path}")
+        return
+
+    try:
+        from app.chromadb_client import meeting_knowledge
+
+        if meeting_knowledge is None:
+            print("ChromaDB meeting_knowledge collection unavailable — skipping")
+            return
+
+        # Check if already seeded
+        existing = meeting_knowledge.count()
+        if existing > 0:
+            print(f"Meeting knowledge already has {existing} entries — skipping")
+            return
+
+        with open(chunks_path) as f:
+            chunks_data = json.load(f)
+
+        with open(metadata_path) as f:
+            metadata_list = json.load(f)
+
+        # Build a lookup from chunk_id to content
+        chunk_content_map = {}
+        for chunk in chunks_data:
+            chunk_content_map[chunk["chunk_id"]] = chunk.get("content", "")
+
+        documents = []
+        metadatas = []
+        ids = []
+
+        for meta in metadata_list:
+            chunk_id = meta["chunk_id"]
+            content = chunk_content_map.get(chunk_id, "")
+            if not content:
+                continue
+
+            documents.append(content)
+            metadatas.append({
+                "meeting_id": str(meta.get("meeting_id", "")),
+                "meeting_title": meta.get("meeting_title", ""),
+                "category": meta.get("category", ""),
+                "section_type": meta.get("section_type", ""),
+            })
+            ids.append(str(chunk_id))
+
+        # ChromaDB batch size limit is ~41666, but let's batch at 100 for safety
+        batch_size = 100
+        for i in range(0, len(documents), batch_size):
+            end = min(i + batch_size, len(documents))
+            meeting_knowledge.add(
+                documents=documents[i:end],
+                metadatas=metadatas[i:end],
+                ids=ids[i:end],
+            )
+
+        print(f"Created {len(documents)} meeting knowledge chunks in ChromaDB")
+        print(f"  Categories: {len(set(m['category'] for m in metadatas))}")
+        print(f"  Meetings: {len(set(m['meeting_id'] for m in metadatas))}")
+
+    except Exception as e:
+        print(f"Meeting knowledge seeding failed (non-fatal): {e}")
+
+
+def clear():
+    """Remove all seeded demo data, preserving user accounts."""
+    # Delete order: children first to respect foreign key constraints
+    TABLES_TO_CLEAR = [
+        "chat_messages",
+        "chat_conversations",
+        "agent_messages",
+        "agent_execution_rounds",
+        "action_items",
+        "alerts",
+        "reports",
+        "agent_logs",
+        "call_insights",
+        "tickets",
+        "health_scores",
+        "events",
+        "customers",
+    ]
+
+    with Session(engine) as session:
+        counts = {}
+        for table in TABLES_TO_CLEAR:
+            result = session.execute(text(f"DELETE FROM {table}"))
+            counts[table] = result.rowcount
+        session.commit()
+
+        print("Cleared database tables:")
+        for table, count in counts.items():
+            print(f"  {table}: {count} rows deleted")
+
+    # Clear ChromaDB collections
+    try:
+        import chromadb
+        client = chromadb.PersistentClient(path="./chromadb_data")
+        for coll_name in ["ticket_embeddings", "insight_embeddings", "meeting_knowledge", "episodic_memory", "shared_knowledge"]:
+            try:
+                coll = client.get_collection(coll_name)
+                count = coll.count()
+                client.delete_collection(coll_name)
+                print(f"  ChromaDB {coll_name}: {count} entries deleted")
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"ChromaDB cleanup failed (non-fatal): {e}")
+
+    print("\nDone. User accounts preserved. Database is now clean.")
+
+
 if __name__ == "__main__":
-    seed()
+    import sys
+
+    args = sys.argv[1:]
+
+    if "--clear" in args:
+        clear()
+    elif "--demo" in args:
+        seed()
+    else:
+        print("Usage: python -m app.utils.seed [--demo | --clear]")
+        print()
+        print("  --demo   Populate database with demo/seed data")
+        print("  --clear  Remove all seeded data (preserves user accounts)")
+        print()
+        print("No flag provided. Seed data is only for demo mode.")
+        print("Run with --demo to seed, or --clear to wipe existing data.")

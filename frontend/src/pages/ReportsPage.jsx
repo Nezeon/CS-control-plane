@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { Users, HeartPulse, CheckCircle, Phone, X } from 'lucide-react'
 import useReportStore from '../stores/reportStore'
 import HealthHeatmap from '../components/reports/HealthHeatmap'
@@ -63,22 +63,22 @@ export default function ReportsPage() {
   ], [kpis])
 
   return (
-    <motion.div data-testid="reports-page" className="h-full flex flex-col" variants={stagger} initial="hidden" animate="show">
-      <motion.div variants={fadeUp} className="pb-4">
+    <m.div data-testid="reports-page" className="h-full flex flex-col" variants={stagger} initial="hidden" animate="show">
+      <m.div variants={fadeUp} className="pb-4">
         <h1 className="text-xl font-semibold text-text-primary">Analytics</h1>
-      </motion.div>
+      </m.div>
 
       <div className="flex-1 overflow-y-auto pb-8">
         {/* KPIs */}
-        <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <m.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           {kpiCards.map((kpi) => (
             <KpiCard key={kpi.label} icon={kpi.icon} value={kpi.value} label={kpi.label} suffix={kpi.suffix || ''} trend={kpi.trend} />
           ))}
-        </motion.div>
+        </m.div>
 
         {/* Cross filter pill */}
         {crossFilter && (
-          <motion.div className="flex justify-center mb-4" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+          <m.div className="flex justify-center mb-4" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
             <button
               onClick={clearCrossFilter}
               data-testid="cross-filter-pill"
@@ -88,22 +88,22 @@ export default function ReportsPage() {
               <span className="font-semibold">{crossFilter.type} = {crossFilter.value}</span>
               <X className="w-3 h-3 ml-1" />
             </button>
-          </motion.div>
+          </m.div>
         )}
 
         {/* Charts */}
-        <motion.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <m.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <HealthHeatmap data={healthTrend} isLoading={isLoading} />
           <TicketVelocity data={ticketVolume} isLoading={isLoading} />
           <SentimentRiver data={sentimentStream} isLoading={isLoading} />
           <AgentThroughput data={agentPerformance} isLoading={isLoading} />
-        </motion.div>
+        </m.div>
 
         {/* Reports */}
-        <motion.div variants={fadeUp}>
+        <m.div variants={fadeUp}>
           <ReportList reports={reports} isLoading={reportsLoading} />
-        </motion.div>
+        </m.div>
       </div>
-    </motion.div>
+    </m.div>
   )
 }

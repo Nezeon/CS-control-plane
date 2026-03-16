@@ -35,6 +35,14 @@ const useInsightStore = create((set, get) => ({
   fetchInsights: async () => {
     const { search, customer_id, sentiment, date_from, date_to } = get()
     set({ isLoading: true, error: null })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedInsights } = await import('../data/insights')
+        set({ insights: seedInsights, total: seedInsights.length, isLoading: false })
+      } catch { set({ isLoading: false }) }
+      return
+    }
     try {
       const params = {}
       if (search) params.search = search
@@ -46,36 +54,42 @@ const useInsightStore = create((set, get) => ({
       const items = data.insights || data.items || data || []
       set({ insights: items, total: data.total ?? items.length, isLoading: false })
     } catch (err) {
-      console.error('[Insight] Failed to fetch insights, loading seed data:', err)
-      try {
-        const { seedInsights } = await import('../data/insights')
-        set({ insights: seedInsights, total: seedInsights.length, isLoading: false })
-      } catch {
-        set({ isLoading: false, error: err.message })
-      }
+      console.error('[Insight] Failed to fetch insights:', err)
+      set({ isLoading: false, error: err.message })
     }
   },
 
   fetchSentimentTrend: async (days = 30, customerId = null) => {
     set({ trendLoading: true })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedSentimentTrend } = await import('../data/insights')
+        set({ sentimentTrend: seedSentimentTrend, trendLoading: false })
+      } catch { set({ trendLoading: false }) }
+      return
+    }
     try {
       const params = { days }
       if (customerId) params.customer_id = customerId
       const { data } = await insightApi.getSentimentTrend(params)
       set({ sentimentTrend: data.trend || data || [], trendLoading: false })
     } catch (err) {
-      console.error('[Insight] Failed to fetch sentiment trend, loading seed data:', err)
-      try {
-        const { seedSentimentTrend } = await import('../data/insights')
-        set({ sentimentTrend: seedSentimentTrend, trendLoading: false })
-      } catch {
-        set({ trendLoading: false })
-      }
+      console.error('[Insight] Failed to fetch sentiment trend:', err)
+      set({ trendLoading: false })
     }
   },
 
   fetchActionItems: async (status = null) => {
     set({ actionsLoading: true })
+    const token = localStorage.getItem('access_token')
+    if (token === 'demo-token') {
+      try {
+        const { seedActionItems } = await import('../data/insights')
+        set({ actionItems: seedActionItems, actionSummary: { pending: seedActionItems.length, overdue: 0, completed: 0 }, actionsLoading: false })
+      } catch { set({ actionsLoading: false }) }
+      return
+    }
     try {
       const params = {}
       if (status) params.status = status
@@ -88,23 +102,13 @@ const useInsightStore = create((set, get) => ({
       }
       set({ actionItems: items, actionSummary: summary, actionsLoading: false })
     } catch (err) {
-      console.error('[Insight] Failed to fetch action items, loading seed data:', err)
-      try {
-        const { seedActionItems } = await import('../data/insights')
-        const items = seedActionItems
-        const summary = {
-          pending: items.filter((i) => i.status === 'pending').length,
-          overdue: items.filter((i) => i.status === 'pending' && i.due_date && new Date(i.due_date) < new Date()).length,
-          completed: items.filter((i) => i.status === 'completed').length,
-        }
-        set({ actionItems: items, actionSummary: summary, actionsLoading: false })
-      } catch {
-        set({ actionsLoading: false })
-      }
+      console.error('[Insight] Failed to fetch action items:', err)
+      set({ actionsLoading: false })
     }
   },
 
   toggleActionItem: async (id, newStatus) => {
+    if (!id) return
     set((state) => ({
       actionItems: state.actionItems.map((i) => (i.id === id ? { ...i, status: newStatus } : i)),
       actionSummary: {

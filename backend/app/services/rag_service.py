@@ -17,7 +17,8 @@ class RAGService:
 
     def embed_ticket(self, ticket_id: str, text: str, metadata: dict) -> None:
         """Embed a ticket's text into ticket_embeddings collection."""
-        # Ensure metadata values are primitive types for ChromaDB
+        if not self.ticket_collection:
+            return
         clean_meta = {k: str(v) if v is not None else "" for k, v in metadata.items()}
         self.ticket_collection.upsert(
             ids=[ticket_id],
@@ -27,6 +28,8 @@ class RAGService:
 
     def embed_insight(self, insight_id: str, text: str, metadata: dict) -> None:
         """Embed a call insight's summary into call_insight_embeddings."""
+        if not self.insight_collection:
+            return
         clean_meta = {k: str(v) if v is not None else "" for k, v in metadata.items()}
         self.insight_collection.upsert(
             ids=[insight_id],
@@ -36,6 +39,8 @@ class RAGService:
 
     def embed_problem(self, problem_id: str, text: str, metadata: dict) -> None:
         """Embed a known problem/resolution into problem_embeddings."""
+        if not self.problem_collection:
+            return
         clean_meta = {k: str(v) if v is not None else "" for k, v in metadata.items()}
         self.problem_collection.upsert(
             ids=[problem_id],
@@ -47,6 +52,8 @@ class RAGService:
         self, query_text: str, n_results: int = 5, where: dict = None
     ) -> list[dict]:
         """Find similar tickets by text similarity."""
+        if not self.ticket_collection:
+            return []
         try:
             kwargs = {"query_texts": [query_text], "n_results": n_results}
             if where:
@@ -61,6 +68,8 @@ class RAGService:
         self, query_text: str, n_results: int = 5, where: dict = None
     ) -> list[dict]:
         """Find similar call insights."""
+        if not self.insight_collection:
+            return []
         try:
             kwargs = {"query_texts": [query_text], "n_results": n_results}
             if where:
@@ -75,6 +84,8 @@ class RAGService:
         self, query_text: str, n_results: int = 5
     ) -> list[dict]:
         """Find similar known problems/resolutions."""
+        if not self.problem_collection:
+            return []
         try:
             results = self.problem_collection.query(
                 query_texts=[query_text], n_results=n_results

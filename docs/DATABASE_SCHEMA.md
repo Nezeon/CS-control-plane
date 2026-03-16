@@ -1,9 +1,11 @@
 # HivePro CS Control Plane — Database Schema
 
-**Database:** PostgreSQL 16  
-**ORM:** SQLAlchemy 2.0 + Alembic  
-**Vector DB:** ChromaDB (separate, for RAG)  
-**Date:** February 27, 2026
+**Database:** PostgreSQL 16
+**ORM:** SQLAlchemy 2.0 + Alembic
+**Vector DB:** ChromaDB (RAG + agent memory)
+**Config:** YAML (agent profiles, org structure, pipelines, workflows)
+**Version:** 3.0 (Agentic Architecture)
+**Date:** March 2, 2026
 
 ---
 
@@ -24,17 +26,33 @@ customers ◄─── tickets
   ├── call_insights
   │     └── action_items (polymorphic source)
   ├── agent_logs
-  ├── events
+  ├── events ◄──── agent_execution_rounds (via event_id)
   ├── alerts
   └── reports
 
-agent_logs ── standalone (references customer optionally)
-events ── standalone (references customer optionally)
+agent_execution_rounds ── tracks pipeline stages per agent run
+  └── links to: events (trigger), agent_logs (legacy compat)
+
+agent_messages ── inter-agent communication board
+  └── links to: events (context), threads (self-referencing parent_id)
+
+ChromaDB (external):
+  ├── ticket_embeddings       (existing — RAG for similar tickets)
+  ├── call_insight_embeddings (existing — RAG for similar calls)
+  ├── problem_embeddings      (existing — cross-customer patterns)
+  ├── episodic_memory         (NEW — per-agent execution diary)
+  └── shared_knowledge        (NEW — lane-scoped knowledge pool)
+
+YAML Config (on disk):
+  ├── config/org_structure.yaml     (hierarchy, lanes, reporting lines)
+  ├── config/agent_profiles.yaml    (13 agent personalities, traits, tools)
+  ├── config/pipeline.yaml          (tier-specific pipeline stages)
+  └── config/workflows.yaml         (event-type workflow definitions)
 ```
 
 ---
 
-## 2. Tables
+## 2. Existing Tables (10) — Unchanged
 
 ### 2.1 users
 
@@ -147,12 +165,12 @@ CREATE INDEX idx_health_risk_level ON health_scores(risk_level);
 - `factors`: JSON object with 6 weighted factors:
   ```json
   {
-    "ticket_severity": 18,    // max 20 — based on open ticket severity
-    "sla_compliance": 15,     // max 20 — % tickets within SLA
-    "sentiment": 12,          // max 15 — avg recent call sentiment
-    "engagement": 10,         // max 15 — call frequency, response times
-    "deployment_health": 15,  // max 15 — scan success rate, uptime
-    "resolution_rate": 12     // max 15 — % tickets resolved within target
+    "ticket_severity": 18,
+    "sla_compliance": 15,
+    "sentiment": 12,
+    "engagement": 10,
+    "deployment_health": 15,
+    "resolution_rate": 12
   }
   ```
 - `risk_flags`: JSON array of string descriptions, e.g. `["3 overdue tickets", "Negative sentiment trend"]`
@@ -223,9 +241,9 @@ CREATE INDEX idx_tickets_sla ON tickets(sla_deadline) WHERE status NOT IN ('reso
 - `escalation_summary` JSONB shape:
   ```json
   {
-    "technical_summary": "Scan failure due to network segmentation. Scanner cannot reach subnet 10.0.1.x across VLAN boundary.",
+    "technical_summary": "Scan failure due to network segmentation.",
     "evidence": ["Packet capture shows ICMP unreachable", "Scanner logs show timeout after 30s"],
-    "reproduction_steps": ["1. Navigate to scan config", "2. Run scan against 10.0.1.x", "3. Observe timeout at 30s"],
+    "reproduction_steps": ["1. Navigate to scan config", "2. Run scan against 10.0.1.x", "3. Observe timeout"],
     "customer_update_draft": "We've identified the issue as a network configuration matter...",
     "escalated_at": "2026-02-27T15:00:00Z"
   }
@@ -271,7 +289,7 @@ CREATE INDEX idx_insights_sentiment ON call_insights(sentiment);
 
 ### 2.6 agent_logs
 
-Activity logs from all 10 AI agents.
+Activity logs from all AI agents (legacy — kept for backward compat; new pipeline runs use `agent_execution_rounds`).
 
 ```sql
 CREATE TABLE agent_logs (
@@ -296,10 +314,8 @@ CREATE INDEX idx_agent_logs_status ON agent_logs(status);
 ```
 
 **Field Notes:**
-- `agent_name`: cs_orchestrator, customer_memory, call_intelligence, health_monitor, qbr_value, ticket_triage, troubleshooter, escalation_summary, sow_agent, deployment_intel
-- `agent_type`: control, value, support, delivery
-- `event_type`: task_started, task_completed, task_failed, routing, alert_generated
-- `trigger_event`: jira_ticket_created, zoom_call_completed, daily_health_check, renewal_90_days, new_enterprise_customer, support_bundle_uploaded, ticket_escalated, manual_trigger
+- `agent_name`: cso_orchestrator, customer_memory, call_intel_agent, health_monitor_agent, qbr_agent, triage_agent, troubleshooter_agent, escalation_agent, sow_agent, deployment_intel_agent, support_lead, value_lead, delivery_lead
+- `agent_type`: tier_1, tier_2, tier_3, tier_4
 - `status`: running, completed, failed, escalated
 
 ---
@@ -327,7 +343,7 @@ CREATE INDEX idx_events_date ON events(created_at DESC);
 ```
 
 **Field Notes:**
-- `source`: jira_webhook, fathom, cron, manual, slack
+- `source`: jira_webhook, fathom_webhook, fathom_sync, cron, manual, slack
 - `status`: pending, processing, completed, failed
 
 ---
@@ -391,7 +407,7 @@ CREATE INDEX idx_actions_deadline ON action_items(deadline) WHERE status = 'pend
 ```
 
 **Field Notes:**
-- `source_type`: call_insight, ticket, alert, manual
+- `source_type`: call_insight, ticket, alert, manual, agent_pipeline
 - `source_id`: UUID of the source record
 - `status`: pending, in_progress, completed, overdue
 
@@ -425,48 +441,368 @@ CREATE INDEX idx_reports_date ON reports(generated_at DESC);
 
 ---
 
-## 3. ChromaDB Collections
+## 3. New Tables (Agentic Architecture)
 
-ChromaDB is used for RAG (Retrieval-Augmented Generation) — semantic similarity search across customer data.
+### 3.1 agent_execution_rounds
 
-### Collection: ticket_embeddings
+Tracks every stage of every pipeline run for full observability. Each row is one pipeline stage execution.
+
+```sql
+CREATE TABLE agent_execution_rounds (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    execution_id    UUID NOT NULL,
+    event_id        UUID REFERENCES events(id),
+    agent_id        VARCHAR(100) NOT NULL,
+    agent_name      VARCHAR(255),
+    tier            INTEGER NOT NULL CHECK (tier >= 1 AND tier <= 4),
+    stage_number    INTEGER NOT NULL,
+    stage_name      VARCHAR(100) NOT NULL,
+    lane            VARCHAR(50),
+    stage_type      VARCHAR(50) NOT NULL,
+    input_summary   TEXT,
+    output_summary  TEXT,
+    tools_called    JSONB DEFAULT '[]',
+    tokens_used     INTEGER,
+    duration_ms     INTEGER,
+    confidence      FLOAT,
+    status          VARCHAR(20) NOT NULL DEFAULT 'running',
+    error_message   TEXT,
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_exec_rounds_execution ON agent_execution_rounds(execution_id);
+CREATE INDEX idx_exec_rounds_agent ON agent_execution_rounds(agent_id, created_at DESC);
+CREATE INDEX idx_exec_rounds_event ON agent_execution_rounds(event_id);
+CREATE INDEX idx_exec_rounds_status ON agent_execution_rounds(status);
+CREATE INDEX idx_exec_rounds_tier ON agent_execution_rounds(tier);
+CREATE INDEX idx_exec_rounds_lane ON agent_execution_rounds(lane);
+```
+
+**Field Notes:**
+- `execution_id`: Groups all stages of one pipeline run. Multiple rows share the same execution_id.
+- `agent_id`: One of the 13 agent IDs (e.g., `cso_orchestrator`, `triage_agent`, `customer_memory`)
+- `agent_name`: Human-readable name (e.g., "Naveen Kapoor", "Kai Nakamura")
+- `tier`: 1 (Supervisor), 2 (Lane Lead), 3 (Specialist), 4 (Foundation)
+- `lane`: support, value, delivery, or NULL (for T1 Supervisor and T4 Foundation). Denormalized from agent profile for fast filtering.
+- `stage_name`: Human-readable stage label (e.g., "Event Analysis", "Memory Retrieval")
+- `stage_type`: perceive, retrieve, think, act, reflect, quality_gate, finalize
+- `tools_called` JSONB shape:
+  ```json
+  [
+    {
+      "tool_name": "query_customer_db",
+      "arguments": {"customer_id": "cust-001"},
+      "result_preview": "Acme Corp, Enterprise, health=42",
+      "duration_ms": 120
+    },
+    {
+      "tool_name": "search_similar_tickets",
+      "arguments": {"query": "scan failure subnet"},
+      "result_preview": "3 similar tickets found",
+      "duration_ms": 340
+    }
+  ]
+  ```
+- `confidence`: 0.0-1.0, set during `reflect` stage
+- `status`: running, completed, failed, skipped
+- `metadata` JSONB shape (extensible):
+  ```json
+  {
+    "memory_retrieved": 3,
+    "delegated_to": ["triage_agent", "troubleshooter_agent"],
+    "quality_gate_passed": true,
+    "retry_count": 0
+  }
+  ```
+
+**Execution-level computed fields (used by API, not stored):**
+The API returns execution-level aggregates that are computed at query time from individual rounds sharing the same `execution_id`:
+- `started_at` = `MIN(created_at)` across all rounds for that execution_id
+- `completed_at` = `MAX(created_at)` WHERE status IN ('completed','failed') for that execution_id
+- `total_duration_ms` = `SUM(duration_ms)` across all rounds
+- `total_tokens` = `SUM(tokens_used)` across all rounds
+- `stages_completed` = `COUNT(*)` WHERE status = 'completed'
+- `stages_total` = `COUNT(*)` for that execution_id
+- `pipeline_type` = derived from tier: 1→"tier_1_supervisor", 2→"tier_2_lead", 3→"tier_3_specialist", 4→"tier_4_foundation"
+
+---
+
+### 3.2 agent_messages
+
+Inter-agent communication board. Every message between agents in the hierarchy.
+
+```sql
+CREATE TABLE agent_messages (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    thread_id       UUID,
+    parent_id       UUID REFERENCES agent_messages(id),
+    from_agent      VARCHAR(100) NOT NULL,
+    from_name       VARCHAR(255),
+    to_agent        VARCHAR(100) NOT NULL,
+    to_name         VARCHAR(255),
+    message_type    VARCHAR(50) NOT NULL,
+    direction       VARCHAR(20) NOT NULL,
+    content         TEXT NOT NULL,
+    priority        INTEGER DEFAULT 5 CHECK (priority >= 1 AND priority <= 10),
+    event_id        UUID REFERENCES events(id),
+    execution_id    UUID,
+    customer_id     UUID REFERENCES customers(id),
+    status          VARCHAR(20) DEFAULT 'pending',
+    metadata        JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_messages_thread ON agent_messages(thread_id);
+CREATE INDEX idx_messages_from ON agent_messages(from_agent, created_at DESC);
+CREATE INDEX idx_messages_to ON agent_messages(to_agent, created_at DESC);
+CREATE INDEX idx_messages_type ON agent_messages(message_type);
+CREATE INDEX idx_messages_event ON agent_messages(event_id);
+CREATE INDEX idx_messages_execution ON agent_messages(execution_id);
+CREATE INDEX idx_messages_status ON agent_messages(status);
+```
+
+**Field Notes:**
+- `thread_id`: Groups related messages. The first message (usually a task_assignment) sets thread_id = own id. Replies inherit the thread_id.
+- `parent_id`: Direct parent message in the thread (self-referencing FK). NULL for thread-starters.
+- `from_agent` / `to_agent`: Agent IDs (e.g., `support_lead`, `triage_agent`)
+- `from_name` / `to_name`: Human-readable names (e.g., "Rachel Torres", "Kai Nakamura")
+- `message_type`: task_assignment, deliverable, request, escalation, feedback
+- `direction`: down (Lead → Specialist), up (Specialist → Lead), sideways (peer → peer)
+- `priority`: 1 (lowest) to 10 (highest). Escalations default to 8+.
+- `status`: pending, read, completed
+- `metadata` JSONB shape (extensible):
+  ```json
+  {
+    "lane": "support",
+    "tags": ["urgent", "acme-corp"],
+    "requires_response": true,
+    "response_deadline": "2026-03-02T16:00:00Z"
+  }
+  ```
+
+---
+
+## 4. ChromaDB Collections
+
+ChromaDB is used for RAG (Retrieval-Augmented Generation) and the agent memory system.
+
+### 4.1 ticket_embeddings (existing)
 - **Purpose:** Find similar past tickets for triage and troubleshooting
 - **Document:** Ticket summary + description + resolution (if resolved)
 - **Metadata:** `{ customer_id, jira_id, ticket_type, severity, status, resolved_at }`
 - **Embedding model:** Claude embeddings or all-MiniLM-L6-v2
 
-### Collection: call_insight_embeddings
+### 4.2 call_insight_embeddings (existing)
 - **Purpose:** Find similar call discussions, surface patterns
 - **Document:** Call summary + key topics + risks + decisions
 - **Metadata:** `{ customer_id, call_date, sentiment, sentiment_score }`
 
-### Collection: problem_embeddings
+### 4.3 problem_embeddings (existing)
 - **Purpose:** Cross-customer pattern matching for issues and resolutions
 - **Document:** Problem description + root cause + resolution steps
 - **Metadata:** `{ customer_id, customer_name, ticket_id, resolved_in_days, resolved_at }`
 
-### RAG Query Pattern
+### 4.4 episodic_memory (NEW)
+
+Per-agent diary of past pipeline executions. Enables agents to recall similar past work.
+
+- **Purpose:** "Have I handled a similar situation before?" — semantic search over an agent's past experiences
+- **Document:** Execution summary including task, key findings, output, reflection, and confidence score
+- **Metadata:**
+  ```json
+  {
+    "agent_id": "triage_agent",
+    "agent_name": "Kai Nakamura",
+    "customer_id": "cust-001",
+    "customer_name": "Acme Corp",
+    "event_type": "jira_ticket_created",
+    "execution_id": "exec-uuid",
+    "importance": 7,
+    "tier": 3,
+    "lane": "support",
+    "timestamp": "2026-03-01T14:23:02Z"
+  }
+  ```
+- **Embedding model:** Same as other collections
+- **Retrieval strategy:** Tri-factor scoring:
+  - **35% relevance** — Cosine similarity of query to document embedding
+  - **25% recency** — Exponential decay: `exp(-days_old / 30)` (half-life ~30 days)
+  - **40% importance** — Normalized importance score (1-10 scale)
+  - Final score: `0.35 * relevance + 0.25 * recency + 0.40 * (importance / 10)`
+- **Consolidation rule:** When an agent has 25+ episodic memories, summarize the oldest 15 into 3 high-level insight entries with importance=9. Keeps active memory manageable.
+
+### 4.5 shared_knowledge (NEW)
+
+Lane-scoped knowledge pool. Agents publish findings that benefit the whole lane or organization.
+
+- **Purpose:** "What does the team know about this?" — semantic search over collectively discovered patterns, best practices, and customer insights
+- **Document:** Knowledge entry (finding, pattern, best practice, customer-specific insight)
+- **Metadata:**
+  ```json
+  {
+    "agent_id": "call_intel_agent",
+    "agent_name": "Jordan Ellis",
+    "lane": "value",
+    "tags": ["sentiment-analysis", "competitor-mention", "acme-corp"],
+    "importance": 8,
+    "knowledge_type": "customer_pattern",
+    "customer_id": "cust-001",
+    "timestamp": "2026-03-01T15:00:00Z"
+  }
+  ```
+- **Lane namespaces:** Entries are tagged with a lane (support, value, delivery, global). Agents query their own lane by default, but cross-lane queries are supported.
+  - `support`: Ticket patterns, escalation triggers, SLA insights
+  - `value`: Health correlations, sentiment patterns, churn signals, QBR themes
+  - `delivery`: Deployment risks, SOW patterns, prerequisite findings
+  - `global`: Cross-cutting insights published by any agent for broad visibility
+- **Query patterns:**
+  ```python
+  # Query own lane knowledge
+  results = shared_knowledge.query(
+      query_texts=["customer health declining after deployment"],
+      where={"lane": "value"},
+      n_results=5
+  )
+  # Cross-lane query
+  results = shared_knowledge.query(
+      query_texts=["deployment caused scan failures"],
+      where={"lane": {"$in": ["delivery", "support"]}},
+      n_results=5
+  )
+  ```
+
+### RAG Query Pattern (existing collections)
 ```python
 # Example: Find similar issues for a new ticket
 results = collection.query(
     query_texts=["Scan failure on subnet 10.0.1.x"],
     n_results=5,
-    where={"status": "resolved"}  # Only show resolved issues
+    where={"status": "resolved"}
 )
 ```
 
 ---
 
-## 4. Alembic Migration Strategy
+## 5. YAML Configuration Schemas
 
-**Initial migration:** Create all tables in one migration file.
+These files live at `backend/config/` and are loaded at application startup by the ProfileLoader.
 
-**Naming convention:** `{revision_id}_{description}.py`
+### 5.1 org_structure.yaml
 
-**Commands:**
+Defines the 4-tier hierarchy, 3 lanes, and communication rules.
+
+```yaml
+# Schema shape:
+organization:
+  name: string                    # "HivePro CS Control Plane"
+  description: string
+
+  hierarchy:
+    tier_1:
+      name: string                # "Supervisor"
+      agents: [agent_id, ...]     # ["cso_orchestrator"]
+      description: string
+    tier_2:
+      name: string                # "Lane Leads"
+      agents: [agent_id, ...]     # ["support_lead", "value_lead", "delivery_lead"]
+      description: string
+    tier_3:
+      name: string                # "Specialists"
+      agents: [agent_id, ...]     # [8 specialist agent_ids]
+      description: string
+    tier_4:
+      name: string                # "Foundation"
+      agents: [agent_id, ...]     # ["customer_memory"]
+      description: string
+
+  lanes:
+    support:
+      lead: agent_id              # "support_lead"
+      specialists: [agent_id, ...]
+      focus: string
+    value:
+      lead: agent_id              # "value_lead"
+      specialists: [agent_id, ...]
+      focus: string
+    delivery:
+      lead: agent_id              # "delivery_lead"
+      specialists: [agent_id, ...]
+      focus: string
+
+  communication_rules: [string, ...]  # Human-readable rules
+```
+
+### 5.2 agent_profiles.yaml
+
+Defines all 13 agent profiles with personality, tools, and traits.
+
+```yaml
+# Schema shape (per agent):
+<agent_id>:
+  name: string                    # "Naveen Kapoor"
+  codename: string                # "CS Orchestrator"
+  tier: integer                   # 1-4
+  lane: string | null             # "support", "value", "delivery", or null
+  role: string                    # "CS Manager"
+  personality: |                  # Multi-line personality description
+    ...
+  system_instruction: |           # Multi-line system prompt for Claude
+    ...
+  traits: [string, ...]           # ["strategic_oversight", "quality_evaluation", ...]
+  tools: [string, ...]            # ["query_customer_db", "search_knowledge_base", ...]
+  expertise: [string, ...]        # Areas of expertise
+  quirks: [string, ...]           # Character-defining behaviors
+  reports_to: agent_id | null     # Reporting line
+  manages: [agent_id, ...]        # Direct reports (for Tier 1 and Tier 2)
+```
+
+### 5.3 pipeline.yaml
+
+Defines tier-specific pipeline stage configurations.
+
+```yaml
+# Schema shape:
+pipelines:
+  <pipeline_name>:                # e.g., "tier_1_supervisor"
+    description: string
+    max_rounds: integer           # Safety limit on pipeline iterations
+    stages:
+      - name: string              # Human-readable stage label
+        type: string              # perceive | retrieve | think | act | reflect | quality_gate | finalize
+        description: string       # What this stage does
+        max_iterations: integer   # (quality_gate only) Max rework loops
+        iterate_from: string      # (quality_gate only) Stage name to loop back to
+```
+
+### 5.4 workflows.yaml
+
+Defines how different event types route through the hierarchy.
+
+```yaml
+# Schema shape:
+workflows:
+  <workflow_name>:                # e.g., "ticket_workflow"
+    trigger_events: [string, ...] # ["jira_ticket_created"]
+    description: string
+    steps:
+      - agent: agent_id           # Who handles this step
+        action: string            # What they do
+        delegates_to: [agent_id, ...]  # Optional: who they delegate to
+        condition: string         # Optional: when to execute this step
+```
+
+---
+
+## 6. Alembic Migration Strategy
+
+**Existing tables:** Already migrated. No changes needed.
+
+**New tables migration:** Create a single migration file for both new tables:
+
 ```bash
-# Generate migration
-alembic revision --autogenerate -m "description"
+# Generate migration for new tables
+alembic revision --autogenerate -m "add_agent_execution_rounds_and_messages"
 
 # Run migrations
 alembic upgrade head
@@ -474,6 +810,11 @@ alembic upgrade head
 # Rollback
 alembic downgrade -1
 ```
+
+**Migration should include:**
+1. `agent_execution_rounds` table with all columns, indexes, and constraints
+2. `agent_messages` table with all columns, indexes, constraints, and self-referencing FK
+3. `updated_at` trigger is NOT needed for these tables (they are append-only / status-update only)
 
 **Important:** Always include `updated_at` trigger for tables that track updates:
 ```sql
@@ -485,7 +826,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply to relevant tables
+-- Applied to: customers, tickets, users
 CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON customers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -497,7 +838,7 @@ CREATE TRIGGER set_updated_at
 
 ---
 
-## 5. Seed Data Summary
+## 7. Seed Data Summary
 
 The seed script (`app/utils/seed.py`) should create:
 
@@ -508,10 +849,14 @@ The seed script (`app/utils/seed.py`) should create:
 | Health Scores | 300 | 30 days × 10 customers |
 | Tickets | 50 | Mix of types, severities, statuses |
 | Call Insights | 100 | Realistic summaries with action items |
-| Agent Logs | 200 | Activity across all 10 agents |
+| Agent Logs | 200 | Activity across all 13 agents |
 | Events | 150 | Various event types |
 | Alerts | 15 | Across at-risk customers |
 | Action Items | 30 | From calls and tickets |
 | Reports | 8 | 4 weekly + 2 monthly + 2 QBR |
+| **Execution Rounds** | **50** | **5 sample pipeline runs × ~10 stages each, across different tiers** |
+| **Agent Messages** | **40** | **Sample delegation chains: 5 complete threads showing Tier 1 → 2 → 3 → 2 → 1 flow** |
+| **Episodic Memories** | **30** | **3 per specialist agent × ~10 agents — sample past execution summaries in ChromaDB** |
+| **Shared Knowledge** | **15** | **5 per lane (support, value, delivery) — sample knowledge entries in ChromaDB** |
 
 **Run:** `python -m app.utils.seed`

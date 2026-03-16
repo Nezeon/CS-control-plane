@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { formatTime, getEventTypeColor } from '../../utils/formatters'
 
 export default function EventPulseItem({ event, isNew = false }) {
@@ -7,7 +7,7 @@ export default function EventPulseItem({ event, isNew = false }) {
   const dotColor = getEventTypeColor(event.event_type)
 
   return (
-    <motion.div
+    <m.div
       data-testid="event-pulse-item"
       initial={isNew ? { opacity: 0, y: -8 } : false}
       animate={{ opacity: 1, y: 0 }}
@@ -32,6 +32,6 @@ export default function EventPulseItem({ event, isNew = false }) {
           {event.customer_name}
         </span>
       )}
-    </motion.div>
+    </m.div>
   )
 }

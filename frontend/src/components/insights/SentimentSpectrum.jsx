@@ -3,11 +3,13 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import { formatDate } from '../../utils/formatters'
 
+const EMPTY_ARRAY = []
+
 /* ─── Custom tooltip ─── */
 function SpectrumTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const val = payload[0].value
-  const color = val > 0.2 ? '#22C55E' : val < -0.2 ? '#EF4444' : '#71717A'
+  const color = val > 0.2 ? '#00E5A0' : val < -0.2 ? '#FF5C5C' : '#5C5C72'
 
   return (
     <div className="bg-bg-elevated rounded-lg px-3 py-2 border border-border text-xs">
@@ -19,7 +21,7 @@ function SpectrumTooltip({ active, payload, label }) {
   )
 }
 
-export default function SentimentSpectrum({ data = [], isLoading = false, onPointClick }) {
+export default function SentimentSpectrum({ data = EMPTY_ARRAY, isLoading = false, onPointClick }) {
   const chartData = useMemo(() => {
     return data.map((d) => ({
       date: d.date || d.day,
@@ -78,17 +80,17 @@ export default function SentimentSpectrum({ data = [], isLoading = false, onPoin
         >
           <defs>
             <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#22C55E" stopOpacity={0.4} />
-              <stop offset="45%" stopColor="#22C55E" stopOpacity={0.05} />
-              <stop offset="55%" stopColor="#EF4444" stopOpacity={0.05} />
-              <stop offset="100%" stopColor="#EF4444" stopOpacity={0.4} />
+              <stop offset="0%" stopColor="#00E5A0" stopOpacity={0.4} />
+              <stop offset="45%" stopColor="#00E5A0" stopOpacity={0.05} />
+              <stop offset="55%" stopColor="#FF5C5C" stopOpacity={0.05} />
+              <stop offset="100%" stopColor="#FF5C5C" stopOpacity={0.4} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="date"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#52525B', fontSize: 10, fontFamily: '"JetBrains Mono"' }}
+            tick={{ fill: '#5C5C72', fontSize: 10, fontFamily: '"JetBrains Mono"' }}
             tickFormatter={(d) => {
               const date = new Date(d)
               return `${date.getMonth() + 1}/${date.getDate()}`
@@ -99,7 +101,7 @@ export default function SentimentSpectrum({ data = [], isLoading = false, onPoin
             domain={[-1, 1]}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: '#52525B', fontSize: 10, fontFamily: '"JetBrains Mono"' }}
+            tick={{ fill: '#5C5C72', fontSize: 10, fontFamily: '"JetBrains Mono"' }}
             tickFormatter={(v) => v.toFixed(1)}
             ticks={[-1, -0.5, 0, 0.5, 1]}
           />
@@ -117,13 +119,13 @@ export default function SentimentSpectrum({ data = [], isLoading = false, onPoin
           <Area
             type="monotone"
             dataKey="score"
-            stroke="#6366F1"
+            stroke="#7C5CFC"
             strokeWidth={2}
             fill="url(#sentimentGradient)"
             dot={false}
             activeDot={{
               r: 5,
-              stroke: '#6366F1',
+              stroke: '#7C5CFC',
               strokeWidth: 2,
               fill: '#09090B',
             }}

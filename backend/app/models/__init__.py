@@ -8,6 +8,10 @@ from app.models.event import Event
 from app.models.alert import Alert
 from app.models.action_item import ActionItem
 from app.models.report import Report
+from app.models.agent_execution_round import AgentExecutionRound
+from app.models.agent_message import AgentMessage
+from app.models.chat_conversation import ChatConversation
+from app.models.chat_message import ChatMessage
 
 __all__ = [
     "User",
@@ -20,4 +24,8 @@ __all__ = [
     "Alert",
     "ActionItem",
     "Report",
+    "AgentExecutionRound",
+    "AgentMessage",
+    "ChatConversation",
+    "ChatMessage",
 ]

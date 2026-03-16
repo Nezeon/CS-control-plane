@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import LoadingSkeleton from '../shared/LoadingSkeleton'
 import StatusIndicator from '../shared/StatusIndicator'
 import { formatTime, getEventTypeColor } from '../../utils/formatters'
@@ -38,7 +38,7 @@ export default function ReasoningLog({ logs = [], isLoading = false }) {
       <div className="p-3 flex flex-col gap-1">
         <AnimatePresence initial={false}>
           {logs.map((log, i) => (
-            <motion.div
+            <m.div
               key={log.id || i}
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
@@ -84,7 +84,7 @@ export default function ReasoningLog({ logs = [], isLoading = false }) {
                     : `${(log.duration_ms / 1000).toFixed(1)}s`}
                 </span>
               )}
-            </motion.div>
+            </m.div>
           ))}
         </AnimatePresence>
       </div>

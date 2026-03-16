@@ -1,89 +1,75 @@
+"""
+SOW & Prerequisite Agent — Tier 3 Specialist (Delivery Lane).
+
+Generates pre-deployment checklists and SOW validation.
+Reports to: Priya Mehta (delivery_lead)
+Traits: deadline_tracking, risk_assessment
+"""
+
 import logging
 
+from app.agents.agent_factory import AgentFactory
 from app.agents.base_agent import BaseAgent
-from app.services import claude_service
 
-logger = logging.getLogger("agents.sow_prerequisite")
-
-SOW_SYSTEM_PROMPT = """You are a SOW & Prerequisite Agent for a cybersecurity SaaS company (HivePro).
-Analyze the customer's deployment configuration and generate a pre-deployment checklist.
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "prerequisites": [
-    {"item": "<prerequisite>", "category": "<network|security|infrastructure|access>", "critical": <true|false>}
-  ],
-  "integration_checklist": [
-    {"integration": "<integration name>", "steps": ["<step 1>", "<step 2>"], "estimated_hours": <float>}
-  ],
-  "network_requirements": {
-    "ports": ["<port/protocol>"],
-    "bandwidth": "<minimum bandwidth>",
-    "connectivity": "<connectivity requirements>"
-  },
-  "security_requirements": ["<requirement 1>", "<requirement 2>"],
-  "estimated_deployment_timeline": {
-    "total_days": <int>,
-    "phases": [
-      {"phase": "<phase name>", "days": <int>, "description": "<what happens>"}
-    ]
-  },
-  "risk_assessment": [
-    {"risk": "<risk description>", "severity": "<high|medium|low>", "mitigation": "<mitigation strategy>"}
-  ],
-  "recommended_deployment_plan": "<paragraph with deployment approach>",
-  "reasoning": "<2-3 sentence explanation>"
-}"""
+logger = logging.getLogger("agents.sow")
 
 
 class SOWAgent(BaseAgent):
     """Generates pre-deployment checklists and SOW validation."""
 
-    agent_name = "sow_prerequisite"
-    agent_type = "delivery"
+    agent_id = "sow_prerequisite"
 
-    def execute(self, event: dict, customer_memory: dict) -> dict:
-        customer = customer_memory.get("customer", {})
+    def perceive(self, task: dict) -> dict:
+        customer = task.get("customer_memory", {}).get("customer", {})
         if not customer.get("name"):
-            return {
-                "success": False,
-                "output": {"error": "No customer context available"},
-                "reasoning_summary": "Customer memory is empty.",
-            }
+            raise ValueError("No customer context available")
 
+        self.memory.set_context("customer_name", customer.get("name"))
+        self.memory.set_context("deployment_mode", customer.get("deployment_mode"))
+        self.memory.set_context("integrations", customer.get("integrations", []))
+        return task
+
+    def retrieve(self, task: dict) -> dict:
+        customer_name = task.get("customer_name", "unknown")
+        context = self.memory.assemble_context(
+            f"deployment prerequisites for {customer_name}"
+        )
+        context["customer_memory"] = task.get("customer_memory", {})
+        return context
+
+    def think(self, task: dict, context: dict) -> dict:
+        customer = context.get("customer_memory", {}).get("customer", {})
         user_message = self._build_prompt(customer)
 
-        response = claude_service.generate_sync(
-            system_prompt=SOW_SYSTEM_PROMPT,
-            user_message=user_message,
-            max_tokens=4000,
-            temperature=0.2,
-        )
+        # Enrich with episodic memory
+        episodic = context.get("episodic", [])
+        if episodic:
+            user_message += "\n\n## Past Deployment Experience\n"
+            for mem in episodic[:3]:
+                user_message += f"- {mem.get('text', '')[:200]}\n"
 
-        if "error" in response:
-            return {
-                "success": False,
-                "output": response,
-                "reasoning_summary": f"Claude API error: {response.get('detail', response.get('error'))}",
-            }
+        trait_ctx = task.get("_trait_context", "")
+        if trait_ctx:
+            user_message += f"\n\n## Agent Guidance\n{trait_ctx}"
 
-        parsed = claude_service.parse_json_response(response["content"])
-        if "error" in parsed and parsed["error"] == "parse_failed":
-            return {
-                "success": False,
-                "output": {"error": "Failed to parse response", "raw": response["content"][:500]},
-                "reasoning_summary": "Claude returned unparseable response.",
-            }
+        user_message = self._prepend_brief(user_message, task)
+        response = self._call_claude(user_message, max_tokens=4000, temperature=0.2)
+        return self._parse_claude(response)
 
+    def act(self, task: dict, thinking: dict) -> dict:
+        if "error" in thinking:
+            return {"success": False, **thinking}
         return {
             "success": True,
-            "output": parsed,
-            "reasoning_summary": parsed.get("reasoning", "SOW prerequisites generated."),
+            **thinking,
+            "reasoning_summary": thinking.get("reasoning", "SOW prerequisites generated."),
         }
+
+    # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_prompt(self, customer: dict) -> str:
         parts = [
-            f"## New Enterprise Customer Deployment",
+            "## New Enterprise Customer Deployment",
             f"Customer: {customer.get('name', 'Unknown')}",
             f"Industry: {customer.get('industry', 'N/A')}",
             f"Tier: {customer.get('tier', 'N/A')}",
@@ -102,10 +88,7 @@ class SOWAgent(BaseAgent):
         else:
             parts.append("  None specified")
 
-        parts.extend([
-            "",
-            "## Known Constraints",
-        ])
+        parts.extend(["", "## Known Constraints"])
         constraints = customer.get("known_constraints", [])
         if constraints:
             for c in constraints:
@@ -114,3 +97,6 @@ class SOWAgent(BaseAgent):
             parts.append("  None specified")
 
         return "\n".join(parts)
+
+
+AgentFactory.register("sow_prerequisite", SOWAgent)

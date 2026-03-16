@@ -1,8 +1,8 @@
-import { useEffect, useCallback, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { m } from 'framer-motion'
 import { Search, Phone, AlertTriangle } from 'lucide-react'
 import useInsightStore from '../stores/insightStore'
-import SentimentSpectrum from '../components/insights/SentimentSpectrum'
+const SentimentSpectrum = lazy(() => import('../components/insights/SentimentSpectrum'))
 import InsightCard from '../components/insights/InsightCard'
 import ActionTracker from '../components/insights/ActionTracker'
 import LoadingSkeleton from '../components/shared/LoadingSkeleton'
@@ -102,7 +102,9 @@ export default function InsightsPage() {
       <div className="flex-1 overflow-y-auto pb-6">
         {/* Sentiment chart */}
         <div className="mb-4">
-          <SentimentSpectrum data={sentimentTrend} isLoading={trendLoading} />
+          <Suspense fallback={<LoadingSkeleton variant="chart" />}>
+            <SentimentSpectrum data={sentimentTrend} isLoading={trendLoading} />
+          </Suspense>
         </div>
 
         {/* Two columns: cards + action tracker */}
@@ -120,9 +122,9 @@ export default function InsightsPage() {
                 </div>
               </div>
             ) : (
-              <motion.div className="space-y-2">
+              <m.div className="space-y-2">
                 {insights.map((insight, i) => (
-                  <motion.div
+                  <m.div
                     key={insight.id || i}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -134,9 +136,9 @@ export default function InsightsPage() {
                       onToggleExpand={setExpandedInsightId}
                       onToggleAction={toggleActionItem}
                     />
-                  </motion.div>
+                  </m.div>
                 ))}
-              </motion.div>
+              </m.div>
             )}
           </div>
 

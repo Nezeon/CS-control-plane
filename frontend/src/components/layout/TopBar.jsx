@@ -9,10 +9,15 @@ import { getInitials } from '../../utils/formatters'
 const ROUTE_NAMES = {
   '/': 'Dashboard',
   '/customers': 'Customers',
-  '/agents': 'Agents',
-  '/insights': 'Insights',
+  '/agents': 'AI Agents',
+  '/conversations': 'Conversations',
+  '/pipelines': 'Pipelines',
+  '/knowledge': 'Knowledge',
   '/tickets': 'Tickets',
-  '/reports': 'Analytics',
+  '/calls': 'Calls',
+  '/alerts': 'Alerts',
+  '/workflows': 'Workflows',
+  '/analytics': 'Analytics',
   '/settings': 'Settings',
 }
 

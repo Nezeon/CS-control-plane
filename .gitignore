@@ -37,9 +37,11 @@ Thumbs.db
 
 # Claude Code
 .claude/
+tmpclaude*
 
-# Docker volumes
-pgdata/
+# Temp / scratch
+tmp/
+customers_tmp.json
 
 # Testing
 .coverage

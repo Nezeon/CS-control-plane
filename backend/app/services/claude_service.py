@@ -58,6 +58,70 @@ class ClaudeService:
             logger.error(f"Claude API error: {e}")
             return {"error": "api_call_failed", "detail": str(e)}
 
+    def generate_fast_sync(
+        self,
+        system_prompt: str,
+        user_message: str,
+        max_tokens: int = 2048,
+        temperature: float = 0.3,
+    ) -> dict:
+        """
+        Fast Claude call using Haiku for interactive chat.
+        Same interface as generate_sync() but uses CLAUDE_FAST_MODEL.
+        """
+        if self.client is None:
+            return {
+                "error": "api_key_missing",
+                "detail": "ANTHROPIC_API_KEY is not set in environment",
+            }
+
+        try:
+            response = self.client.messages.create(
+                model=settings.CLAUDE_FAST_MODEL,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+            content = response.content[0].text
+            return {
+                "content": content,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "model": response.model,
+            }
+        except Exception as e:
+            logger.error(f"Claude Fast API error: {e}")
+            return {"error": "api_call_failed", "detail": str(e)}
+
+    def call_claude(
+        self,
+        system: str,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.3,
+    ):
+        """
+        Call Claude API with full tool_use support.
+        Returns the raw Anthropic Message object (with .content blocks).
+        Raises on error (caller handles).
+        """
+        if self.client is None:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set in environment")
+
+        kwargs = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": system,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        return self.client.messages.create(**kwargs)
+
     def parse_json_response(self, content: str) -> dict:
         """
         Extract JSON from Claude's response.

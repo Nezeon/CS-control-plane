@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, m } from 'framer-motion'
 import HealthRing from '../shared/HealthRing'
 
 export default function QuickIntelPanel({ customer }) {
@@ -8,7 +8,7 @@ export default function QuickIntelPanel({ customer }) {
   return (
     <AnimatePresence>
       {customer && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
@@ -31,7 +31,7 @@ export default function QuickIntelPanel({ customer }) {
               View
             </button>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   )

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { ArrowUpDown, Bot } from 'lucide-react'
 import SeverityMarker from '../shared/SeverityMarker'
 import { getSeverityColor, formatRelativeTime, getInitials } from '../../utils/formatters'
 
+const EMPTY_ARRAY = []
+
 /* ─── SLA countdown hook ─── */
 function useSlaCountdown(slaDeadline) {
-  const [remaining, setRemaining] = useState('—')
-  const [urgency, setUrgency] = useState('normal')
+  const [sla, setSla] = useState({ remaining: '—', urgency: 'normal' })
 
   useEffect(() => {
     if (!slaDeadline) return
@@ -15,28 +16,27 @@ function useSlaCountdown(slaDeadline) {
     function update() {
       const diff = new Date(slaDeadline).getTime() - Date.now()
       if (diff <= 0) {
-        setRemaining('BREACHED')
-        setUrgency('breached')
+        setSla({ remaining: 'BREACHED', urgency: 'breached' })
         return
       }
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
       const s = Math.floor((diff % 60000) / 1000)
-      if (h > 4) { setRemaining(`${h}h ${m}m`); setUrgency('normal') }
-      else if (h > 1) { setRemaining(`${h}h ${m}m`); setUrgency('warning') }
-      else { setRemaining(`${m}m ${s}s`); setUrgency('critical') }
+      if (h > 4) { setSla({ remaining: `${h}h ${m}m`, urgency: 'normal' }) }
+      else if (h > 1) { setSla({ remaining: `${h}h ${m}m`, urgency: 'warning' }) }
+      else { setSla({ remaining: `${m}m ${s}s`, urgency: 'critical' }) }
     }
     update()
     const id = setInterval(update, 1000)
     return () => clearInterval(id)
   }, [slaDeadline])
 
-  return { remaining, urgency }
+  return sla
 }
 
 function SlaCell({ deadline }) {
   const { remaining, urgency } = useSlaCountdown(deadline)
-  const colorMap = { normal: '#71717A', warning: '#EAB308', critical: '#EF4444', breached: '#EF4444' }
+  const colorMap = { normal: '#5C5C72', warning: '#FFB547', critical: '#FF5C5C', breached: '#FF5C5C' }
 
   return (
     <span
@@ -64,10 +64,10 @@ function SortHeader({ label, field, currentSort, currentOrder, onSort }) {
 }
 
 function StatusText({ status }) {
-  const color = status === 'resolved' || status === 'closed' ? '#22C55E'
-    : status === 'in_progress' ? '#6366F1'
-    : status === 'waiting' ? '#EAB308'
-    : '#71717A'
+  const color = status === 'resolved' || status === 'closed' ? '#00E5A0'
+    : status === 'in_progress' ? '#7C5CFC'
+    : status === 'waiting' ? '#FFB547'
+    : '#5C5C72'
 
   return (
     <span className="flex items-center gap-1.5">
@@ -77,7 +77,7 @@ function StatusText({ status }) {
   )
 }
 
-export default function WarroomTable({ tickets = [], sortBy, sortOrder, onSort, onTicketClick }) {
+export default function WarroomTable({ tickets = EMPTY_ARRAY, sortBy, sortOrder, onSort, onTicketClick }) {
   return (
     <div className="card overflow-hidden" data-testid="warroom-table">
       <div className="overflow-x-auto scrollbar-thin">
@@ -104,7 +104,7 @@ export default function WarroomTable({ tickets = [], sortBy, sortOrder, onSort, 
               tickets.map((ticket, i) => {
                 const isTriaged = ticket.has_triage_result || ticket._justTriaged
                 return (
-                  <motion.tr
+                  <m.tr
                     key={ticket.id || i}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -155,7 +155,7 @@ export default function WarroomTable({ tickets = [], sortBy, sortOrder, onSort, 
                         <Bot className="w-3.5 h-3.5 text-accent" />
                       )}
                     </td>
-                  </motion.tr>
+                  </m.tr>
                 )
               })
             )}

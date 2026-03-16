@@ -168,6 +168,10 @@ class EventService:
                         })
                     elif customer_id and agent_name == "health_monitor" and hasattr(agent, "save_score"):
                         agent.save_score(sync_db, customer_id, result)
+                    elif agent_name == "triage_agent" and hasattr(agent, "save_result"):
+                        ticket_id = payload.get("ticket_id")
+                        if ticket_id:
+                            agent.save_result(sync_db, ticket_id, result)
                     elif agent_name == "troubleshooter" and hasattr(agent, "save_result"):
                         ticket_id = payload.get("ticket_id")
                         if ticket_id:

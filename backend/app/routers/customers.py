@@ -6,7 +6,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user
 from app.models.action_item import ActionItem
 from app.models.call_insight import CallInsight
 from app.models.customer import Customer
@@ -86,7 +85,6 @@ async def list_customers(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     latest_health = _build_latest_health_subquery()
     open_tickets = _build_open_ticket_count_subquery()
@@ -200,7 +198,6 @@ async def list_customers(
 async def get_customer(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     # Get customer with owner
     result = await db.execute(
@@ -301,7 +298,6 @@ async def get_health_history(
     customer_id: UUID,
     days: int = Query(default=30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     # Verify customer exists
     cust_result = await db.execute(
@@ -338,7 +334,6 @@ async def get_customer_tickets(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     # Count
     count_result = await db.execute(
@@ -406,7 +401,6 @@ async def get_customer_insights(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     count_result = await db.execute(
         select(func.count())
@@ -436,7 +430,6 @@ async def get_customer_insights(
 async def get_customer_action_items(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(ActionItem, User)
@@ -475,7 +468,6 @@ async def get_customer_action_items(
 async def get_similar_issues(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Find similar issues using RAG vector search on recent tickets."""
     from app.services import rag_service
@@ -524,7 +516,6 @@ async def get_similar_issues(
 async def create_customer(
     body: CustomerCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     customer = Customer(
         name=body.name,
@@ -568,7 +559,6 @@ async def update_customer(
     customer_id: UUID,
     body: CustomerUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(select(Customer).where(Customer.id == customer_id))
     customer = result.scalar_one_or_none()
@@ -608,7 +598,6 @@ async def update_customer(
 async def get_customer_memory(
     customer_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Get the full Customer Memory JSON for a customer."""
     from app.database import get_sync_session
@@ -650,7 +639,6 @@ async def update_customer_memory(
     customer_id: UUID,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Update specific Customer Memory fields (safe fields only)."""
     result = await db.execute(select(Customer).where(Customer.id == customer_id))

@@ -148,12 +148,12 @@ class SupportLead(BaseAgent):
                 result["was_reworked"] = True
                 result["rework_feedback"] = validation.get("feedback", "")
 
-            # Check for auto-escalation (low confidence)
+            # Check for auto-escalation (low confidence < 70% per ARCHITECTURE.md)
             reflection = result.get("reflection", {})
             if isinstance(reflection, dict):
                 confidence = reflection.get("confidence", 1.0)
                 should_escalate = reflection.get("should_escalate", False)
-                if should_escalate or confidence < 0.4:
+                if should_escalate or confidence < 0.7:
                     escalation_reason = reflection.get("escalation_reason", f"Low confidence ({confidence:.0%})")
                     logger.warning(f"[support_lead] Auto-escalation for {spec_key}: {escalation_reason}")
                     self._broadcast_delegation("delegation:auto_escalation", {
@@ -163,6 +163,23 @@ class SupportLead(BaseAgent):
                         "reason": escalation_reason,
                     })
                     result["was_escalated"] = True
+
+                    # Actually invoke escalation agent if not already running
+                    if "escalation" not in specialist_names and AgentFactory.is_registered("escalation_summary"):
+                        try:
+                            esc_agent = AgentFactory.create("escalation_summary")
+                            esc_task = {
+                                **task,
+                                "prior_outputs": specialist_outputs,
+                                "escalation_reason": escalation_reason,
+                            }
+                            esc_result = esc_agent.run(
+                                self._current_db, esc_task, task.get("customer_memory")
+                            )
+                            specialist_outputs["escalation"] = esc_result
+                            logger.info(f"[support_lead] Escalation agent invoked, success={esc_result.get('success')}")
+                        except Exception as esc_err:
+                            logger.error(f"[support_lead] Escalation agent failed: {esc_err}")
 
             specialist_outputs[spec_key] = result
             logger.info(f"[support_lead] {spec_key} -> success={result.get('success')}")

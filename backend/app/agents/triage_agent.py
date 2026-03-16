@@ -89,6 +89,17 @@ class TicketTriageAgent(BaseAgent):
             "reasoning_summary": thinking.get("reasoning", "Ticket triaged."),
         }
 
+    # ── DB Save ──────────────────────────────────────────────────────
+
+    def save_result(self, db_session, ticket_id, result: dict) -> None:
+        """Save triage result to the ticket's JSONB field."""
+        from app.models.ticket import Ticket
+
+        ticket = db_session.query(Ticket).filter(Ticket.id == ticket_id).first()
+        if ticket:
+            ticket.triage_result = result.get("output", result)
+            db_session.commit()
+
     # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_prompt(
@@ -130,6 +141,21 @@ class TicketTriageAgent(BaseAgent):
                 )
         else:
             parts.append("\n## No similar past tickets found in vector database.")
+
+        parts.extend([
+            "",
+            "## Required Output Format",
+            "Return a JSON object with these fields:",
+            "- category: one of [Deployment, Scan, Connector, Performance, UI, Integration]",
+            "- severity: one of [P0, P1, P2, P3] (P0=critical, P1=high, P2=medium, P3=low)",
+            "- suggested_action: specific next step for the support engineer",
+            "- potential_root_cause: your best assessment of the root cause",
+            "- confidence: float 0.0-1.0 indicating classification confidence",
+            "- diagnostics: {required_script: string or null, kb_article: string or null}",
+            "- similar_ticket_ids: list of similar ticket IDs from the vector search above",
+            '- email_draft: a brief customer acknowledgment email (2-3 sentences confirming receipt, category, and expected next steps). Start with "Dear [Customer],"',
+            "- reasoning: brief explanation of your classification logic",
+        ])
 
         return "\n".join(parts)
 

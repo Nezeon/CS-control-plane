@@ -305,10 +305,11 @@ class ChatFastPath:
             parts.append("| ID | Severity | Status | Summary | Customer |")
             parts.append("|----|----------|--------|---------|----------|")
             for t in tickets[:20]:
+                cust_display = t.get('customer_name') or t.get('customer_id', '?')[:8]
                 parts.append(
                     f"| {t.get('id', '?')[:8]} | {t.get('severity', t.get('priority', '?'))} | "
                     f"{t.get('status', '?')} | {t.get('title', t.get('summary', '?'))[:60]} | "
-                    f"{t.get('customer_id', '?')[:8]} |"
+                    f"{cust_display} |"
                 )
         else:
             parts.append("## No tickets found.\n")

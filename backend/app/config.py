@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     JIRA_WEBHOOK_SECRET: str = ""
     JIRA_DEFAULT_PROJECT: str = "CS"
     JIRA_SYNC_JQL: str = ""
+    JIRA_SYNC_INTERVAL_SECONDS: int = 900  # 15 min default; set to 60 in .env for testing
 
     # Slack
     SLACK_BOT_TOKEN: str = ""

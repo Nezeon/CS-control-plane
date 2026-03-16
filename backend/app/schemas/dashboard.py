@@ -61,4 +61,5 @@ class QuickHealthItem(BaseModel):
     health_score: int | None = None
     risk_level: str | None = None
     risk_count: int = 0
+    open_ticket_count: int = 0
     initial: str

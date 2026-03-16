@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -80,17 +81,12 @@ async def lifespan(app: FastAPI):
         from app.agents.demo_logger import install_demo_formatter
         install_demo_formatter()
 
-    # Auto-seed database on first startup
+    # Ensure admin user exists (no seed data)
     try:
-        from app.utils.seed import is_seeded, seed
-        if not is_seeded():
-            logger.info("Database is empty — running seed script...")
-            seed()
-            logger.info("Seed complete.")
-        else:
-            logger.info("Database already seeded.")
+        from app.utils.ensure_admin import ensure_admin_user
+        ensure_admin_user()
     except Exception as e:
-        logger.warning(f"Auto-seed failed (non-fatal): {e}")
+        logger.warning(f"Admin user setup failed (non-fatal): {e}")
 
     # Pre-warm DB pools so first request doesn't pay Neon cold-start (~6s)
     try:
@@ -104,8 +100,84 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Pool pre-warm failed (non-fatal): {e}")
 
+    # Start periodic Jira sync if configured
+    jira_sync_task = None
+    try:
+        from app.services.jira_service import jira_service
+        if jira_service.configured:
+            jira_sync_task = asyncio.create_task(_jira_periodic_sync())
+            logger.info(f"Jira periodic sync started (every {settings.JIRA_SYNC_INTERVAL_SECONDS}s)")
+        else:
+            logger.info("Jira not configured — periodic sync disabled")
+    except Exception as e:
+        logger.warning(f"Jira periodic sync setup failed (non-fatal): {e}")
+
     yield
-    # Shutdown
+
+    # Shutdown: cancel periodic sync
+    if jira_sync_task:
+        jira_sync_task.cancel()
+        try:
+            await jira_sync_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _jira_periodic_sync():
+    """Background task: checks if initial sync done, then incremental only."""
+    from datetime import datetime, timedelta, timezone
+    from app.tasks.jira_sync import sync_jira_tickets
+
+    interval = settings.JIRA_SYNC_INTERVAL_SECONDS
+
+    # Check if initial sync was already done (persisted via a marker file)
+    import pathlib
+    sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".jira_initial_sync_done"
+    needs_initial_sync = not sync_marker.exists()
+    if needs_initial_sync:
+        logger.info("[JiraPeriodicSync] No initial sync marker found — will do one-time catchup")
+    else:
+        logger.info("[JiraPeriodicSync] Initial sync already done — incremental only")
+
+    while True:
+        if needs_initial_sync:
+            await asyncio.sleep(5)  # Brief delay to let startup finish
+        else:
+            await asyncio.sleep(interval)
+
+        try:
+            # Only sync the configured default project (UCSE)
+            project_keys = [settings.JIRA_DEFAULT_PROJECT]
+
+            if needs_initial_sync:
+                # One-time catchup: pull last 6 months (not ALL history)
+                since_6m = (datetime.now(timezone.utc) - timedelta(days=180)).strftime("%Y-%m-%d")
+                logger.info(f"[JiraPeriodicSync] Initial sync — {project_keys} since {since_6m}")
+                stats = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: sync_jira_tickets(since=since_6m, project_keys=project_keys)
+                )
+                needs_initial_sync = False
+                # Write marker so we never re-do initial sync
+                sync_marker.write_text(f"done")
+            else:
+                # Incremental: look back interval + 5 min buffer
+                since = (datetime.now(timezone.utc) - timedelta(seconds=interval + 300)).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
+                stats = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: sync_jira_tickets(since=since, project_keys=project_keys)
+                )
+
+            created = stats.get("created", 0)
+            updated = stats.get("updated", 0)
+            if created or updated:
+                logger.info(f"[JiraPeriodicSync] {stats}")
+            else:
+                logger.debug(f"[JiraPeriodicSync] No changes: {stats}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"[JiraPeriodicSync] Failed: {e}")
 
 
 app = FastAPI(

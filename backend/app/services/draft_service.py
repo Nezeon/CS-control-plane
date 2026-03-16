@@ -164,8 +164,59 @@ def approve_draft(db, draft_id, approved_by: str = "slack_user") -> AgentDraft |
         human_action="approved",
     )
 
+    # Execute post-approval actions (e.g. Jira write-back)
+    _execute_post_approval(db, draft)
+
     logger.info(f"[Draft] {draft_id} approved by {approved_by}")
     return draft
+
+
+def _execute_post_approval(db, draft: AgentDraft):
+    """Execute side-effects after a draft is approved (fire-and-forget)."""
+    try:
+        if draft.draft_type == "triage":
+            _execute_triage_approval(db, draft)
+    except Exception as e:
+        logger.warning(f"[Draft] Post-approval action failed (non-critical): {e}")
+
+
+def _execute_triage_approval(db, draft: AgentDraft):
+    """On triage approval: update Jira labels with classification."""
+    from app.services.jira_service import jira_service
+
+    if not jira_service.configured:
+        return
+
+    content = draft.draft_content or {}
+    category = content.get("category", "")
+    severity = content.get("severity", "")
+
+    # Resolve jira_id from the linked event's payload or from draft content
+    jira_id = content.get("jira_id")
+    if not jira_id and draft.event_id:
+        from app.models.event import Event
+        event = db.query(Event).filter_by(id=draft.event_id).first()
+        if event and event.payload:
+            jira_id = event.payload.get("jira_id")
+
+    if not jira_id:
+        logger.warning("[Draft] No jira_id found for triage approval, skipping Jira write-back")
+        return
+
+    # Update labels on the Jira issue
+    labels = []
+    if category:
+        labels.append(f"triage:{category}")
+    if severity:
+        labels.append(severity)
+    if labels:
+        jira_service.update_issue_labels(jira_id, labels)
+
+    # Add a comment with the triage summary
+    summary = content.get("suggested_action") or content.get("reasoning") or ""
+    if summary:
+        comment = f"[CS Control Plane — Triage Approved]\nCategory: {category}\nSeverity: {severity}\nAction: {summary}"
+        jira_service.add_comment(jira_id, comment)
 
 
 def dismiss_draft(db, draft_id, dismissed_by: str = "slack_user") -> AgentDraft | None:

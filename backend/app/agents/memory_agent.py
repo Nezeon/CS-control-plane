@@ -95,11 +95,13 @@ class CustomerMemoryAgent(BaseAgent):
                 "active_alerts": r.active_alerts or 0,
             })
 
-        # Query 2: recent tickets + active alerts in one round-trip
+        # Query 2: recent tickets (with customer name) + active alerts in one round-trip
         combo = db_session.execute(text("""
             SELECT * FROM (
-                SELECT 'ticket' AS _type, t.id, t.customer_id, t.summary, t.severity, t.status, t.ticket_type AS extra, NULL AS title
-                FROM tickets t ORDER BY t.created_at DESC LIMIT 15
+                SELECT 'ticket' AS _type, t.id, t.customer_id, t.summary, t.severity, t.status, t.ticket_type AS extra, c.name AS title
+                FROM tickets t
+                LEFT JOIN customers c ON c.id = t.customer_id
+                ORDER BY t.created_at DESC LIMIT 15
             ) tickets
             UNION ALL
             SELECT * FROM (
@@ -115,6 +117,7 @@ class CustomerMemoryAgent(BaseAgent):
             if r._type == "ticket":
                 ticket_items.append({
                     "id": str(r.id), "customer_id": str(r.customer_id),
+                    "customer_name": r.title or "Unknown",
                     "summary": r.summary, "severity": r.severity,
                     "status": r.status, "type": r.extra,
                 })

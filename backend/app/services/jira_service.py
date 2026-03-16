@@ -132,8 +132,8 @@ class JiraService:
         logger.info(f"[Jira] Found {len(data.get('issues', []))} issues")
         return data
 
-    def search_all_issues(self, jql: str, page_size: int = 50) -> list[dict]:
-        """Paginate through all results for a JQL query."""
+    def search_all_issues(self, jql: str, page_size: int = 50, max_issues: int = 3000) -> list[dict]:
+        """Paginate through results for a JQL query (capped at max_issues)."""
         all_issues = []
         start_at = 0
 
@@ -145,6 +145,10 @@ class JiraService:
             if data.get("isLast", True) or len(issues) < page_size:
                 break
             start_at += len(issues)
+
+            if len(all_issues) >= max_issues:
+                logger.warning(f"[Jira] Hit max_issues cap ({max_issues}), stopping pagination")
+                break
 
         return all_issues
 
@@ -253,6 +257,48 @@ class JiraService:
             return datetime.fromisoformat(date_str.replace("+0000", "+00:00"))
         except (ValueError, AttributeError):
             return None
+
+    # -- Write Operations -----------------------------------------------------
+
+    def update_issue_labels(self, issue_key: str, labels: list[str]) -> bool:
+        """Update labels on a Jira issue. Returns True on success."""
+        try:
+            client = self._get_client()
+            resp = client.put(
+                f"/issue/{issue_key}",
+                json={"fields": {"labels": labels}},
+            )
+            resp.raise_for_status()
+            logger.info(f"[Jira] Updated labels on {issue_key}: {labels}")
+            return True
+        except Exception as e:
+            logger.error(f"[Jira] Failed to update labels on {issue_key}: {e}")
+            return False
+
+    def add_comment(self, issue_key: str, comment_text: str) -> bool:
+        """Add a comment to a Jira issue (ADF format). Returns True on success."""
+        try:
+            client = self._get_client()
+            # Jira v3 requires Atlassian Document Format for comments
+            adf_body = {
+                "body": {
+                    "version": 1,
+                    "type": "doc",
+                    "content": [
+                        {
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": comment_text}],
+                        }
+                    ],
+                }
+            }
+            resp = client.post(f"/issue/{issue_key}/comment", json=adf_body)
+            resp.raise_for_status()
+            logger.info(f"[Jira] Added comment to {issue_key}")
+            return True
+        except Exception as e:
+            logger.error(f"[Jira] Failed to add comment to {issue_key}: {e}")
+            return False
 
     # -- Customer Resolution --------------------------------------------------
 

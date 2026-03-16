@@ -1,31 +1,9 @@
-import { forwardRef } from 'react'
-import { cn } from '../../utils/cn'
+const LEVELS = { near: 'glass-near', mid: 'glass-mid', far: 'glass-far' }
 
-const levelClasses = {
-  near: 'glass-near',
-  mid: 'glass-mid',
-  far: 'glass-far',
-}
-
-const GlassCard = forwardRef(function GlassCard(
-  { children, level = 'near', interactive = false, className, onClick, ...rest },
-  ref
-) {
+export default function GlassCard({ children, level = 'near', className = '', ...rest }) {
   return (
-    <div
-      ref={ref}
-      className={cn(
-        levelClasses[level] || levelClasses.near,
-        interactive && 'glass-interactive',
-        'p-4',
-        className
-      )}
-      onClick={onClick}
-      {...rest}
-    >
+    <div className={`${LEVELS[level] || LEVELS.near} p-4 ${className}`} {...rest}>
       {children}
     </div>
   )
-})
-
-export default GlassCard
+}

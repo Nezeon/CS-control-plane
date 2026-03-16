@@ -5,7 +5,6 @@ from sqlalchemy import case, cast, Date, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_user
 from app.models.agent_log import AgentLog
 from app.models.customer import Customer
 from app.models.event import Event
@@ -47,7 +46,6 @@ def _latest_health_subquery():
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Aggregated KPIs with 7-day trend comparison."""
     now = datetime.now(timezone.utc)
@@ -68,11 +66,14 @@ async def get_dashboard_stats(
     )
     at_risk_count = risk_result.scalar() or 0
 
-    # Open tickets (current)
+    # Open P0/P1 tickets (current)
     open_result = await db.execute(
         select(func.count())
         .select_from(Ticket)
-        .where(Ticket.status.notin_(["resolved", "closed"]))
+        .where(
+            Ticket.status.notin_(["resolved", "closed"]),
+            Ticket.severity.in_(["P0", "P1"]),
+        )
     )
     open_tickets = open_result.scalar() or 0
 
@@ -92,13 +93,14 @@ async def get_dashboard_stats(
     old_customers = old_cust_result.scalar() or 0
     customers_change = total_customers - old_customers
 
-    # Open tickets 7 days ago
+    # Open P0/P1 tickets 7 days ago
     old_tickets_result = await db.execute(
         select(func.count())
         .select_from(Ticket)
         .where(
             Ticket.created_at <= seven_days_ago,
             Ticket.status.notin_(["resolved", "closed"]),
+            Ticket.severity.in_(["P0", "P1"]),
         )
     )
     old_open_tickets = old_tickets_result.scalar() or 0
@@ -144,7 +146,6 @@ async def get_dashboard_stats(
 @router.get("/agents", response_model=list[DashboardAgentItem])
 async def get_dashboard_agents(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """All 13 agents with live stats (single batch query)."""
     from app.routers.agents import AGENT_REGISTRY
@@ -209,7 +210,6 @@ async def get_dashboard_events(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Latest events for the live feed."""
     count_result = await db.execute(select(func.count()).select_from(Event))
@@ -260,10 +260,18 @@ async def get_dashboard_events(
 @router.get("/quick-health", response_model=list[QuickHealthItem])
 async def get_quick_health(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
-    """Top 12 customers sorted by risk (worst first)."""
+    """All customers sorted by risk (worst first), with ticket counts."""
     latest = _latest_health_subquery()
+    open_tickets = (
+        select(
+            Ticket.customer_id,
+            func.count().label("open_ticket_count"),
+        )
+        .where(Ticket.status.notin_(["resolved", "closed"]))
+        .group_by(Ticket.customer_id)
+        .subquery("open_tickets")
+    )
 
     result = await db.execute(
         select(
@@ -272,8 +280,10 @@ async def get_quick_health(
             latest.c.score,
             latest.c.risk_level,
             latest.c.risk_flags,
+            open_tickets.c.open_ticket_count,
         )
         .outerjoin(latest, Customer.id == latest.c.customer_id)
+        .outerjoin(open_tickets, Customer.id == open_tickets.c.customer_id)
         .order_by(
             case(
                 (latest.c.risk_level == "critical", 0),
@@ -283,7 +293,6 @@ async def get_quick_health(
             ).asc(),
             latest.c.score.asc().nulls_last(),
         )
-        .limit(12)
     )
     rows = result.all()
 
@@ -300,6 +309,7 @@ async def get_quick_health(
             health_score=row.score,
             risk_level=row.risk_level,
             risk_count=len(risk_flags),
+            open_ticket_count=row.open_ticket_count or 0,
             initial=initial,
         ))
 

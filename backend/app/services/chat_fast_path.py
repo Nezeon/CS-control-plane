@@ -305,21 +305,23 @@ class ChatFastPath:
             parts.append("| ID | Severity | Status | Summary | Customer |")
             parts.append("|----|----------|--------|---------|----------|")
             for t in tickets[:20]:
+                ticket_id = t.get('jira_id') or t.get('id', '?')[:8]
                 cust_display = t.get('customer_name') or t.get('customer_id', '?')[:8]
                 parts.append(
-                    f"| {t.get('id', '?')[:8]} | {t.get('severity', t.get('priority', '?'))} | "
+                    f"| {ticket_id} | {t.get('severity', t.get('priority', '?'))} | "
                     f"{t.get('status', '?')} | {t.get('title', t.get('summary', '?'))[:60]} | "
                     f"{cust_display} |"
                 )
         else:
             parts.append("## No tickets found.\n")
 
-        # Ticket stats
+        # Ticket stats — give Claude the authoritative counts
         ticket_info = memory.get("tickets", {})
         if ticket_info:
-            parts.append(f"\n## Ticket Summary")
-            parts.append(f"- Total recent: {ticket_info.get('total_recent', 0)}")
-            parts.append(f"- Open: {ticket_info.get('open_count', 0)}")
+            parts.append(f"\n## Ticket Summary (AUTHORITATIVE — use these counts, do NOT recount manually)")
+            parts.append(f"- Total tickets: {ticket_info.get('total_recent', 0)}")
+            parts.append(f"- Open (including in_progress): {ticket_info.get('open_count', 0)}")
+            parts.append("- IMPORTANT: The counts above are from the database and are correct. List ALL tickets from the table above.")
 
         return "\n".join(parts)
 
@@ -376,7 +378,8 @@ class ChatFastPath:
         if tickets.get("items"):
             parts.append(f"\n## Open Tickets ({tickets.get('open_count', 0)} open / {tickets.get('total_recent', 0)} total)")
             for t in tickets["items"][:5]:
-                parts.append(f"- [{t.get('severity', '?')}] {t.get('summary', 'N/A')[:80]} ({t.get('status', '?')})")
+                tid = t.get('jira_id') or ''
+                parts.append(f"- [{t.get('severity', '?')}] {tid} {t.get('summary', 'N/A')[:80]} ({t.get('status', '?')})")
 
     def _append_alerts_summary(self, parts: list, memory: dict):
         alerts = memory.get("alerts", [])

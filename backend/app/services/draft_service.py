@@ -100,6 +100,11 @@ def create_draft(
     action_required = _extract_action(draft_content, draft_type)
     agent_name = AGENT_DISPLAY_NAMES.get(agent_id, agent_id)
 
+    # Extract jira_id for Slack card link
+    jira_id = draft_content.get("jira_id") if isinstance(draft_content, dict) else None
+    if not jira_id and isinstance(draft_content, dict):
+        jira_id = (draft_content.get("output") or {}).get("jira_id")
+
     # Post Slack card
     try:
         from app.services.slack_service import slack_service
@@ -115,6 +120,8 @@ def create_draft(
             action_required=action_required,
             draft_id=str(draft.id),
             dashboard_url=dashboard_url,
+            jira_id=jira_id,
+            jira_base_url=settings.JIRA_API_URL if jira_id else None,
         )
         if isinstance(resp, dict) and resp.get("ts"):
             draft.slack_message_ts = resp["ts"]

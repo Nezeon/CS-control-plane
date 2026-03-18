@@ -100,6 +100,15 @@
 ::-webkit-scrollbar-thumb:hover { background: var(--text-ghost); }
 * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
+/* Drawer slide-in */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

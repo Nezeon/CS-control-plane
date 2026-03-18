@@ -10,6 +10,7 @@ import HealthRing from '../components/shared/HealthRing'
 import StatusPill from '../components/shared/StatusPill'
 import LoadingSkeleton from '../components/shared/LoadingSkeleton'
 import { formatDate, formatRelativeTime } from '../utils/formatters'
+import TicketDetailDrawer from '../components/shared/TicketDetailDrawer'
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Shield },
@@ -211,46 +212,60 @@ function OverviewTab({ customer }) {
 }
 
 function TicketsTab({ tickets }) {
+  const [selectedTicketId, setSelectedTicketId] = useState(null)
+
   return (
-    <GlassCard level="near">
-      <h3 className="text-sm font-semibold text-text-primary mb-4">Tickets ({tickets.length})</h3>
-      {tickets.length === 0 ? (
-        <p className="text-sm text-text-muted py-4 text-center">No tickets</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-text-muted font-mono text-xxs uppercase tracking-wider border-b border-border-subtle">
-                <th className="pb-2 pr-3">ID</th>
-                <th className="pb-2 pr-3">Summary</th>
-                <th className="pb-2 pr-3">Severity</th>
-                <th className="pb-2 pr-3">Status</th>
-                <th className="pb-2 pr-3">SLA</th>
-                <th className="pb-2">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tickets.map((t) => (
-                <tr key={t.id} className="border-b border-border-subtle/50 hover:bg-bg-hover/50">
-                  <td className="py-2 pr-3 font-mono text-xs text-accent">{t.jira_id || '—'}</td>
-                  <td className="py-2 pr-3 text-text-primary max-w-[300px] truncate">{t.summary}</td>
-                  <td className="py-2 pr-3"><StatusPill status={t.severity || 'P3'} /></td>
-                  <td className="py-2 pr-3"><StatusPill status={t.status || 'open'} /></td>
-                  <td className="py-2 pr-3">
-                    {t.sla_remaining_hours != null ? (
-                      <span className={`font-mono text-xs ${t.sla_breaching ? 'text-status-danger' : 'text-text-muted'}`}>
-                        {t.sla_remaining_hours}h
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="py-2 text-xxs text-text-ghost">{formatRelativeTime(t.created_at)}</td>
+    <>
+      <GlassCard level="near">
+        <h3 className="text-sm font-semibold text-text-primary mb-4">Tickets ({tickets.length})</h3>
+        {tickets.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">No tickets</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-text-muted font-mono text-xxs uppercase tracking-wider border-b border-border-subtle">
+                  <th className="pb-2 pr-3">ID</th>
+                  <th className="pb-2 pr-3">Summary</th>
+                  <th className="pb-2 pr-3">Severity</th>
+                  <th className="pb-2 pr-3">Status</th>
+                  <th className="pb-2 pr-3">SLA</th>
+                  <th className="pb-2">Created</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </GlassCard>
+              </thead>
+              <tbody>
+                {tickets.map((t) => (
+                  <tr
+                    key={t.id}
+                    className="border-b border-border-subtle/50 hover:bg-bg-hover/50 cursor-pointer transition-colors"
+                    onClick={() => setSelectedTicketId(t.id)}
+                  >
+                    <td className="py-2 pr-3 font-mono text-xs text-accent">{t.jira_id || '—'}</td>
+                    <td className="py-2 pr-3 text-text-primary max-w-[300px] truncate">{t.summary}</td>
+                    <td className="py-2 pr-3"><StatusPill status={t.severity || 'P3'} /></td>
+                    <td className="py-2 pr-3"><StatusPill status={t.status || 'open'} /></td>
+                    <td className="py-2 pr-3">
+                      {t.sla_remaining_hours != null ? (
+                        <span className={`font-mono text-xs ${t.sla_breaching ? 'text-status-danger' : 'text-text-muted'}`}>
+                          {t.sla_remaining_hours}h
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 text-xxs text-text-ghost">{formatRelativeTime(t.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+
+      <TicketDetailDrawer
+        ticketId={selectedTicketId}
+        open={!!selectedTicketId}
+        onClose={() => setSelectedTicketId(null)}
+      />
+    </>
   )
 }
 

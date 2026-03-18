@@ -89,7 +89,8 @@ def _try_resolve_customer(db: Session, message: str):
             return cust_id, name
 
     # Pass 3: query words match a significant portion of a customer name
-    query_words = set(lower.split())
+    import re
+    query_words = set(re.sub(r'[^\w\s]', '', lower).split())
     best_match = None
     best_score = 0
     for cust_id, name in customers:

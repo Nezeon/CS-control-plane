@@ -153,7 +153,6 @@ async def list_tickets(
 async def get_ticket(
     ticket_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """Get full ticket detail with AI analysis results."""
     result = await db.execute(

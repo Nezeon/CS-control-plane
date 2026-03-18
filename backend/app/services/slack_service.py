@@ -274,6 +274,8 @@ class SlackService:
         action_required: str,
         draft_id: str,
         dashboard_url: str | None = None,
+        jira_id: str | None = None,
+        jira_base_url: str | None = None,
     ) -> dict | bool:
         """Post a standard agent card with Approve/Edit/Dismiss buttons.
 
@@ -347,14 +349,25 @@ class SlackService:
             },
         ]
 
-        # Add deep-link to dashboard if available
-        if dashboard_url:
-            blocks.append({
-                "type": "context",
-                "elements": [
-                    {"type": "mrkdwn", "text": f"<{dashboard_url}|View Details →>"},
-                ],
-            })
+        # Add links section (Jira + Dashboard) before actions
+        if dashboard_url or (jira_id and jira_base_url):
+            link_parts = []
+            if jira_id and jira_base_url:
+                link_parts.append(f"*Jira:* <{jira_base_url}/browse/{jira_id}|{jira_id}>")
+            link_text = " | ".join(link_parts) if link_parts else "View in dashboard"
+            link_section = {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": link_text},
+            }
+            if dashboard_url:
+                link_section["accessory"] = {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Open Dashboard", "emoji": True},
+                    "url": dashboard_url,
+                    "action_id": "open_dashboard",
+                }
+            # Insert before the actions block (second to last)
+            blocks.insert(-1, link_section)
 
         fallback = f"[{agent_name}] {event_type} — {customer_name}: {summary[:120]}"
         return self.send_message(channel, fallback, blocks)

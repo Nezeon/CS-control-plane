@@ -100,122 +100,101 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Pool pre-warm failed (non-fatal): {e}")
 
-    # Start periodic Jira sync if configured
-    jira_sync_task = None
+    # -- Scheduled syncs via APScheduler (fixed daily times) --
+    from datetime import datetime, timedelta, timezone
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    scheduler = AsyncIOScheduler(timezone=settings.SYNC_TIMEZONE)
+
+    # Jira: daily at 8:00 AM + run once on startup
     try:
         from app.services.jira_service import jira_service
         if jira_service.configured:
-            jira_sync_task = asyncio.create_task(_jira_periodic_sync())
-            logger.info(f"Jira periodic sync started (every {settings.JIRA_SYNC_INTERVAL_SECONDS}s)")
+            scheduler.add_job(_run_jira_sync, "cron", hour=8, minute=0, id="jira_daily",
+                              misfire_grace_time=3600)
+            # Also run once on startup (5s delay)
+            scheduler.add_job(_run_jira_sync, "date",
+                              run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
+                              id="jira_startup")
+            logger.info(f"Jira sync scheduled: daily at 08:00 {settings.SYNC_TIMEZONE} + on startup")
         else:
-            logger.info("Jira not configured — periodic sync disabled")
+            logger.info("Jira not configured — sync disabled")
     except Exception as e:
-        logger.warning(f"Jira periodic sync setup failed (non-fatal): {e}")
+        logger.warning(f"Jira sync setup failed (non-fatal): {e}")
 
-    # Start periodic Fathom sync if configured
-    fathom_sync_task = None
+    # Fathom: twice daily at 6:00 AM and 6:00 PM
     try:
         if settings.FATHOM_API_KEY:
-            fathom_sync_task = asyncio.create_task(_fathom_periodic_sync())
-            logger.info(f"Fathom periodic sync started (every {settings.FATHOM_SYNC_INTERVAL_SECONDS}s)")
+            scheduler.add_job(_run_fathom_sync, "cron", hour=6, minute=0, id="fathom_morning",
+                              misfire_grace_time=3600)
+            scheduler.add_job(_run_fathom_sync, "cron", hour=18, minute=0, id="fathom_evening",
+                              misfire_grace_time=3600)
+            # Also run once on startup (30s delay)
+            scheduler.add_job(_run_fathom_sync, "date",
+                              run_date=datetime.now(timezone.utc) + timedelta(seconds=30),
+                              id="fathom_startup")
+            logger.info(f"Fathom sync scheduled: daily at 06:00 & 18:00 {settings.SYNC_TIMEZONE} + on startup")
         else:
-            logger.info("Fathom not configured — periodic sync disabled")
+            logger.info("Fathom not configured — sync disabled")
     except Exception as e:
-        logger.warning(f"Fathom periodic sync setup failed (non-fatal): {e}")
+        logger.warning(f"Fathom sync setup failed (non-fatal): {e}")
+
+    scheduler.start()
 
     yield
 
-    # Shutdown: cancel periodic syncs
-    for task in (jira_sync_task, fathom_sync_task):
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    # Shutdown
+    scheduler.shutdown(wait=False)
 
 
-async def _jira_periodic_sync():
-    """Background task: checks if initial sync done, then incremental only."""
-    from datetime import datetime, timedelta, timezone
+async def _run_jira_sync():
+    """APScheduler job: Jira sync — initial catchup or incremental."""
+    import pathlib
     from app.tasks.jira_sync import sync_jira_tickets
 
-    interval = settings.JIRA_SYNC_INTERVAL_SECONDS
+    try:
+        project_keys = [settings.JIRA_DEFAULT_PROJECT]
+        sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".jira_initial_sync_done"
 
-    # Check if initial sync was already done (persisted via a marker file)
-    import pathlib
-    sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".jira_initial_sync_done"
-    needs_initial_sync = not sync_marker.exists()
-    if needs_initial_sync:
-        logger.info("[JiraPeriodicSync] No initial sync marker found — will do one-time catchup")
-    else:
-        logger.info("[JiraPeriodicSync] Initial sync already done — incremental only")
-
-    while True:
-        if needs_initial_sync:
-            await asyncio.sleep(5)  # Brief delay to let startup finish
+        if not sync_marker.exists():
+            # One-time catchup: pull last 6 months
+            since_6m = (datetime.now(timezone.utc) - timedelta(days=180)).strftime("%Y-%m-%d")
+            logger.info(f"[JiraSync] Initial catchup — {project_keys} since {since_6m}")
+            stats = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: sync_jira_tickets(since=since_6m, project_keys=project_keys)
+            )
+            sync_marker.write_text("done")
         else:
-            await asyncio.sleep(interval)
+            # Incremental: last 25 hours (covers daily + buffer)
+            since = (datetime.now(timezone.utc) - timedelta(hours=25)).strftime("%Y-%m-%d %H:%M")
+            stats = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: sync_jira_tickets(since=since, project_keys=project_keys)
+            )
 
-        try:
-            # Only sync the configured default project (UCSE)
-            project_keys = [settings.JIRA_DEFAULT_PROJECT]
-
-            if needs_initial_sync:
-                # One-time catchup: pull last 6 months (not ALL history)
-                since_6m = (datetime.now(timezone.utc) - timedelta(days=180)).strftime("%Y-%m-%d")
-                logger.info(f"[JiraPeriodicSync] Initial sync — {project_keys} since {since_6m}")
-                stats = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: sync_jira_tickets(since=since_6m, project_keys=project_keys)
-                )
-                needs_initial_sync = False
-                # Write marker so we never re-do initial sync
-                sync_marker.write_text(f"done")
-            else:
-                # Incremental: look back interval + 5 min buffer
-                since = (datetime.now(timezone.utc) - timedelta(seconds=interval + 300)).strftime(
-                    "%Y-%m-%d %H:%M"
-                )
-                stats = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: sync_jira_tickets(since=since, project_keys=project_keys)
-                )
-
-            created = stats.get("created", 0)
-            updated = stats.get("updated", 0)
-            if created or updated:
-                logger.info(f"[JiraPeriodicSync] {stats}")
-            else:
-                logger.debug(f"[JiraPeriodicSync] No changes: {stats}")
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.warning(f"[JiraPeriodicSync] Failed: {e}")
+        created = stats.get("created", 0)
+        updated = stats.get("updated", 0)
+        if created or updated:
+            logger.info(f"[JiraSync] {stats}")
+        else:
+            logger.debug(f"[JiraSync] No changes: {stats}")
+    except Exception as e:
+        logger.warning(f"[JiraSync] Failed: {e}")
 
 
-async def _fathom_periodic_sync():
-    """Background task: daily Fathom meeting sync."""
-    from app.tasks.agent_tasks import run_fathom_sync
+async def _run_fathom_sync():
+    """APScheduler job: Fathom meeting sync — last 7 days."""
+    try:
+        from app.tasks.agent_tasks import run_fathom_sync
 
-    interval = settings.FATHOM_SYNC_INTERVAL_SECONDS
-
-    # Brief delay on startup to let everything initialize
-    await asyncio.sleep(30)
-
-    while True:
-        try:
-            logger.info("[FathomPeriodicSync] Starting sync (last 7 days)")
-            result = await run_fathom_sync(days=7)
-            imported = result.get("imported", 0)
-            if imported:
-                logger.info(f"[FathomPeriodicSync] {result}")
-            else:
-                logger.debug(f"[FathomPeriodicSync] No new meetings")
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.warning(f"[FathomPeriodicSync] Failed: {e}")
-
-        await asyncio.sleep(interval)
+        logger.info("[FathomSync] Starting sync (last 7 days)")
+        result = await run_fathom_sync(days=7)
+        imported = result.get("imported", 0)
+        if imported:
+            logger.info(f"[FathomSync] {result}")
+        else:
+            logger.debug(f"[FathomSync] No new meetings")
+    except Exception as e:
+        logger.warning(f"[FathomSync] Failed: {e}")
 
 
 app = FastAPI(

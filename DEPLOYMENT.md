@@ -134,14 +134,14 @@ Slack needs to reach your backend for two things: **interactive buttons** (Appro
 
 ## 7. Data Sync Schedule
 
-Both Jira and Fathom sync automatically in the background on startup.
+Both Jira and Fathom sync automatically via APScheduler (cron-style, fixed times).
 
-| Source | Default Interval | Env Override | Behavior |
-|--------|-----------------|--------------|----------|
-| **Jira** | Daily (86400s) | `JIRA_SYNC_INTERVAL_SECONDS` | First run: 6-month catchup. Then incremental. |
-| **Fathom** | Daily (86400s) | `FATHOM_SYNC_INTERVAL_SECONDS` | Syncs last 7 days each run. Deduplicates automatically. |
+| Source | Schedule (IST) | Behavior |
+|--------|---------------|----------|
+| **Jira** | Daily at **8:00 AM** + on startup | First run: 6-month catchup. Then incremental (last 25 hours). |
+| **Fathom** | Twice daily at **6:00 AM** & **6:00 PM** + on startup | Syncs last 7 days each run. Deduplicates automatically. |
 
-For testing, set both to `60` (1 minute) in `.env`.
+Timezone is configurable via `SYNC_TIMEZONE` (default: `Asia/Kolkata`).
 
 Manual sync is also available via the API:
 - `POST /api/jira/sync` — trigger Jira sync on demand

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     FATHOM_WEBHOOK_SECRET: str = ""  # Optional: verify webhook signatures
     FATHOM_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
 
+    # Sync schedule timezone (APScheduler cron jobs)
+    SYNC_TIMEZONE: str = "Asia/Kolkata"  # IST; override in .env
+
     # Fathom Agent — Meeting Knowledge Base
     MEETING_KNOWLEDGE_COLLECTION: str = "meeting_knowledge"
     FATHOM_MAX_TOOL_CALLS: int = 5

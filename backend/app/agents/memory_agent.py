@@ -98,14 +98,14 @@ class CustomerMemoryAgent(BaseAgent):
         # Query 2: recent tickets (with customer name) + active alerts in one round-trip
         combo = db_session.execute(text("""
             SELECT * FROM (
-                SELECT 'ticket' AS _type, t.id, t.customer_id, t.summary, t.severity, t.status, t.ticket_type AS extra, c.name AS title
+                SELECT 'ticket' AS _type, t.id, t.customer_id, t.summary, t.severity, t.status, t.ticket_type AS extra, c.name AS title, t.jira_id
                 FROM tickets t
                 LEFT JOIN customers c ON c.id = t.customer_id
-                ORDER BY t.created_at DESC LIMIT 15
+                ORDER BY t.created_at DESC LIMIT 30
             ) tickets
             UNION ALL
             SELECT * FROM (
-                SELECT 'alert', a.id, a.customer_id, NULL, a.severity, a.status, a.alert_type, a.title
+                SELECT 'alert', a.id, a.customer_id, NULL, a.severity, a.status, a.alert_type, a.title, NULL
                 FROM alerts a WHERE a.status IN ('open', 'acknowledged') ORDER BY a.created_at DESC LIMIT 10
             ) alerts
         """))
@@ -118,6 +118,7 @@ class CustomerMemoryAgent(BaseAgent):
                 ticket_items.append({
                     "id": str(r.id), "customer_id": str(r.customer_id),
                     "customer_name": r.title or "Unknown",
+                    "jira_id": r.jira_id,
                     "summary": r.summary, "severity": r.severity,
                     "status": r.status, "type": r.extra,
                 })
@@ -148,7 +149,7 @@ class CustomerMemoryAgent(BaseAgent):
             "tickets": {
                 "total_recent": len(ticket_items),
                 "open_count": sum(1 for t in ticket_items if t["status"] in ("open", "in_progress")),
-                "items": ticket_items[:10],
+                "items": ticket_items[:20],
             },
             "calls": {"total_recent": 0, "items": []},
             "alerts": alert_items,

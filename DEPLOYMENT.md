@@ -132,7 +132,24 @@ Slack needs to reach your backend for two things: **interactive buttons** (Appro
 
 ---
 
-## 7. Known Limitations
+## 7. Data Sync Schedule
+
+Both Jira and Fathom sync automatically in the background on startup.
+
+| Source | Default Interval | Env Override | Behavior |
+|--------|-----------------|--------------|----------|
+| **Jira** | Daily (86400s) | `JIRA_SYNC_INTERVAL_SECONDS` | First run: 6-month catchup. Then incremental. |
+| **Fathom** | Daily (86400s) | `FATHOM_SYNC_INTERVAL_SECONDS` | Syncs last 7 days each run. Deduplicates automatically. |
+
+For testing, set both to `60` (1 minute) in `.env`.
+
+Manual sync is also available via the API:
+- `POST /api/jira/sync` — trigger Jira sync on demand
+- `POST /api/fathom/sync?days=14` — trigger Fathom sync on demand
+
+---
+
+## 8. Known Limitations
 
 - **Render free tier**: ~30s cold start after inactivity. First request will be slow.
 - **Neon free tier**: ~6s cold start for first DB connection (pool pre-warming helps on subsequent requests).

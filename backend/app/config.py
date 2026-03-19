@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
     FATHOM_WEBHOOK_SECRET: str = ""  # Optional: verify webhook signatures
+    FATHOM_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
 
     # Fathom Agent — Meeting Knowledge Base
     MEETING_KNOWLEDGE_COLLECTION: str = "meeting_knowledge"
@@ -48,7 +49,7 @@ class Settings(BaseSettings):
     JIRA_WEBHOOK_SECRET: str = ""
     JIRA_DEFAULT_PROJECT: str = "CS"
     JIRA_SYNC_JQL: str = ""
-    JIRA_SYNC_INTERVAL_SECONDS: int = 900  # 15 min default; set to 60 in .env for testing
+    JIRA_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
 
     # Slack
     SLACK_BOT_TOKEN: str = ""

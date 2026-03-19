@@ -112,15 +112,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Jira periodic sync setup failed (non-fatal): {e}")
 
+    # Start periodic Fathom sync if configured
+    fathom_sync_task = None
+    try:
+        if settings.FATHOM_API_KEY:
+            fathom_sync_task = asyncio.create_task(_fathom_periodic_sync())
+            logger.info(f"Fathom periodic sync started (every {settings.FATHOM_SYNC_INTERVAL_SECONDS}s)")
+        else:
+            logger.info("Fathom not configured — periodic sync disabled")
+    except Exception as e:
+        logger.warning(f"Fathom periodic sync setup failed (non-fatal): {e}")
+
     yield
 
-    # Shutdown: cancel periodic sync
-    if jira_sync_task:
-        jira_sync_task.cancel()
-        try:
-            await jira_sync_task
-        except asyncio.CancelledError:
-            pass
+    # Shutdown: cancel periodic syncs
+    for task in (jira_sync_task, fathom_sync_task):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 async def _jira_periodic_sync():
@@ -178,6 +190,32 @@ async def _jira_periodic_sync():
             raise
         except Exception as e:
             logger.warning(f"[JiraPeriodicSync] Failed: {e}")
+
+
+async def _fathom_periodic_sync():
+    """Background task: daily Fathom meeting sync."""
+    from app.tasks.agent_tasks import run_fathom_sync
+
+    interval = settings.FATHOM_SYNC_INTERVAL_SECONDS
+
+    # Brief delay on startup to let everything initialize
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            logger.info("[FathomPeriodicSync] Starting sync (last 7 days)")
+            result = await run_fathom_sync(days=7)
+            imported = result.get("imported", 0)
+            if imported:
+                logger.info(f"[FathomPeriodicSync] {result}")
+            else:
+                logger.debug(f"[FathomPeriodicSync] No new meetings")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"[FathomPeriodicSync] Failed: {e}")
+
+        await asyncio.sleep(interval)
 
 
 app = FastAPI(

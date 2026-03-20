@@ -14,12 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code + config
 COPY backend/ .
 
-# Make start script executable
-RUN chmod +x start.sh
-
-# Port from Railway
 ENV PORT=8000
 EXPOSE 8000
 
-# Start via script with logging
-CMD ["bash", "start.sh"]
+# Direct shell command — no script file, no CRLF issues
+CMD sh -c "echo '=== Starting CS Control Plane ===' && echo 'PORT='$PORT && uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --log-level info"

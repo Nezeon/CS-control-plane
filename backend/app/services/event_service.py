@@ -5,12 +5,42 @@ from datetime import datetime, timezone
 logger = logging.getLogger("services.event")
 
 
-class EventService:
-    """Processes events through the Orchestrator and broadcasts results."""
+def route_direct(sync_db, event_dict: dict) -> dict:
+    """Direct event → specialist routing. No orchestrator, no lane leads.
 
-    def _get_orchestrator(self):
-        from app.agents.orchestrator import orchestrator
-        return orchestrator
+    Replaces the old orchestrator.route() 4-tier pipeline.
+    Returns {"agent_name": str, "result": dict} — same shape as old route().
+    """
+    from app.agents.orchestrator import EVENT_ROUTING
+    from app.agents.agent_factory import AgentFactory
+    from app.agents.memory_agent import CustomerMemoryAgent
+
+    event_type = event_dict.get("event_type", "")
+    customer_id = event_dict.get("customer_id")
+    agent_id = EVENT_ROUTING.get(event_type)
+
+    if not agent_id or not AgentFactory.is_registered(agent_id):
+        logger.warning(f"No specialist for event_type={event_type}")
+        return {"agent_name": None, "result": {"success": False, "error": f"Unknown event: {event_type}"}}
+
+    logger.info(f"[DirectRoute] {event_type} → {agent_id} (customer={customer_id})")
+
+    # Build customer memory (pure SQL, no Claude calls)
+    memory_agent = CustomerMemoryAgent()
+    if customer_id:
+        customer_memory = memory_agent.build_memory(sync_db, customer_id)
+    else:
+        customer_memory = memory_agent.build_portfolio_memory(sync_db)
+
+    # Run specialist directly (perceive → retrieve → think → act → reflect)
+    specialist = AgentFactory.create(agent_id)
+    result = specialist.run(sync_db, event_dict, customer_memory)
+
+    return {"agent_name": agent_id, "result": result}
+
+
+class EventService:
+    """Processes events through direct specialist routing and broadcasts results."""
 
     def _persist_alert(self, sync_db, customer_id, event_type, agent_name, output):
         """Persist an Alert record and send Slack notification."""
@@ -99,7 +129,6 @@ class EventService:
                 event.status = "queued"
                 await db_session.commit()
 
-                orchestrator = self._get_orchestrator()
                 from app.agents.orchestrator import EVENT_ROUTING
                 agent_name = EVENT_ROUTING.get(event_type, "unknown")
 
@@ -123,16 +152,16 @@ class EventService:
         try:
             from app.database import get_sync_session
 
-            orchestrator = self._get_orchestrator()
             sync_db = get_sync_session()
             try:
-                route_result = orchestrator.route(sync_db, event_dict)
+                route_result = route_direct(sync_db, event_dict)
                 agent_name = route_result.get("agent_name")
                 result = route_result.get("result", {})
 
                 # Save agent-specific outputs
                 if result.get("success"):
-                    agent = orchestrator.get_agent(agent_name)
+                    from app.agents.agent_factory import AgentFactory
+                    agent = AgentFactory.create(agent_name) if agent_name and AgentFactory.is_registered(agent_name) else None
                     # Call intelligence saves even without customer_id (Fathom sync)
                     if agent_name == "fathom_agent" and hasattr(agent, "save_insight"):
                         agent.save_insight(sync_db, customer_id, payload, result)

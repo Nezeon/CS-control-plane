@@ -80,6 +80,10 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# If DASHBOARD_BASE_URL wasn't explicitly set but FRONTEND_URL is available, use it
+if settings.DASHBOARD_BASE_URL == "http://localhost:5173" and settings.FRONTEND_URL:
+    settings.DASHBOARD_BASE_URL = settings.FRONTEND_URL.rstrip("/")
+
 # Draft type → Slack channel routing map (ARCHITECTURE.md Section 6.1 + 10)
 DRAFT_CHANNEL_MAP = {
     "triage": "SLACK_CH_TICKET_TRIAGE",

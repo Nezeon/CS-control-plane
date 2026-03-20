@@ -224,10 +224,12 @@ def _ingest_to_knowledge_base(event_payload: dict, result: dict, customer_name: 
 @celery_app.task(name="process_event", bind=True, max_retries=2)
 def process_event(self, event: dict) -> dict:
     """
-    Process an event through the orchestrator.
+    Process an event via direct specialist routing.
     Called as Celery task or synchronously as fallback.
     """
-    from app.agents.orchestrator import orchestrator
+    from app.agents.orchestrator import EVENT_ROUTING
+    from app.agents.agent_factory import AgentFactory
+    from app.agents.memory_agent import CustomerMemoryAgent
     from app.database import get_sync_session
     from app.models.event import Event
 
@@ -241,16 +243,32 @@ def process_event(self, event: dict) -> dict:
                 db_event.status = "processing"
                 db.commit()
 
-        # Route through orchestrator
-        route_result = orchestrator.route(db, event)
+        # Direct routing: event → specialist (no orchestrator, no lane leads)
+        event_type = event.get("event_type", "")
+        customer_id = event.get("customer_id")
+        agent_id = EVENT_ROUTING.get(event_type)
 
-        agent_name = route_result.get("agent_name")
+        if not agent_id or not AgentFactory.is_registered(agent_id):
+            raise ValueError(f"No specialist for event_type={event_type}")
+
+        logger.info(f"[DirectRoute] {event_type} → {agent_id} (customer={customer_id})")
+
+        memory_agent = CustomerMemoryAgent()
+        customer_memory = (
+            memory_agent.build_memory(db, customer_id) if customer_id
+            else memory_agent.build_portfolio_memory(db)
+        )
+
+        specialist = AgentFactory.create(agent_id)
+        result = specialist.run(db, event, customer_memory)
+        route_result = {"agent_name": agent_id, "result": result}
+
+        agent_name = agent_id
         result = route_result.get("result", {})
 
         # Post-processing: save agent-specific outputs
-        customer_id = event.get("customer_id")
         if result.get("success"):
-            agent = orchestrator.get_agent(agent_name)
+            agent = AgentFactory.create(agent_name) if AgentFactory.is_registered(agent_name) else None
             # Fathom agent saves even without customer_id (Fathom sync)
             if agent_name == "fathom_agent" and hasattr(agent, "save_insight"):
                 payload = event.get("payload", {})
@@ -780,13 +798,15 @@ def _detect_call_patterns(db) -> list[dict]:
 @celery_app.task(name="run_health_check_all", bind=True)
 def run_health_check_all(self) -> dict:
     """Run health check for all customers."""
-    from app.agents.orchestrator import orchestrator
+    from app.agents.agent_factory import AgentFactory
+    from app.agents.memory_agent import CustomerMemoryAgent
     from app.database import get_sync_session
     from app.models.customer import Customer
 
     db = get_sync_session()
     try:
         customers = db.query(Customer).all()
+        memory_agent = CustomerMemoryAgent()
         results = []
         for customer in customers:
             event = {
@@ -795,14 +815,15 @@ def run_health_check_all(self) -> dict:
                 "customer_id": customer.id,
                 "payload": {},
             }
-            route_result = orchestrator.route(db, event)
-            agent_name = route_result.get("agent_name")
-            result = route_result.get("result", {})
+            # Direct routing to health_monitor
+            customer_memory = memory_agent.build_memory(db, customer.id)
+            specialist = AgentFactory.create("health_monitor")
+            result = specialist.run(db, event, customer_memory)
 
             # Save score if successful
             if result.get("success"):
-                agent = orchestrator.get_agent("health_monitor")
-                if agent and hasattr(agent, "save_score"):
+                agent = AgentFactory.create("health_monitor")
+                if hasattr(agent, "save_score"):
                     agent.save_score(db, customer.id, result)
 
             results.append({

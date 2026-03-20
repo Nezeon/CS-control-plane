@@ -453,37 +453,37 @@ async def trigger_agent(
 
     # Sync fallback
     try:
-        from app.agents.orchestrator import orchestrator
+        from app.services.event_service import route_direct
+        from app.agents.agent_factory import AgentFactory
         from app.database import get_sync_session
 
         sync_db = get_sync_session()
         try:
-            # Serialize for orchestrator
             event_dict_sync = {
                 **event_dict,
                 "event_id": event_record.id,
                 "customer_id": body.customer_id,
             }
-            route_result = orchestrator.route(sync_db, event_dict_sync)
+            route_result = route_direct(sync_db, event_dict_sync)
             agent_result = route_result.get("result", {})
 
             # Post-processing
             routed_agent = route_result.get("agent_name")
             if agent_result.get("success") and body.customer_id:
-                agent_inst = orchestrator.get_agent(routed_agent)
-                if routed_agent == "health_monitor" and hasattr(agent_inst, "save_score"):
+                agent_inst = AgentFactory.create(routed_agent) if routed_agent and AgentFactory.is_registered(routed_agent) else None
+                if agent_inst and routed_agent == "health_monitor" and hasattr(agent_inst, "save_score"):
                     agent_inst.save_score(sync_db, body.customer_id, agent_result)
-                elif routed_agent == "fathom_agent" and hasattr(agent_inst, "save_insight"):
+                elif agent_inst and routed_agent == "fathom_agent" and hasattr(agent_inst, "save_insight"):
                     agent_inst.save_insight(sync_db, body.customer_id, event_dict.get("payload", {}), agent_result)
-                elif routed_agent == "troubleshooter" and hasattr(agent_inst, "save_result"):
+                elif agent_inst and routed_agent == "troubleshooter" and hasattr(agent_inst, "save_result"):
                     ticket_id = event_dict.get("payload", {}).get("ticket_id")
                     if ticket_id:
                         agent_inst.save_result(sync_db, ticket_id, agent_result)
-                elif routed_agent == "escalation_summary" and hasattr(agent_inst, "save_result"):
+                elif agent_inst and routed_agent == "escalation_summary" and hasattr(agent_inst, "save_result"):
                     ticket_id = event_dict.get("payload", {}).get("ticket_id")
                     if ticket_id:
                         agent_inst.save_result(sync_db, ticket_id, agent_result)
-                elif routed_agent == "qbr_value" and hasattr(agent_inst, "save_report"):
+                elif agent_inst and routed_agent == "qbr_value" and hasattr(agent_inst, "save_report"):
                     agent_inst.save_report(sync_db, body.customer_id, agent_result)
 
             # Update event record status via async session

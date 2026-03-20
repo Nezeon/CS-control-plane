@@ -1,14 +1,10 @@
 """
-Orchestrator (Naveen Kapoor) — Tier 1 Supervisor.
+Orchestrator (Naveen Kapoor) — DEPRECATED.
 
-Top-level agent that receives events, strategically decomposes them into lane-level
-tasks, delegates to Lane Leads, evaluates quality, and synthesizes final output.
-
-Pipeline: perceive → retrieve → think → act → quality_gate → finalize
-
-Reports to: None (top of hierarchy)
-Manages: support_lead, value_lead, delivery_lead
-Traits: strategic_oversight, quality_evaluation, delegation, customer_sentiment
+The 4-tier pipeline (Orchestrator → Lane Lead → Specialist) has been replaced by
+direct event → specialist routing in event_service.py and agent_tasks.py.
+This file is kept for the EVENT_ROUTING and EVENT_LANE_MAP dicts which are still
+used as the routing table. The Orchestrator class itself is no longer invoked.
 """
 
 import json
@@ -66,7 +62,7 @@ EVENT_ROUTING = {
     "user_chat_fathom": "fathom_agent",
     "user_chat_health": "health_monitor",
     "user_chat_ticket": "triage_agent",
-    "user_chat_general": "cso_orchestrator",
+    "user_chat_general": "health_monitor",
 }
 
 

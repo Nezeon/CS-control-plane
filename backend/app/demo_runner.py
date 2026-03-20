@@ -31,7 +31,7 @@ from app.models.health_score import HealthScore
 install_demo_formatter()
 
 # Now import agents (triggers registration)
-from app.agents.orchestrator import orchestrator  # noqa: E402
+from app.services.event_service import route_direct  # noqa: E402
 
 engine = create_engine(settings.SYNC_DATABASE_URL, echo=False)
 
@@ -75,7 +75,7 @@ def run_ticket_triage(db: Session) -> dict:
     }
 
     start = time.perf_counter()
-    result = orchestrator.route(db, event)
+    result = route_direct(db, event)
     elapsed = time.perf_counter() - start
 
     print(result_summary(result.get("orchestrator_result", result.get("result", {}))))
@@ -111,7 +111,7 @@ def run_meeting_followup(db: Session) -> dict:
     }
 
     start = time.perf_counter()
-    result = orchestrator.route(db, event)
+    result = route_direct(db, event)
     elapsed = time.perf_counter() - start
 
     print(result_summary(result.get("orchestrator_result", result.get("result", {}))))

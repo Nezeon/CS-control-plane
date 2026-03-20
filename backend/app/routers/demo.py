@@ -4,7 +4,7 @@ Demo trigger endpoint -- runs demo scenarios via API for frontend integration.
 POST /api/demo/trigger
 Body: {"scenario": "ticket" | "meeting" | "all", "customer_id": optional UUID}
 
-Runs orchestrator.route() in-process (not via Celery) so WebSocket broadcasts
+Runs route_direct() in-process (not via Celery) so WebSocket broadcasts
 reach the frontend in real-time.
 """
 
@@ -22,7 +22,7 @@ from app.demo_data import DEMO_TRANSCRIPT, DEMO_TICKET
 from app.models.customer import Customer
 from app.models.health_score import HealthScore
 
-from app.agents.orchestrator import orchestrator
+from app.services.event_service import route_direct
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
 
@@ -72,7 +72,7 @@ def _run_ticket(db: Session, customer: Customer) -> dict:
         "payload": DEMO_TICKET,
     }
     start = time.perf_counter()
-    result = orchestrator.route(db, event)
+    result = route_direct(db, event)
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     return {
         "scenario": "ticket",
@@ -101,7 +101,7 @@ def _run_meeting(db: Session, customer: Customer) -> dict:
         },
     }
     start = time.perf_counter()
-    result = orchestrator.route(db, event)
+    result = route_direct(db, event)
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     return {
         "scenario": "meeting",

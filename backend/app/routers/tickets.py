@@ -310,12 +310,12 @@ async def triage_ticket(
         pass
 
     # Sync fallback
-    from app.agents.orchestrator import orchestrator
+    from app.services.event_service import route_direct
     from app.database import get_sync_session
 
     sync_db = get_sync_session()
     try:
-        route_result = orchestrator.route(sync_db, event_dict)
+        route_result = route_direct(sync_db, event_dict)
         agent_result = route_result.get("result", {})
 
         if agent_result.get("success"):
@@ -373,12 +373,12 @@ async def troubleshoot_ticket(
         pass
 
     # Sync fallback
-    from app.agents.orchestrator import orchestrator
+    from app.services.event_service import route_direct
     from app.database import get_sync_session
 
     sync_db = get_sync_session()
     try:
-        route_result = orchestrator.route(sync_db, event_dict)
+        route_result = route_direct(sync_db, event_dict)
         agent_result = route_result.get("result", {})
 
         if agent_result.get("success"):

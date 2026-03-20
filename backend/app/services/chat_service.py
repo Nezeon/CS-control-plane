@@ -711,38 +711,22 @@ class ChatService:
 
         # 8. Run the pipeline (THE SLOW PART)
         logger.info("[Chat] ── STEP 5: Run agent pipeline ──")
-        logger.info(f"[Chat]   Calling orchestrator.route() for event={event.id}")
-        _stage("run_pipeline", "Running agent pipeline", 5, "Orchestrator routing to agents...")
+        logger.info(f"[Chat]   Calling route_direct() for event={event.id}")
+        _stage("run_pipeline", "Running agent pipeline", 5, "Routing to specialist...")
 
-        from app.agents.orchestrator import orchestrator, EVENT_ROUTING, EVENT_LANE_MAP, LANE_LEAD_MAP
+        from app.services.event_service import route_direct
+        from app.agents.orchestrator import EVENT_ROUTING
 
-        # Broadcast which agents are expected to work
+        # Broadcast which specialist is working
         _agent_names = {
-            "cso_orchestrator": "Naveen Kapoor", "support_lead": "Rachel Torres",
-            "value_lead": "Damon Reeves", "delivery_lead": "Priya Mehta",
             "triage_agent": "Kai Nakamura", "troubleshooter": "Leo Petrov",
             "escalation_summary": "Maya Santiago", "health_monitor": "Dr. Aisha Okafor",
             "fathom_agent": "Jordan Ellis", "qbr_value": "Sofia Marquez",
             "sow_prerequisite": "Ethan Brooks", "deployment_intelligence": "Zara Kim",
-            "customer_memory": "Atlas",
+            "meeting_followup": "Riley Park",
         }
-        self._broadcast("chat:agent_working", {
-            "conversation_id": conversation_id_str,
-            "agent_id": "cso_orchestrator",
-            "agent_name": "Naveen Kapoor",
-            "stage": "routing",
-        })
-        for lane in EVENT_LANE_MAP.get(intent_info["event_type"], []):
-            lead_id = LANE_LEAD_MAP.get(lane)
-            if lead_id:
-                self._broadcast("chat:agent_working", {
-                    "conversation_id": conversation_id_str,
-                    "agent_id": lead_id,
-                    "agent_name": _agent_names.get(lead_id, lead_id),
-                    "stage": "coordinating",
-                })
         specialist = EVENT_ROUTING.get(intent_info["event_type"])
-        if specialist and specialist != "cso_orchestrator":
+        if specialist:
             self._broadcast("chat:agent_working", {
                 "conversation_id": conversation_id_str,
                 "agent_id": specialist,
@@ -750,7 +734,7 @@ class ChatService:
                 "stage": "analyzing",
             })
 
-        route_result = orchestrator.route(db, {
+        route_result = route_direct(db, {
             "event_id": str(event.id),
             "event_type": intent_info["event_type"],
             "source": "user_chat",
@@ -760,21 +744,12 @@ class ChatService:
         })
 
         result = route_result.get("result", {})
-        orchestrator_result = route_result.get("orchestrator_result", {})
 
-        # Log raw pipeline output for debugging
-        orch_success = orchestrator_result.get("success") if orchestrator_result else None
-        orch_output = orchestrator_result.get("output", {}) if orchestrator_result else {}
+        # Log pipeline output for debugging
         _stage("pipeline_result", "Pipeline completed", 6, f"Success: {result.get('success')}")
         logger.info("[Chat] ── STEP 6: Pipeline result ──")
-        logger.info(f"[Chat]   route_result keys        : {list(route_result.keys())}")
-        logger.info(f"[Chat]   orchestrator_result.success: {orch_success}")
-        logger.info(f"[Chat]   orchestrator_result.output keys: {list(orch_output.keys()) if isinstance(orch_output, dict) else type(orch_output).__name__}")
-        logger.info(f"[Chat]   result.success            : {result.get('success') if result else 'N/A'}")
-        if isinstance(orch_output, dict):
-            for k, v in orch_output.items():
-                if k not in ("deliverables",):
-                    logger.info(f"[Chat]     output.{k} = {type(v).__name__}: {str(v)[:80]}")
+        logger.info(f"[Chat]   route_result keys: {list(route_result.keys())}")
+        logger.info(f"[Chat]   result.success   : {result.get('success') if result else 'N/A'}")
 
         # 9. Update event status
         event.status = "completed" if result.get("success") else "failed"
@@ -784,14 +759,14 @@ class ChatService:
         # 10. Format the answer
         logger.info(f"[Chat] ── STEP 7: Format answer (intent={intent}) ──")
         _stage("format_answer", "Formatting response", 7, f"Intent: {intent}")
-        final_result = orchestrator_result or result
+        final_result = result
         try:
             answer = format_answer(intent, final_result)
         except Exception as fmt_err:
             logger.error(f"[Chat]   ✗ format_answer CRASHED: {fmt_err}")
             logger.error(f"[Chat]     result type={type(final_result).__name__}, keys={list(final_result.keys()) if isinstance(final_result, dict) else '?'}")
             raise
-        agents = self._extract_agents_involved(orchestrator_result or result)
+        agents = self._extract_agents_involved(result)
 
         logger.info(f"[Chat]   Answer: {len(answer)} chars, agents={agents}")
         logger.info(f"[Chat]   Answer preview: {answer[:200]}")
@@ -805,7 +780,7 @@ class ChatService:
             assistant_msg.execution_metadata = {
                 "intent": intent,
                 "event_type": intent_info["event_type"],
-                "lanes_used": (orchestrator_result or result).get("lanes_used", intent_info["lanes"]),
+                "lanes_used": result.get("lanes_used", intent_info["lanes"]),
                 "customer_name": customer_name,
             }
             db.commit()
@@ -845,9 +820,8 @@ class ChatService:
         if msg.execution_metadata and isinstance(msg.execution_metadata, dict):
             intent = msg.execution_metadata.get("intent", "general")
 
-        orchestrator_result = route_result.get("orchestrator_result", result)
-        answer = format_answer(intent, orchestrator_result or result)
-        agents = self._extract_agents_involved(orchestrator_result or result)
+        answer = format_answer(intent, result)
+        agents = self._extract_agents_involved(result)
 
         msg.content = answer
         msg.pipeline_status = "completed" if result.get("success") else "failed"
@@ -855,7 +829,7 @@ class ChatService:
         if msg.execution_metadata:
             msg.execution_metadata = {
                 **msg.execution_metadata,
-                "lanes_used": (orchestrator_result or result).get("lanes_used", []),
+                "lanes_used": result.get("lanes_used", []),
             }
         db.commit()
 

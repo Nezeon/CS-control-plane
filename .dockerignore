@@ -1,0 +1,13 @@
+frontend/
+streamlit_app/
+e2e/
+docs/
+.git/
+.gitnexus/
+*.md
+.env
+.env.*
+__pycache__/
+*.pyc
+chromadb_data/
+node_modules/

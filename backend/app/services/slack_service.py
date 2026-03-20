@@ -21,6 +21,27 @@ SEVERITY_COLORS = {
 }
 
 
+def _text_to_section_blocks(text: str, label: str | None = None) -> list[dict]:
+    """Convert a long text into one or more Slack section blocks.
+
+    Slack section text has a 3000-char limit. This splits on newline/space
+    boundaries when the text exceeds that limit.
+    """
+    full = f"*{label}:*\n{text}" if label else text
+    blocks: list[dict] = []
+    while len(full) > 3000:
+        split_at = full.rfind("\n", 0, 3000)
+        if split_at <= 0:
+            split_at = full.rfind(" ", 0, 3000)
+        if split_at <= 0:
+            split_at = 3000
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": full[:split_at]}})
+        full = full[split_at:].lstrip()
+    if full:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": full}})
+    return blocks
+
+
 class SlackService:
     """Slack WebClient wrapper with Block Kit alert formatting."""
 
@@ -133,22 +154,10 @@ class SlackService:
         ]
 
         if alert.description:
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Details:*\n{alert.description[:500]}",
-                },
-            })
+            blocks.extend(_text_to_section_blocks(alert.description, label="Details"))
 
         if alert.suggested_action:
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Suggested Action:*\n{alert.suggested_action[:300]}",
-                },
-            })
+            blocks.extend(_text_to_section_blocks(alert.suggested_action, label="Suggested Action"))
 
         blocks.append({"type": "divider"})
 
@@ -201,12 +210,8 @@ class SlackService:
             },
         ]
 
-        # Summary (truncated)
         if summary:
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Summary:*\n{summary[:500]}"},
-            })
+            blocks.extend(_text_to_section_blocks(summary, label="Summary"))
 
         # Key topics
         if key_topics:
@@ -308,20 +313,8 @@ class SlackService:
                 ],
             },
             {"type": "divider"},
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Summary:*\n{summary[:800]}",
-                },
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Action Required:*\n{action_required[:400]}",
-                },
-            },
+            *_text_to_section_blocks(summary, label="Summary"),
+            *_text_to_section_blocks(action_required, label="Action Required"),
             {
                 "type": "actions",
                 "elements": [

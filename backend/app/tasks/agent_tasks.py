@@ -325,6 +325,18 @@ def process_event(self, event: dict) -> dict:
             except Exception as e:
                 logger.warning(f"Chat completion failed: {e}")
 
+        # Draft-first flow: create draft + Slack card for non-chat events
+        if not event_type.startswith("user_chat_") and agent_name and result.get("success"):
+            try:
+                from app.services.event_service import event_service
+                customer_id = event.get("customer_id")
+                event_service._create_draft_for_output(
+                    db, agent_name, event_id, customer_id,
+                    event_type, result, event.get("payload", {}),
+                )
+            except Exception as e:
+                logger.warning(f"Draft creation failed (non-critical): {e}")
+
         # Update event status
         if event_id:
             db_event = db.query(Event).filter(Event.id == event_id).first()

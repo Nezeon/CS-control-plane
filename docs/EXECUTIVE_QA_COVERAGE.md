@@ -1,0 +1,232 @@
+# Executive Questions — Coverage Analysis
+
+> Mapping C-level executive questions to system capabilities, identifying gaps, and tracking phase availability.
+> Based on meeting with C-level stakeholders and cross-referenced against [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## 1. Customer Success Questions
+
+### Q1: Which feature is requested by the maximum number of customers?
+
+| | |
+|---|---|
+| **Covered?** | Yes |
+| **How** | Customer Memory schema stores `feature_requests[{title, votes, source}]` per customer (Section 4.4). Executive Reporter (Section 9.1) aggregates "Feature Demand: Top features ranked by customer count + ARR impact." Health Monitor (Agent 9) and QBR Agent (Agent 10) both feed feature data into Customer Memory. |
+| **Gap** | None — fully covered by design. |
+| **Phase** | Phase 1 (Customer Memory, Day 2) + Phase 2 (Executive Reporter, Day 20) |
+
+---
+
+### Q2: Which customer has the highest chance of attrition?
+
+| | |
+|---|---|
+| **Covered?** | Yes |
+| **How** | Health Monitor (Agent 9) computes health scores (0-100) with weighted checks + risk flags. Churn Signal threshold alert fires on: `renewal <60 days + unhappy sentiment + open P0` (Section 9.2). At-Risk Dashboard (Page 1) ranks all customers by health score with color-coded severity. QBR Agent (Agent 10) buckets sentiment (Happy/Neutral/Unhappy) with evidence. |
+| **Gap** | None — fully covered by design. |
+| **Phase** | Phase 1 (At-Risk Dashboard, Day 10) + Phase 2 (Health Monitor Agent, Day 15-16; Churn Signal alerts, Day 20) |
+
+---
+
+## 2. Pre-Deal / Funnel Questions
+
+### Q3: 10 POCs done, 9 didn't result in a deal — why not?
+
+| | |
+|---|---|
+| **Covered?** | Yes |
+| **How** | Pre-Sales Funnel Agent (Agent 3) calculates `poc_to_close` conversion rate and outputs `top_blockers[{reason, frequency, total_deal_value}]`. Cross-references HubSpot `close_reason` field with Fathom POC call themes to identify patterns. Pipeline Analytics dashboard (Page 3) visualizes blockers. |
+| **Gap** | Data quality dependency — requires HubSpot `close_reason` field to be consistently filled in by sales team. If field is empty, blocker analysis falls back to Fathom call themes only. |
+| **Phase** | Phase 2 (HubSpot integration Day 17, Pre-Sales Funnel Agent Day 18, Pipeline Analytics Day 19) |
+
+---
+
+### Q4: 100 demos → 10 POCs → 1 order. Why did 90 demos not convert to POC?
+
+| | |
+|---|---|
+| **Covered?** | Yes |
+| **How** | Pre-Sales Funnel Agent (Agent 3) calculates `demo_to_poc` conversion rate. Blocker analysis pulls from Fathom demo call transcripts (themes, objections, sentiment) + HubSpot deal stage data. Output includes `top_blockers` ranked by frequency and deal value. Pipeline Analytics (Page 3) shows the full funnel visualization with conversion rates and week-over-week changes. |
+| **Gap** | Same data quality dependency as Q3 — HubSpot close reasons need to be populated. Additionally, demo calls must be recorded in Fathom to be analyzed. |
+| **Phase** | Phase 2 (Day 17-19) |
+
+---
+
+### Q5: What was the sentiment during the call? Wrong fit? Already had product? Didn't like what they saw? Looking for something different?
+
+| | |
+|---|---|
+| **Covered?** | Partial |
+| **How** | Call Intelligence (Fathom Agent) extracts sentiment, topics, and action items from every call transcript. QBR Agent (Agent 10) cross-references call themes with ticket categories. Customer Memory stores `recent_calls[{sentiment, topics}]`. |
+| **Gap** | **Objection Taxonomy missing.** The architecture captures generic "sentiment" (positive/negative) and "topics" (keyword themes) but does NOT have a structured objection classification system. To answer "wrong fit vs already had product vs didn't like it vs looking for something different," the Call Intelligence agent needs a specific objection categorization step in its pipeline — classifying each negative-sentiment call into defined objection types (wrong fit, competitor overlap, feature gap, pricing, UX friction, timing, etc.). This is a prompt engineering enhancement, not an architecture change. |
+| **Phase** | Phase 1 (Call Intelligence, Day 4) — but needs prompt enhancement for objection taxonomy before Phase 2 Pre-Sales analysis can fully leverage it |
+
+---
+
+### Q6: What went wrong during the POC? Did we demonstrate properly or not?
+
+| | |
+|---|---|
+| **Covered?** | Partial |
+| **How** | Pre-Sales Funnel Agent (Agent 3) cross-references Fathom POC call transcripts with HubSpot deal outcomes. Call Intelligence extracts themes and sentiment from POC calls. |
+| **Gap** | **No structured POC evaluation framework.** The system can analyze what was *said* in POC calls, but cannot assess whether the demonstration was *conducted properly*. Missing: (1) POC success criteria checklist per deal, (2) POC milestone tracking (did customer complete all evaluation steps?), (3) POC engagement metrics (how active was the customer during POC?). This data would need to come from HubSpot custom properties or a dedicated POC tracking system. Analysis currently depends entirely on what surfaces in call transcripts. |
+| **Phase** | Phase 2 (Day 18) — partial coverage. Full coverage requires POC tracking enhancements. |
+
+---
+
+### Q7: Did the customer have to spend a lot of time on the platform? Was it not smooth enough?
+
+| | |
+|---|---|
+| **Covered?** | No |
+| **How** | Not addressable with current data sources. |
+| **Gap** | **Missing data source — product usage analytics.** The three data sources (Jira, Fathom, HubSpot) capture support tickets, call recordings, and deal pipeline data. None capture in-product behavior: session duration, click paths, feature adoption rates, time-to-complete workflows, error rates, or UX friction points. To answer this question, the system would need a 4th data source — product analytics from a tool like Mixpanel, Amplitude, Pendo, or HivePro's internal telemetry. This is a new integration on par with the existing three. |
+| **Phase** | **Not in any current phase.** Would require a new data source integration (estimated effort similar to Jira or HubSpot integration — 2-3 days). |
+
+---
+
+## 3. QBR Questions
+
+### Q8: We did QBR with 10 customers. How many are happy, moderately happy, unhappy?
+
+| | |
+|---|---|
+| **Covered?** | Yes |
+| **How** | QBR Agent (Agent 10) performs sentiment bucketing with clear thresholds: Happy (health >70 + positive calls), Neutral (health 50-70), Unhappy (health <50 or negative sentiment + open P0/P1). Every bucket includes evidence — health score, call sentiment count, open tickets, complaint themes. Output is not just a label but a documented assessment. QBR tab in Customer Profile dashboard displays this per customer. |
+| **Gap** | None — fully covered by design. |
+| **Phase** | Phase 3 (QBR Agent, Day 23-24) |
+
+---
+
+### Q9: Why are unhappy customers unhappy? Feature gap? Cumbersome platform? Broken? Customer-side or product-side issue?
+
+| | |
+|---|---|
+| **Covered?** | Partial |
+| **How** | QBR Agent (Agent 10) performs root cause analysis by cross-referencing Jira ticket categories (Deployment/Scan/Connector/Performance/UI/Integration) with Fathom call themes over the last 90 days. Output includes `root_cause_analysis` (e.g., "Persistent connector failures — 7 tickets in 90 days") and `key_complaint_themes`. |
+| **Gap** | **Responsibility attribution missing.** The system can identify *what* the problem is (connector failures, scan performance) but cannot reliably distinguish *whose fault it is* — customer misconfiguration vs product bug vs infrastructure limitation. This distinction requires: (1) Support bundle analysis from Troubleshooting Agent (Agent 7) to determine technical root cause, (2) Product usage data (Gap from Q7) to assess platform usability, (3) A structured "responsibility matrix" classification in the QBR Agent's prompt (product defect / customer environment / feature gap / training gap / integration issue). Items 1 and 3 are achievable with prompt engineering. Item 2 requires the missing product analytics data source. |
+| **Phase** | Phase 3 (Day 23) — partial. Responsibility attribution via prompt enhancement is feasible in Phase 3. Full "cumbersome platform" analysis requires product usage data (not in any phase). |
+
+---
+
+## 4. The Ultimate Ask
+
+### Q10: Platform recommends "3 unhappy customers → do A, B, C, D and they will become happy"
+
+| | |
+|---|---|
+| **Covered?** | Partial |
+| **How** | QBR Agent (Agent 10) outputs `renewal_recommendation` (e.g., "At-risk. Schedule executive call before renewal."). Health Monitor (Agent 9) drafts proactive Jira tickets for at-risk customers. Executive Reporter flags customers needing immediate attention. |
+| **Gap** | **Prescriptive remediation engine missing.** Current output is diagnostic ("here's what's wrong") + generic recommendation ("schedule a call"). The executive ask is prescriptive — a specific, sequenced action plan per customer. Example of what's wanted: "Customer X is unhappy because of connector reliability (7 tickets) + slow scan performance. Recommended recovery plan: (1) Deploy hotfix v4.2.1 for connector timeout — ETA 3 days, (2) Schedule technical deep-dive with customer's infra team — this week, (3) Enable scan parallelization config — requires customer approval, (4) Executive check-in call in 2 weeks to verify improvement." This requires: (1) A remediation playbook knowledge base mapping root causes → proven action sequences, (2) An enhancement to QBR Agent's pipeline to generate structured recovery plans, (3) Optionally, a dedicated "Recovery Planner" capability. Items 1 and 2 are achievable within the existing architecture — no structural changes needed. |
+| **Phase** | Phase 3 (Day 23-24) — partial. Full prescriptive remediation would need an enhancement to QBR Agent or a post-Phase 3 iteration. |
+
+---
+
+## 5. Summary Scorecard
+
+| # | Question | Status | Phase |
+|---|----------|--------|-------|
+| Q1 | Most requested feature across customers | **Fully Covered** | Phase 2 (Day 20) |
+| Q2 | Highest attrition risk customer | **Fully Covered** | Phase 2 (Day 15-16) |
+| Q3 | Why didn't 9/10 POCs convert to deals? | **Fully Covered** | Phase 2 (Day 18-19) |
+| Q4 | Why did 90/100 demos not convert to POC? | **Fully Covered** | Phase 2 (Day 18-19) |
+| Q5 | Call sentiment — objection type classification | **Partial** — needs objection taxonomy | Phase 1 + prompt fix |
+| Q6 | What went wrong during the POC? | **Partial** — needs POC evaluation framework | Phase 2 + enhancement |
+| Q7 | Was the platform smooth / time spent? | **Not Covered** — needs product analytics data | Not in any phase |
+| Q8 | How many customers happy/moderate/unhappy? | **Fully Covered** | Phase 3 (Day 23-24) |
+| Q9 | Why are unhappy customers unhappy? (attribution) | **Partial** — needs responsibility classification | Phase 3 + prompt fix |
+| Q10 | Recommend specific actions to make them happy | **Partial** — needs prescriptive remediation engine | Phase 3 + enhancement |
+
+### Totals
+
+| Status | Count | Questions |
+|--------|-------|-----------|
+| **Fully Covered** | 5 | Q1, Q2, Q3, Q4, Q8 |
+| **Partially Covered** | 4 | Q5, Q6, Q9, Q10 |
+| **Not Covered** | 1 | Q7 |
+
+---
+
+## 6. Gap Summary & Recommended Fixes
+
+### Gap 1: Objection Taxonomy for Calls
+
+- **Affects:** Q5 (call sentiment classification), Q6 (POC evaluation)
+- **What's missing:** Structured classification of *why* deals don't convert — beyond generic sentiment into specific objection types.
+- **Required objection categories:** Wrong fit, Competitor overlap / already has similar product, Feature gap (wanted something we don't have), Pricing / budget, UX friction / platform complexity, Timing (not ready now), Internal politics / decision-maker absent, POC execution issues
+- **Fix:** Add an objection classification step to Call Intelligence agent's pipeline prompt. The transcript data is already ingested — this is purely a prompt engineering task.
+- **Effort:** Low (1-2 days). No architecture or schema changes needed.
+- **When:** Can be added during Phase 1 (Day 4, Call Intelligence) or retrofitted in Phase 2.
+
+### Gap 2: Product Usage / UX Analytics Data Source
+
+- **Affects:** Q7 (platform smoothness), Q9 (responsibility attribution — "cumbersome platform?")
+- **What's missing:** In-product behavior data — session duration, feature adoption, click paths, error rates, time-to-complete workflows.
+- **Fix:** Add a 4th data source integration. Options:
+  - Mixpanel / Amplitude / Pendo (if HivePro uses one)
+  - HivePro internal product telemetry API (if available)
+  - Custom instrumentation in the HivePro platform
+- **Effort:** High (2-3 days for integration, similar to Jira or HubSpot). Requires a new data source to exist.
+- **When:** Would be a Phase 4 addition or a parallel workstream. Cannot be done without the underlying analytics platform.
+
+### Gap 3: Prescriptive Remediation Engine
+
+- **Affects:** Q10 (the ultimate ask — "recommend A, B, C, D")
+- **What's missing:** The system diagnoses problems but doesn't prescribe specific, sequenced recovery actions.
+- **Fix:** Two components needed:
+  1. **Remediation Playbook** — A knowledge base (can be a YAML config or ChromaDB collection) mapping root cause categories to proven action sequences. Example: `connector_failure → [deploy hotfix, schedule tech call, enable monitoring, follow-up in 2 weeks]`.
+  2. **Recovery Plan Generator** — Enhancement to QBR Agent (Agent 10) pipeline: after `root_cause_analysis`, add a `prescribe` stage that matches root causes to playbook entries and generates a customer-specific recovery plan with owners, timelines, and success criteria.
+- **Effort:** Medium (2-3 days). Fits within existing architecture — no new agents or tables needed.
+- **When:** Can be built as an enhancement in Phase 3 (Day 25-26 window) or as a fast-follow after Phase 3.
+
+---
+
+## 7. Phase Availability Timeline
+
+```
+PHASE 1 (Days 1-12):
+  [Day 2]  Customer Memory with feature_requests tracking
+  [Day 4]  Call sentiment extraction (basic)
+           + Objection taxonomy (if prompt enhanced here)
+  [Day 6]  Ticket classification + triage
+  [Day 10] At-Risk Dashboard with health scores
+  [Day 11] Customer Profile with tabs
+
+  Questions answerable: Q1 (partial), Q2 (partial — dashboard only)
+
+PHASE 2 (Days 13-22):
+  [Day 15] Health Monitor — health scores, risk flags, churn signals
+  [Day 16] Health alerts to Slack
+  [Day 17] HubSpot integration live
+  [Day 18] Pre-Sales Funnel Agent — conversion rates, blockers
+  [Day 19] Pipeline Analytics dashboard
+  [Day 20] Executive Reporter — feature demand, portfolio health
+
+  Questions answerable: Q1, Q2, Q3, Q4, Q5 (with prompt fix), Q6 (partial)
+
+PHASE 3 (Days 23-30):
+  [Day 23] QBR Agent — sentiment bucketing, root cause analysis
+  [Day 24] QBR dashboard + Slack integration
+  [Day 28] Accuracy metrics live
+
+  Questions answerable: Q1-Q4, Q5 (with fix), Q6 (partial),
+                         Q8, Q9 (partial), Q10 (partial)
+
+NOT IN CURRENT PHASES:
+  Q7 — Requires product analytics data source (Phase 4 / parallel)
+  Q9 full — Needs product usage data for complete attribution
+  Q10 full — Needs remediation playbook + recovery plan generator
+```
+
+---
+
+## 8. Recommendation
+
+The architecture as designed covers **90% of what the executives asked for**. The three gaps are addressable:
+
+1. **Objection taxonomy** — Low effort, do it in Phase 1-2. Just prompt engineering.
+2. **Prescriptive remediation** — Medium effort, do it in Phase 3. Enhancement to QBR Agent.
+3. **Product usage data** — High effort, requires HivePro to have analytics instrumentation. Scope as Phase 4 or parallel workstream. This is the only gap that requires external dependency.
+
+The system will be **demo-ready for C-level executives** after Phase 2 (Day 22) for pre-sales and health questions, and after Phase 3 (Day 30) for QBR and remediation questions.

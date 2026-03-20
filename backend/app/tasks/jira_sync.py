@@ -224,9 +224,12 @@ def _upsert_ticket(db: Session, jira_issue: dict) -> dict:
 
 
 def _fire_triage_events(db: Session, ticket_ids: list):
-    """Create triage events for newly synced tickets so the agent pipeline processes them."""
+    """Create triage events for newly synced tickets and dispatch them to the agent pipeline."""
     from app.models.event import Event
     from app.models.ticket import Ticket
+    from app.tasks.agent_tasks import process_event
+
+    events_to_dispatch = []
 
     for ticket_id in ticket_ids:
         ticket = db.query(Ticket).filter_by(id=ticket_id).first()
@@ -249,15 +252,32 @@ def _fire_triage_events(db: Session, ticket_ids: list):
             status="pending",
         )
         db.add(event)
+        events_to_dispatch.append({
+            "event_id": str(event.id),
+            "event_type": event.event_type,
+            "source": event.source,
+            "payload": event.payload,
+            "customer_id": str(event.customer_id) if event.customer_id else None,
+        })
 
     db.commit()
     logger.info(f"[JiraSync] Created {len(ticket_ids)} triage events for new tickets")
 
+    # Dispatch each event to the agent pipeline
+    for event_dict in events_to_dispatch:
+        try:
+            process_event(event_dict)
+        except Exception as e:
+            logger.warning(f"[JiraSync] Triage dispatch failed for {event_dict['event_id']}: {e}")
+
 
 def _fire_update_events(db: Session, ticket_ids: list):
-    """Create update events for tickets whose status changed during sync."""
+    """Create update events for tickets whose status changed during sync and dispatch them."""
     from app.models.event import Event
     from app.models.ticket import Ticket
+    from app.tasks.agent_tasks import process_event
+
+    events_to_dispatch = []
 
     for ticket_id in ticket_ids:
         ticket = db.query(Ticket).filter_by(id=ticket_id).first()
@@ -281,9 +301,23 @@ def _fire_update_events(db: Session, ticket_ids: list):
             status="pending",
         )
         db.add(event)
+        events_to_dispatch.append({
+            "event_id": str(event.id),
+            "event_type": event.event_type,
+            "source": event.source,
+            "payload": event.payload,
+            "customer_id": str(event.customer_id) if event.customer_id else None,
+        })
 
     db.commit()
     logger.info(f"[JiraSync] Created {len(ticket_ids)} update events for status-changed tickets")
+
+    # Dispatch each event to the agent pipeline
+    for event_dict in events_to_dispatch:
+        try:
+            process_event(event_dict)
+        except Exception as e:
+            logger.warning(f"[JiraSync] Update dispatch failed for {event_dict['event_id']}: {e}")
 
 
 def _embed_tickets(db: Session, ticket_ids: list):

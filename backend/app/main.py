@@ -150,6 +150,7 @@ async def lifespan(app: FastAPI):
 async def _run_jira_sync():
     """APScheduler job: Jira sync — initial catchup or incremental."""
     import pathlib
+    from datetime import datetime, timedelta, timezone
     from app.tasks.jira_sync import sync_jira_tickets
 
     try:

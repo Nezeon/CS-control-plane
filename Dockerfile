@@ -18,5 +18,5 @@ COPY backend/ .
 ENV PORT=8000
 EXPOSE 8000
 
-# Run: migrate then start
-CMD alembic upgrade head && gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+# Start server (1 worker for free tier, 180s timeout for Neon cold start)
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 30

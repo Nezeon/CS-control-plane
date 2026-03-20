@@ -100,6 +100,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Pool pre-warm failed (non-fatal): {e}")
 
+    # -- ChromaDB backfill: re-populate from PostgreSQL (needed for ephemeral mode) --
+    try:
+        from app.services.meeting_knowledge_service import meeting_knowledge_service
+        stats = meeting_knowledge_service.backfill_from_db()
+        logger.info(f"ChromaDB meeting knowledge backfill: {stats}")
+    except Exception as e:
+        logger.warning(f"ChromaDB meeting backfill failed (non-fatal): {e}")
+
+    try:
+        _backfill_rag_embeddings()
+    except Exception as e:
+        logger.warning(f"RAG embeddings backfill failed (non-fatal): {e}")
+
     # -- Scheduled syncs via APScheduler (fixed daily times) --
     from datetime import datetime, timedelta, timezone
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -145,6 +158,49 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     scheduler.shutdown(wait=False)
+
+
+def _backfill_rag_embeddings():
+    """Re-embed call insights and tickets from PostgreSQL into ChromaDB RAG collections."""
+    from app.database import get_sync_session
+    from app.services.rag_service import rag_service
+
+    db = get_sync_session()
+    try:
+        # Backfill call_insight_embeddings
+        from app.models.call_insight import CallInsight
+        insights = db.query(CallInsight).all()
+        insight_count = 0
+        for ins in insights:
+            text = f"{ins.summary or ''} {' '.join(ins.key_topics) if ins.key_topics else ''}"
+            if not text.strip():
+                continue
+            rag_service.embed_insight(str(ins.id), text, {
+                "customer_id": str(ins.customer_id) if ins.customer_id else "",
+                "sentiment": ins.sentiment or "",
+                "recording_id": ins.fathom_recording_id or "",
+            })
+            insight_count += 1
+
+        # Backfill ticket_embeddings
+        from app.models.ticket import Ticket
+        tickets = db.query(Ticket).all()
+        ticket_count = 0
+        for t in tickets:
+            text = f"{t.summary or ''} {t.description or ''}"[:2000]
+            if not text.strip():
+                continue
+            rag_service.embed_ticket(str(t.id), text, {
+                "jira_id": t.jira_id or "",
+                "customer_id": str(t.customer_id) if t.customer_id else "",
+                "severity": t.severity or "",
+                "status": t.status or "",
+            })
+            ticket_count += 1
+
+        logger.info(f"RAG backfill: {insight_count} insights, {ticket_count} tickets embedded")
+    finally:
+        db.close()
 
 
 async def _run_jira_sync():

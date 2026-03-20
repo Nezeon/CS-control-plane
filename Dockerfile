@@ -14,9 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code + config
 COPY backend/ .
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Port from Railway
 ENV PORT=8000
 EXPOSE 8000
 
-# Start server (1 worker for free tier, 180s timeout for Neon cold start)
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 30
+# Start via script with logging
+CMD ["bash", "start.sh"]

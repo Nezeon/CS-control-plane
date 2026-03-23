@@ -1,8 +1,8 @@
 """
 Customer Sentiment trait — Tracks sentiment cues and mood shifts.
 
-Used by: cso_orchestrator, value_lead, escalation_agent, health_monitor_agent,
-         fathom_agent, and others across all tiers.
+Used by: cso_orchestrator, escalation_agent, health_monitor_agent,
+         and others across all tiers.
 """
 
 import json

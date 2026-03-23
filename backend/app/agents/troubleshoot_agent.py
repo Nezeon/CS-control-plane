@@ -2,7 +2,7 @@
 Troubleshooter Agent — Tier 3 Specialist (Support Lane).
 
 Analyzes tickets for root cause and suggests resolution steps.
-Reports to: Rachel Torres (support_lead)
+Lane: Support
 Traits: root_cause_analysis, pattern_recognition
 """
 

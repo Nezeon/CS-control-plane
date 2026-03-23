@@ -2,7 +2,7 @@
 SOW & Prerequisite Agent — Tier 3 Specialist (Delivery Lane).
 
 Generates pre-deployment checklists and SOW validation.
-Reports to: Priya Mehta (delivery_lead)
+Lane: Delivery
 Traits: deadline_tracking, risk_assessment
 """
 

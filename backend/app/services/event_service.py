@@ -162,40 +162,7 @@ class EventService:
                 if result.get("success"):
                     from app.agents.agent_factory import AgentFactory
                     agent = AgentFactory.create(agent_name) if agent_name and AgentFactory.is_registered(agent_name) else None
-                    # Call intelligence saves even without customer_id (Fathom sync)
-                    if agent_name == "fathom_agent" and hasattr(agent, "save_insight"):
-                        agent.save_insight(sync_db, customer_id, payload, result)
-                        # Embed insight into ChromaDB for RAG similarity search
-                        try:
-                            from app.services.rag_service import rag_service
-                            output = result.get("output", {})
-                            if isinstance(output, dict):
-                                topics = output.get("key_topics", [])
-                                embed_text = f"{output.get('summary', '')} {' '.join(topics) if isinstance(topics, list) else ''}"
-                                if embed_text.strip():
-                                    from app.models.call_insight import CallInsight as _CI
-                                    latest = sync_db.query(_CI).filter_by(
-                                        fathom_recording_id=payload.get("recording_id")
-                                    ).order_by(_CI.processed_at.desc()).first()
-                                    insight_id = str(latest.id) if latest else str(uuid.uuid4())
-                                    rag_service.embed_insight(insight_id, embed_text, {
-                                        "customer_id": str(customer_id) if customer_id else "",
-                                        "sentiment": output.get("sentiment", ""),
-                                        "call_date": payload.get("call_date", ""),
-                                        "recording_id": payload.get("recording_id", ""),
-                                    })
-                                    logger.info(f"RAG: embedded call insight {insight_id}")
-                        except Exception as rag_err:
-                            logger.warning(f"RAG embedding failed (non-critical): {rag_err}")
-                        # Broadcast insight_ready for frontend
-                        output = result.get("output", {})
-                        await manager.broadcast("insight_ready", {
-                            "customer_id": str(customer_id) if customer_id else None,
-                            "recording_id": payload.get("recording_id"),
-                            "sentiment": output.get("sentiment") if isinstance(output, dict) else None,
-                            "summary": (output.get("summary", "")[:200]) if isinstance(output, dict) else "",
-                        })
-                    elif customer_id and agent_name == "health_monitor" and hasattr(agent, "save_score"):
+                    if customer_id and agent_name == "health_monitor" and hasattr(agent, "save_score"):
                         agent.save_score(sync_db, customer_id, result)
                     elif agent_name == "triage_agent" and hasattr(agent, "save_result"):
                         ticket_id = payload.get("ticket_id")

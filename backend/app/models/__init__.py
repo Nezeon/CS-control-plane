@@ -9,7 +9,6 @@ from app.models.alert import Alert
 from app.models.action_item import ActionItem
 from app.models.report import Report
 from app.models.agent_execution_round import AgentExecutionRound
-from app.models.agent_message import AgentMessage
 from app.models.chat_conversation import ChatConversation
 from app.models.chat_message import ChatMessage
 from app.models.agent_draft import AgentDraft
@@ -27,7 +26,6 @@ __all__ = [
     "ActionItem",
     "Report",
     "AgentExecutionRound",
-    "AgentMessage",
     "ChatConversation",
     "ChatMessage",
     "AgentDraft",

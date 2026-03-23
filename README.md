@@ -25,26 +25,18 @@ Every agent output starts as a **draft**. Nothing customer-facing happens withou
                               |
                               v
                    +---------------------+
-                   |   T1: Supervisor    |  Naveen Kapoor
-                   |   (Orchestrator)    |  Strategic decomposition
+                   |   Orchestrator      |  Naveen Kapoor
+                   |   (Routes events)   |  Direct specialist routing
                    +----------+----------+
                               |
-              +---------------+---------------+
-              |               |               |
-     +--------v------+ +-----v-------+ +-----v--------+
-     | T2: Support   | | T2: Value   | | T2: Delivery |
-     | Rachel Torres | | Damon Reeves| | Priya Mehta  |
-     +-------+-------+ +------+------+ +------+-------+
-             |                 |                |
-     +-------v-------+  +-----v------+  +------v-------+
-     | T3 Specialists|  | T3 Specs   |  | T3 Specs     |
-     | Kai, Leo,     |  | Aisha,     |  | Ethan, Zara  |
-     | Maya          |  | Jordan,    |  |              |
-     |               |  | Sofia,     |  |              |
-     |               |  | Riley      |  |              |
-     +-------+-------+  +-----+------+  +------+-------+
-             |                 |                |
-             +--------+--------+--------+-------+
+              +------+--------+--------+------+
+              |      |        |        |      |
+     +--------v--+ +-v------+ +v------+ +----v-----+ ...
+     | Triage    | | Trouble| |Health | | QBR      |
+     | Kai       | | Leo    | |Aisha  | | Sofia    |
+     +-----------+ +--------+ +-------+ +----------+
+              |      |        |        |      |
+              +------+--------+--------+------+
                       |                 |
                +------v------+   +------v------+
                |  PostgreSQL |   |  ChromaDB   |
@@ -52,42 +44,33 @@ Every agent output starts as a **draft**. Nothing customer-facing happens withou
                +-------------+   +-------------+
                       |
                +------v------+
-               | T4: Atlas   |  Foundation Memory Layer
-               | (Customer   |  Serves ALL tiers
+               | Atlas       |  Foundation Memory Layer
+               | (Customer   |  Serves ALL agents
                |  Memory)    |
                +-------------+
 ```
 
-Tasks flow **DOWN** the hierarchy (T1 &rarr; T2 &rarr; T3). Results flow **UP**. Specialists never talk directly to each other &mdash; sideways coordination goes through Lane Leads via the Message Board.
+The Orchestrator routes events directly to specialist agents by event type. Specialists never talk directly to each other.
 
 ---
 
-## The 14 Agents
+## The 10 Agents
 
-Each agent has a human identity, personality traits, specialized tools, and a multi-stage pipeline (`perceive` &rarr; `retrieve` &rarr; `think` &rarr; `act` &rarr; `reflect` &rarr; `quality_gate` &rarr; `finalize`).
+Each agent has a human identity, personality traits, specialized tools, and a multi-stage pipeline (`perceive` &rarr; `retrieve` &rarr; `think` &rarr; `act` &rarr; `reflect`).
 
-### Tier 1 &mdash; Supervisor
+### Orchestrator
 | Agent | Identity | Role |
 |-------|----------|------|
-| CS Orchestrator | Naveen Kapoor | Classifies events, routes to correct lane. Never analyzes &mdash; pure routing. |
+| CS Orchestrator | Naveen Kapoor | Classifies events, routes to correct specialist. Never analyzes &mdash; pure routing. |
 
-### Tier 2 &mdash; Lane Leads
-| Agent | Identity | Lane | Role |
-|-------|----------|------|------|
-| Support Lead | Rachel Torres | Run / Support | Ticket routing, escalation coordination |
-| Value Lead | Damon Reeves | Value | Health monitoring, QBR, renewals |
-| Delivery Lead | Priya Mehta | Delivery | Deployment, SOW, onboarding |
-
-### Tier 3 &mdash; Specialists
+### Specialists
 | Agent | Identity | Lane | Role |
 |-------|----------|------|------|
 | Ticket Triage | Kai Nakamura | Support | Classifies Jira tickets: category, severity, duplicates, email draft |
 | Troubleshooter | Leo Petrov | Support | Root cause analysis with confidence scoring. &lt;70% &rarr; escalates |
 | Escalation Writer | Maya Santiago | Support | Compiles escalation docs with full context and evidence |
 | Health Monitor | Dr. Aisha Okafor | Value | Daily health scores, risk flags, cross-customer patterns |
-| Call Intelligence | Jordan Ellis | Value | Call transcript analysis, summaries, action items, sentiment |
 | QBR / Value Narrative | Sofia Marquez | Value | Quarterly business review content, renewal recs |
-| Meeting Followup | Riley Park | Value | Post-meeting action tracking |
 | SOW & Prerequisite | Ethan Brooks | Delivery | SOW docs, infra/security checklists for new customers |
 | Deployment Intelligence | Zara Kim | Delivery | Validates deployments, flags failures |
 
@@ -228,14 +211,11 @@ hivepro-cs-control-plane/
 │   │   │
 │   │   ├── agents/                  # 14 AI agent implementations
 │   │   │   ├── orchestrator.py      # T1: Naveen — event routing
-│   │   │   ├── leads/               # T2: Rachel, Damon, Priya
 │   │   │   ├── triage_agent.py      # T3: Kai — ticket classification
 │   │   │   ├── troubleshoot_agent.py # T3: Leo — root cause
 │   │   │   ├── escalation_agent.py  # T3: Maya — escalation docs
 │   │   │   ├── health_monitor.py    # T3: Aisha — daily health
-│   │   │   ├── fathom_agent.py      # T3: Jordan — call intel
 │   │   │   ├── qbr_agent.py         # T3: Sofia — QBR content
-│   │   │   ├── meeting_followup_agent.py  # T3: Riley — followups
 │   │   │   ├── sow_agent.py         # T3: Ethan — SOW docs
 │   │   │   ├── deployment_intel_agent.py  # T3: Zara — deployments
 │   │   │   ├── memory_agent.py      # T4: Atlas — customer memory

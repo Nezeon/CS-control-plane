@@ -2,7 +2,7 @@
 Health Monitor Agent — Tier 3 Specialist (Value Lane).
 
 Calculates customer health scores using 6 weighted factors.
-Reports to: Damon Reeves (value_lead)
+Lane: Value
 Traits: trend_analysis, customer_sentiment
 """
 

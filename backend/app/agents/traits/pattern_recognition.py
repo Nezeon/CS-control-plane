@@ -1,8 +1,7 @@
 """
 Pattern Recognition trait — Cross-customer and cross-issue pattern matching.
 
-Used by: triage_agent (T3), troubleshooter_agent (T3), fathom_agent (T3),
-         deployment_intel_agent (T3)
+Used by: triage_agent (T3), troubleshooter_agent (T3), deployment_intel_agent (T3)
 """
 
 from app.agents.traits.base_trait import BaseTrait

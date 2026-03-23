@@ -74,7 +74,7 @@ Six critical pain points this project solves:
 
 ## 4. The 14 AI Agents
 
-The system uses a **4-tier hierarchy**. Tasks flow DOWN (T1 → T2 → T3). Results flow UP. Specialists never talk directly to each other — sideways coordination goes through Lane Leads via the Message Board.
+The Orchestrator routes events directly to specialist agents by event type and lane. Specialists never talk directly to each other.
 
 ### Tier 1 — Supervisor
 
@@ -82,15 +82,7 @@ The system uses a **4-tier hierarchy**. Tasks flow DOWN (T1 → T2 → T3). Resu
 |-------|----------|------|------|
 | **CS Orchestrator** | Naveen Kapoor | `orchestrator.py` | Classifies events, routes to correct lane. Never analyzes — pure routing. |
 
-### Tier 2 — Lane Leads
-
-| Agent | Identity | Lane | File | Role |
-|-------|----------|------|------|------|
-| **Support Lead** | Rachel Torres | Run / Support | `leads/support_lead.py` | Ticket routing, escalation coordination |
-| **Value Lead** | Damon Reeves | Value | `leads/value_lead.py` | Health monitoring, QBR, renewals |
-| **Delivery Lead** | Priya Mehta | Delivery | `leads/delivery_lead.py` | Deployment, SOW, onboarding |
-
-### Tier 3 — Specialists
+### Specialists
 
 | Agent | Identity | Lane | File | Trigger Event | Primary Output |
 |-------|----------|------|------|---------------|----------------|
@@ -98,9 +90,7 @@ The system uses a **4-tier hierarchy**. Tasks flow DOWN (T1 → T2 → T3). Resu
 | **Troubleshooter** | Leo Petrov | Support | `troubleshoot_agent.py` | `support_bundle_uploaded` | Root cause analysis, resolution steps, communication draft |
 | **Escalation Writer** | Maya Santiago | Support | `escalation_agent.py` | `ticket_escalated` | Engineering escalation package with repro steps |
 | **Health Monitor** | Dr. Aisha Okafor | Value | `health_monitor.py` | `daily_health_check`, `manual_health_check` | Health score (0-100), risk level, factors, flags |
-| **Call Intelligence** | Jordan Ellis | Value | `fathom_agent.py` | `zoom_call_completed`, `fathom_recording_ready` | Summary, action items, sentiment, customer recap draft |
 | **QBR / Value Narrative** | Sofia Marquez | Value | `qbr_agent.py` | `renewal_approaching` | QBR report content, value narrative |
-| **Meeting Followup** | Riley Park | Value | `meeting_followup_agent.py` | Post-meeting trigger | Action item tracking, followup tasks |
 | **SOW & Prerequisite** | Ethan Brooks | Delivery | `sow_agent.py` | `new_enterprise_customer` | Pre-deployment checklist, SOW docs |
 | **Deployment Intelligence** | Zara Kim | Delivery | `deployment_intel_agent.py` | `deployment_started` | Known issues, config guidance |
 
@@ -206,7 +196,7 @@ Three surface levels: near (0.65 opacity), mid (0.45), far (0.25). All surfaces 
 No sidebar. The Orbital Nav arc is the primary navigation at the bottom-center. Command Palette (Cmd+K) is the power-user alternative. Breadcrumbs float at top-left. Content fills the full viewport.
 
 ### Rule 8: Hierarchical Delegation
-Tasks flow DOWN the hierarchy: Supervisor (T1) → Lane Lead (T2) → Specialist (T3). Results flow UP. Specialists NEVER delegate to each other directly — sideways requests go through the Message Board and the Lane Lead coordinates. The Foundation layer (T4) serves ALL tiers.
+The Orchestrator routes events directly to the correct specialist by event type. Specialists never delegate to each other directly. The Foundation layer (Customer Memory) serves all agents.
 
 ### Rule 9: YAML-Driven Configuration
 Agent identities, personalities, traits, tools, pipeline stages, org structure, and workflows are defined in YAML config files (`backend/config/`). **Never** hardcode agent behavior in Python. The code reads YAML at startup and constructs agents dynamically. To change an agent's behavior, edit YAML, not code.
@@ -324,16 +314,12 @@ hivepro-cs-control-plane/
 │       │   ├── agent_factory.py       # Agent registration
 │       │   ├── profile_loader.py      # YAML profile loading
 │       │   ├── demo_logger.py         # Rich terminal logging
-│       │   ├── fathom_engine.py       # Fathom processing engine
 │       │   ├── orchestrator.py        # T1: Naveen (CS Orchestrator)
-│       │   ├── leads/                 # T2: Rachel, Damon, Priya (Lane Leads)
 │       │   ├── triage_agent.py        # T3: Kai (Ticket Triage)
 │       │   ├── troubleshoot_agent.py  # T3: Leo (Troubleshooter)
 │       │   ├── escalation_agent.py    # T3: Maya (Escalation Writer)
 │       │   ├── health_monitor.py      # T3: Aisha (Health Monitor)
-│       │   ├── fathom_agent.py        # T3: Jordan (Call Intelligence)
 │       │   ├── qbr_agent.py           # T3: Sofia (QBR / Value Narrative)
-│       │   ├── meeting_followup_agent.py # T3: Riley (Meeting Followup)
 │       │   ├── sow_agent.py           # T3: Ethan (SOW & Prerequisite)
 │       │   ├── deployment_intel_agent.py # T3: Zara (Deployment Intelligence)
 │       │   ├── memory_agent.py        # T4: Atlas (Customer Memory)
@@ -1109,17 +1095,7 @@ deployment_started      -> deployment_intelligence
 
 **Save:** Creates `HealthScore` record via `save_score()` method
 
-### 12.7 Call Intelligence Agent (`fathom_agent.py`)
-
-**Trigger:** `zoom_call_completed`, `fathom_recording_ready`
-**Required Payload:** `{transcript}` (+ optional participants, duration_minutes, recording_id)
-**Claude Model:** claude-sonnet-4-5-20250929 | Max Tokens: 3000 | Temperature: 0.3
-
-**Output JSON:** `{summary, sentiment, sentiment_score, key_topics, decisions, action_items: [{title, owner, deadline}], risks, customer_recap_draft}`
-
-**Save:** Creates `CallInsight` record with full transcript stored
-
-### 12.8 QBR/Value Agent (`qbr_agent.py`)
+### 12.7 QBR/Value Agent (`qbr_agent.py`)
 
 **Trigger:** `renewal_approaching`
 **Required Payload:** None (uses customer memory)
@@ -1147,22 +1123,7 @@ deployment_started      -> deployment_intelligence
 **Output:** Known issues, configuration guidance, similar deployment insights from RAG
 **Save:** No persistence path currently implemented (output discarded)
 
-### 12.11 Lane Leads (`leads/support_lead.py`, `leads/value_lead.py`, `leads/delivery_lead.py`)
-
-**Tier 2** agents that coordinate specialist routing within their lane.
-
-- Each has a `SPECIALIST_MAP` dict mapping event types to T3 specialists
-- `_fallback_plan()` handles unknown events with a reasonable default
-- Receives tasks from T1 Orchestrator, delegates to appropriate T3 specialist
-- Collects results from specialists and passes them back up
-
-### 12.12 Meeting Followup Agent (`meeting_followup_agent.py`)
-
-**Trigger:** Post-meeting events
-**Identity:** Riley Park (T3, Value lane)
-**Role:** Tracks post-meeting action items, generates followup summaries
-
-### 12.13 Pipeline Engine (`pipeline_engine.py`)
+### 12.11 Pipeline Engine (`pipeline_engine.py`)
 
 Runs the multi-stage pipeline defined in `pipeline.yaml` for each agent execution:
 

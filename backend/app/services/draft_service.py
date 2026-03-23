@@ -18,28 +18,24 @@ logger = logging.getLogger("services.draft")
 # Agent ID → human-readable name for Slack cards
 AGENT_DISPLAY_NAMES = {
     "triage_agent": "Ticket Triage (Kai Nakamura)",
-    "fathom_agent": "Call Intelligence (Jordan Ellis)",
     "health_monitor": "Health Monitor (Dr. Aisha Okafor)",
     "escalation_agent": "Escalation Writer (Maya Santiago)",
     "troubleshooter": "Troubleshooting (Leo Petrov)",
     "qbr_value": "QBR / Value (Sofia Marquez)",
     "sow_agent": "SOW & Prerequisite (Ethan Brooks)",
     "deployment_intelligence": "Deployment Intel (Zara Kim)",
-    "meeting_followup": "Meeting Followup (Riley Park)",
     "cso_orchestrator": "CS Orchestrator (Naveen Kapoor)",
 }
 
 # Agent ID → draft_type mapping
 AGENT_DRAFT_TYPE = {
     "triage_agent": "triage",
-    "fathom_agent": "call_intel",
     "health_monitor": "health_alert",
     "escalation_agent": "escalation",
     "troubleshooter": "troubleshoot",
     "qbr_value": "qbr",
     "sow_agent": "sow",
     "deployment_intelligence": "deployment",
-    "meeting_followup": "call_intel",
 }
 
 # Draft type → dashboard tab for deep-links

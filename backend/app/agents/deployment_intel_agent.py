@@ -2,7 +2,7 @@
 Deployment Intelligence Agent — Tier 3 Specialist (Delivery Lane).
 
 Provides deployment guidance based on known issues for the customer's config.
-Reports to: Priya Mehta (delivery_lead)
+Lane: Delivery
 Traits: risk_assessment, pattern_recognition
 """
 

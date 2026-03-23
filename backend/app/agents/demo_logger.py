@@ -196,11 +196,7 @@ def install_demo_formatter():
         "pipeline_engine",
         "agents",
         "agents.orchestrator",
-        "agents.support_lead",
-        "agents.value_lead",
-        "agents.delivery_lead",
         "agents.triage_agent",
-        "agents.meeting_followup",
         "agents.health_monitor",
         "agents.customer_memory",
     ]

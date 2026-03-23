@@ -1,47 +1,37 @@
 # HivePro CS Control Plane — Organization Structure
-# Defines the 4-tier agent hierarchy, 3 operational lanes, and communication rules.
+# Defines the agent hierarchy: Orchestrator routes directly to specialists by lane.
 
 organization:
   name: "HivePro CS Control Plane"
-  description: "AI-powered Customer Success operations center with 13 agents in a 4-tier hierarchy"
+  description: "AI-powered Customer Success operations center with 10 agents"
 
   hierarchy:
-    tier_1:
-      name: "Supervisor"
+    orchestrator:
+      name: "Orchestrator"
       agents:
         - cso_orchestrator          # Naveen Kapoor
-      description: "Strategic oversight and delegation. Receives all events, decomposes into subtasks, delegates to Lane Leads, evaluates quality, synthesizes final output."
+      description: "Routes events directly to the correct specialist agent based on event type and lane."
 
-    tier_2:
-      name: "Lane Leads"
-      agents:
-        - support_lead              # Rachel Torres
-        - value_lead                # Damon Reeves
-        - delivery_lead             # Priya Mehta
-      description: "Coordinate specialist workflows within their lane. Receive tasks from Supervisor, break down for specialists, aggregate results."
-
-    tier_3:
+    specialists:
       name: "Specialists"
       agents:
         - triage_agent              # Kai Nakamura
         - troubleshooter             # Leo Petrov
         - escalation_summary         # Maya Santiago
         - health_monitor             # Dr. Aisha Okafor
-        - fathom_agent          # Jordan Ellis
         - qbr_value                  # Sofia Marquez
         - sow_prerequisite           # Ethan Brooks
         - deployment_intelligence    # Zara Kim
-      description: "Execute specific CS tasks. Receive assignments from their Lane Lead, do the work, report back."
+      description: "Execute specific CS tasks. Receive assignments from the Orchestrator, do the work, report back."
 
-    tier_4:
+    foundation:
       name: "Foundation"
       agents:
         - customer_memory           # Atlas
-      description: "Provides context and memory to all agents. Manages working memory, episodic memory, and shared knowledge pools."
+      description: "Provides context and memory to all agents."
 
   lanes:
     support:
-      lead: support_lead            # Rachel Torres
       specialists:
         - triage_agent              # Kai Nakamura
         - troubleshooter             # Leo Petrov
@@ -49,25 +39,18 @@ organization:
       focus: "Ticket handling, troubleshooting, escalation management"
 
     value:
-      lead: value_lead              # Damon Reeves
       specialists:
         - health_monitor             # Dr. Aisha Okafor
-        - fathom_agent          # Jordan Ellis
         - qbr_value                  # Sofia Marquez
-      focus: "Customer health, call intelligence, business reviews"
+      focus: "Customer health, business reviews"
 
     delivery:
-      lead: delivery_lead           # Priya Mehta
       specialists:
         - sow_prerequisite           # Ethan Brooks
         - deployment_intelligence    # Zara Kim
       focus: "Scope of work, deployment tracking"
 
   communication_rules:
-    - "Naveen (T1) can assign tasks to any Tier 2 lead"
-    - "Tier 2 leads assign tasks to their own specialists only"
-    - "Tier 3 specialists report results back to their lead"
-    - "Tier 3 specialists escalate to their lead, never directly to T1"
-    - "Cross-lane requests go through Tier 2 leads (sideways messages)"
-    - "Atlas (T4) serves all tiers on request — any agent can query memory"
-    - "All delegation flows down (T1→T2→T3), all results flow up (T3→T2→T1)"
+    - "Orchestrator routes events directly to the correct specialist"
+    - "Specialists report results back to the Orchestrator"
+    - "Atlas (Foundation) serves all agents on request — any agent can query memory"

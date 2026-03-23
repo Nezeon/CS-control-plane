@@ -2,7 +2,7 @@
 QBR (Quarterly Business Review) Agent — Tier 3 Specialist (Value Lane).
 
 Synthesizes customer data into comprehensive business review narratives.
-Reports to: Damon Reeves (value_lead)
+Lane: Value
 Traits: trend_analysis, customer_sentiment
 """
 

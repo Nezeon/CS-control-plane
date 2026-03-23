@@ -1,7 +1,7 @@
 """
 Risk Assessment trait — Evaluates risk factors and adds risk scoring.
 
-Used by: delivery_lead (T2), escalation_agent (T3), health_monitor_agent (T3),
+Used by: escalation_agent, health_monitor_agent,
          sow_agent (T3), deployment_intel_agent (T3)
 """
 

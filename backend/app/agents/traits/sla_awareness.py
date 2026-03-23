@@ -1,7 +1,7 @@
 """
 SLA Awareness trait — Adds SLA constraint context and urgency framing.
 
-Used by: support_lead (T2), triage_agent (T3), escalation_agent (T3)
+Used by: triage_agent, escalation_agent
 """
 
 from app.agents.traits.base_trait import BaseTrait

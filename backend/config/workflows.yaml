@@ -1,6 +1,5 @@
 # HivePro CS Control Plane — Workflow Definitions
-# Defines how different event types route through the agent hierarchy.
-# Each workflow specifies trigger events, step sequence, and delegation chains.
+# Defines how events route from the orchestrator directly to specialist agents.
 
 workflows:
   ticket_workflow:
@@ -10,11 +9,8 @@ workflows:
     description: "Handle incoming Jira tickets — triage, troubleshoot if needed, escalate if critical"
     steps:
       - agent: cso_orchestrator
-        action: "Analyze ticket event, determine severity and routing"
-        delegates_to: [support_lead]
-      - agent: support_lead
-        action: "Coordinate triage and troubleshooting"
-        delegates_to: [triage_agent, troubleshooter]
+        action: "Route ticket event to triage specialist"
+        delegates_to: [triage_agent]
       - agent: triage_agent
         action: "Classify ticket, find similar past issues, suggest priority"
       - agent: troubleshooter
@@ -24,24 +20,6 @@ workflows:
         action: "Evaluate escalation need, notify stakeholders"
         condition: "ticket severity = critical OR SLA breach imminent"
 
-  call_workflow:
-    trigger_events:
-      - fathom_call_recorded
-      - fathom_webhook
-    description: "Process recorded customer calls — extract intelligence, track action items"
-    steps:
-      - agent: cso_orchestrator
-        action: "Analyze call event, route to value lane"
-        delegates_to: [value_lead]
-      - agent: value_lead
-        action: "Coordinate call analysis and follow-up"
-        delegates_to: [fathom_agent]
-      - agent: fathom_agent
-        action: "Extract summary, sentiment, risks, action items, competitor mentions"
-      - agent: health_monitor
-        action: "Update customer health based on call sentiment"
-        condition: "sentiment_score < 0.4 OR risk_flags detected"
-
   health_workflow:
     trigger_events:
       - cron_health_check
@@ -49,10 +27,7 @@ workflows:
     description: "Daily health monitoring — compute scores, flag at-risk customers, generate alerts"
     steps:
       - agent: cso_orchestrator
-        action: "Initiate health review cycle"
-        delegates_to: [value_lead]
-      - agent: value_lead
-        action: "Coordinate health analysis across customer portfolio"
+        action: "Route health check to health monitor"
         delegates_to: [health_monitor]
       - agent: health_monitor
         action: "Calculate health scores, identify trends, flag anomalies"
@@ -67,16 +42,10 @@ workflows:
     description: "Generate Quarterly Business Reviews — compile data, build narrative, create report"
     steps:
       - agent: cso_orchestrator
-        action: "Initiate QBR generation, gather cross-lane data"
-        delegates_to: [value_lead, delivery_lead]
-      - agent: value_lead
-        action: "Coordinate customer health and engagement data"
-        delegates_to: [qbr_value, health_monitor]
+        action: "Route QBR generation to QBR specialist"
+        delegates_to: [qbr_value]
       - agent: qbr_value
         action: "Compile QBR report — health trends, key incidents, recommendations"
-      - agent: delivery_lead
-        action: "Provide deployment and SOW status for the QBR"
-        delegates_to: [deployment_intelligence]
 
   sow_workflow:
     trigger_events:
@@ -85,10 +54,7 @@ workflows:
     description: "Manage Scope of Work — track deliverables, flag scope creep, update timelines"
     steps:
       - agent: cso_orchestrator
-        action: "Route SOW task to delivery lane"
-        delegates_to: [delivery_lead]
-      - agent: delivery_lead
-        action: "Coordinate SOW analysis"
+        action: "Route SOW task to SOW specialist"
         delegates_to: [sow_prerequisite]
       - agent: sow_prerequisite
         action: "Analyze SOW status, check deliverables, flag scope creep or delays"
@@ -100,14 +66,10 @@ workflows:
     description: "Track deployment health — correlate with customer issues, assess risk"
     steps:
       - agent: cso_orchestrator
-        action: "Route deployment event to delivery lane"
-        delegates_to: [delivery_lead]
-      - agent: delivery_lead
-        action: "Coordinate deployment analysis"
+        action: "Route deployment event to deployment specialist"
         delegates_to: [deployment_intelligence]
       - agent: deployment_intelligence
         action: "Analyze deployment event, correlate with recent tickets, assess risk"
-      - agent: support_lead
+      - agent: troubleshooter
         action: "Check for related support tickets"
         condition: "deployment risk_level >= medium"
-        delegates_to: [troubleshooter]

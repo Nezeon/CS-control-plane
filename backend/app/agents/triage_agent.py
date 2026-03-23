@@ -2,7 +2,7 @@
 Ticket Triage Agent — Tier 3 Specialist (Support Lane).
 
 Auto-classifies and prioritizes incoming support tickets.
-Reports to: Rachel Torres (support_lead)
+Lane: Support
 Traits: pattern_recognition, sla_awareness
 """
 

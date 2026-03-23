@@ -23,17 +23,17 @@ INTENT_AGENT_MAP = {
     "health": {
         "agent_id": "health_monitor",
         "agent_name": "Dr. Aisha Okafor",
-        "agents_involved": ["cso_orchestrator", "health_monitor", "value_lead"],
+        "agents_involved": ["cso_orchestrator", "health_monitor"],
     },
     "fathom": {
-        "agent_id": "fathom_agent",
-        "agent_name": "Jordan Ellis",
-        "agents_involved": ["cso_orchestrator", "fathom_agent", "value_lead"],
+        "agent_id": "health_monitor",
+        "agent_name": "Dr. Aisha Okafor",
+        "agents_involved": ["cso_orchestrator", "health_monitor"],
     },
     "ticket": {
         "agent_id": "triage_agent",
         "agent_name": "Kai Nakamura",
-        "agents_involved": ["cso_orchestrator", "support_lead", "triage_agent"],
+        "agents_involved": ["cso_orchestrator", "triage_agent"],
     },
     "general": {
         "agent_id": "cso_orchestrator",
@@ -199,7 +199,7 @@ class ChatFastPath:
 
         parts = [
             "## Your Role",
-            "You are Jordan Ellis, the Call Intelligence Specialist at HivePro.",
+            "You are Dr. Aisha Okafor, the Health & Call Intelligence Analyst at HivePro.",
             "Provide executive-grade meeting intelligence — deeper and more actionable ",
             "than any recording tool's built-in summary.",
             "",

@@ -1,10 +1,10 @@
 # HivePro CS Control Plane — Pipeline Configuration
-# Defines tier-specific pipeline stages that agents execute through.
+# Defines pipeline stages that agents execute through.
 # Stage types: perceive, retrieve, think, act, reflect, quality_gate, finalize
 
 pipelines:
-  tier_1_supervisor:
-    description: "Strategic pipeline for the Orchestrator (Naveen Kapoor)"
+  orchestrator:
+    description: "Routing pipeline for the Orchestrator (Naveen Kapoor)"
     max_rounds: 5
     stages:
       - name: "Event Analysis"
@@ -13,48 +13,23 @@ pipelines:
       - name: "Context Gathering"
         type: retrieve
         description: "Pull relevant customer history, recent interactions, and organizational context"
-      - name: "Strategic Decomposition"
+      - name: "Routing Decision"
         type: think
-        description: "Break the event into subtasks, decide which lane(s) need to handle it"
-      - name: "Delegation"
+        description: "Determine which specialist agent should handle this event"
+      - name: "Specialist Execution"
         type: act
-        description: "Assign tasks to the appropriate Lane Lead(s) with clear instructions"
-      - name: "Quality Evaluation"
-        type: quality_gate
-        description: "Evaluate returned deliverables — are they complete, accurate, actionable?"
-        max_iterations: 2
-        iterate_from: "Delegation"
-      - name: "Synthesis"
+        description: "Route to the appropriate specialist agent and run their pipeline"
+      - name: "Result Delivery"
         type: finalize
-        description: "Combine all lane outputs into final result for the customer/stakeholder"
+        description: "Return the specialist's output as the final result"
 
-  tier_2_lane_lead:
-    description: "Coordination pipeline for Lane Leads (Rachel, Damon, Priya)"
-    max_rounds: 4
-    stages:
-      - name: "Task Reception"
-        type: perceive
-        description: "Understand the task assigned by the Orchestrator"
-      - name: "Context Retrieval"
-        type: retrieve
-        description: "Pull lane-specific context — recent work, specialist availability, relevant knowledge"
-      - name: "Task Planning"
-        type: think
-        description: "Break the lead-level task into specialist subtasks, determine assignment order"
-      - name: "Specialist Coordination"
-        type: act
-        description: "Assign subtasks to specialists, collect and review their results"
-      - name: "Lane Synthesis"
-        type: finalize
-        description: "Combine specialist outputs into a coherent lane deliverable for the Orchestrator"
-
-  tier_3_specialist:
-    description: "Execution pipeline for Specialist agents (Kai, Leo, Maya, Aisha, Jordan, Sofia, Ethan, Zara)"
+  specialist:
+    description: "Execution pipeline for Specialist agents"
     max_rounds: 3
     stages:
       - name: "Task Perception"
         type: perceive
-        description: "Understand the specific task from the Lane Lead"
+        description: "Understand the specific task from the Orchestrator"
       - name: "Memory Retrieval"
         type: retrieve
         description: "Recall similar past work from episodic memory, pull relevant knowledge"
@@ -68,7 +43,7 @@ pipelines:
         type: reflect
         description: "Evaluate own work quality, confidence level, and lessons learned"
 
-  tier_4_foundation:
+  foundation:
     description: "Service pipeline for Foundation agents (Atlas)"
     max_rounds: 2
     stages:

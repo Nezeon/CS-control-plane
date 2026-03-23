@@ -50,15 +50,10 @@ from app.routers import (
     events,
     fathom,
     health,
-    hierarchy,
     insights,
-    memory,
-    messages,
-    pipeline,
     reports,
     tickets,
     webhooks,
-    workflows,
 )
 from app.websocket_manager import manager
 
@@ -299,13 +294,6 @@ app.include_router(jira.router)
 
 # Fathom integration
 app.include_router(fathom.router)
-
-# v2 routers (hierarchy-aware)
-app.include_router(hierarchy.router)
-app.include_router(messages.router)
-app.include_router(pipeline.router)
-app.include_router(memory.router)
-app.include_router(workflows.router)
 
 # Executive summary + trends
 from app.routers import executive

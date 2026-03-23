@@ -2,7 +2,7 @@
 Demo trigger endpoint -- runs demo scenarios via API for frontend integration.
 
 POST /api/demo/trigger
-Body: {"scenario": "ticket" | "meeting" | "all", "customer_id": optional UUID}
+Body: {"scenario": "ticket" | "all", "customer_id": optional UUID}
 
 Runs route_direct() in-process (not via Celery) so WebSocket broadcasts
 reach the frontend in real-time.
@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.demo_data import DEMO_TRANSCRIPT, DEMO_TICKET
+from app.demo_data import DEMO_TICKET
 from app.models.customer import Customer
 from app.models.health_score import HealthScore
 
@@ -32,7 +32,7 @@ _engine = create_engine(settings.SYNC_DATABASE_URL, echo=False)
 
 
 class DemoTriggerRequest(BaseModel):
-    scenario: str = "all"  # ticket | meeting | all
+    scenario: str = "all"  # ticket | all
     customer_id: str | None = None
 
 
@@ -82,35 +82,6 @@ def _run_ticket(db: Session, customer: Customer) -> dict:
     }
 
 
-def _run_meeting(db: Session, customer: Customer) -> dict:
-    """Run meeting followup scenario."""
-    event = {
-        "event_type": "meeting_ended",
-        "source": "demo_api",
-        "customer_id": customer.id,
-        "payload": {
-            "title": f"Q1 2026 Review Call - {customer.name}",
-            "transcript": DEMO_TRANSCRIPT,
-            "participants": [
-                {"name": "Vignesh Kumar", "email": "vignesh@hivepro.com", "role": "CSM"},
-                {"name": "Sarah Chen", "email": f"sarah@{customer.name.lower().replace(' ', '')}.com", "role": "VP Security"},
-                {"name": "Mike Torres", "email": f"mike@{customer.name.lower().replace(' ', '')}.com", "role": "Security Analyst"},
-            ],
-            "duration_minutes": 16,
-            "call_date": "2026-03-05T10:30:00Z",
-        },
-    }
-    start = time.perf_counter()
-    result = route_direct(db, event)
-    elapsed_ms = int((time.perf_counter() - start) * 1000)
-    return {
-        "scenario": "meeting",
-        "customer": customer.name,
-        "elapsed_ms": elapsed_ms,
-        "result": _serialize(result),
-    }
-
-
 def _serialize(obj) -> dict:
     """Make result JSON-serializable."""
     import json
@@ -131,8 +102,8 @@ def _serialize(obj) -> dict:
 @router.post("/trigger", response_model=DemoTriggerResponse)
 def trigger_demo(req: DemoTriggerRequest):
     """Trigger a demo scenario. Runs in-process for WebSocket broadcasting."""
-    if req.scenario not in ("ticket", "meeting", "all"):
-        raise HTTPException(status_code=400, detail="scenario must be: ticket, meeting, or all")
+    if req.scenario not in ("ticket", "all"):
+        raise HTTPException(status_code=400, detail="scenario must be: ticket or all")
 
     with Session(_engine) as db:
         customer = _get_customer(db, req.customer_id)
@@ -140,9 +111,6 @@ def trigger_demo(req: DemoTriggerRequest):
 
         if req.scenario in ("ticket", "all"):
             results["ticket"] = _run_ticket(db, customer)
-
-        if req.scenario in ("meeting", "all"):
-            results["meeting"] = _run_meeting(db, customer)
 
         success = all(
             r.get("result", {}).get("orchestrator_result", {}).get("success", False)
@@ -169,16 +137,10 @@ def list_scenarios():
                 "agents": ["Naveen Kapoor (T1)", "Rachel Torres (T2)", "Kai Nakamura (T3)", "Atlas (T4)"],
             },
             {
-                "id": "meeting",
-                "name": "Meeting Followup",
-                "description": "Simulates a Q1 review call ending. Generates summary + email draft.",
-                "agents": ["Naveen Kapoor (T1)", "Damon Reeves (T2)", "Riley Park (T3)", "Atlas (T4)"],
-            },
-            {
                 "id": "all",
                 "name": "Full Demo",
-                "description": "Runs both scenarios sequentially.",
-                "agents": ["All 3 lanes engaged"],
+                "description": "Runs all scenarios sequentially.",
+                "agents": ["Support lane engaged"],
             },
         ]
     }

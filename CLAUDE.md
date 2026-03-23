@@ -156,8 +156,6 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 ```
 hivepro-cs-control-plane/
 ├── CLAUDE.md                          ← YOU ARE HERE
-├── REBUILD_PLAN.md                    # Detailed architecture rebuild plan
-├── REFERENCE_ARCHITECTURE.md          # Technical architecture reference
 ├── DOCUMENTATION.md                   # Comprehensive docs
 ├── DEPLOYMENT.md                      # Deployment instructions
 ├── render.yaml                        # Render deployment config
@@ -204,7 +202,6 @@ hivepro-cs-control-plane/
 │       │   ├── alert.py
 │       │   ├── event.py
 │       │   ├── agent_execution_round.py
-│       │   ├── agent_message.py
 │       │   ├── agent_log.py
 │       │   ├── chat_conversation.py
 │       │   ├── chat_message.py
@@ -232,11 +229,6 @@ hivepro-cs-control-plane/
 │       │   ├── executive.py           # Executive summary, trends
 │       │   ├── drafts.py              # Draft approve/dismiss
 │       │   ├── demo.py                # Demo triggers
-│       │   ├── hierarchy.py           # /v2/hierarchy/*
-│       │   ├── messages.py            # /v2/messages/*
-│       │   ├── pipeline.py            # /v2/pipeline/*
-│       │   ├── memory.py              # /v2/memory/*
-│       │   └── workflows.py           # /v2/workflows/*
 │       │
 │       ├── agents/                    # AI agent implementations (10 agents)
 │       │   ├── base_agent.py          # Base with pipeline execution
@@ -245,23 +237,15 @@ hivepro-cs-control-plane/
 │       │   ├── agent_factory.py       # Agent registration
 │       │   ├── profile_loader.py      # YAML profile loading
 │       │   ├── demo_logger.py         # Rich terminal logging
-│       │   ├── fathom_engine.py       # Fathom processing engine
 │       │   ├── orchestrator.py        # Agent 1: CS Orchestrator
-│       │   │
-│       │   ├── leads/                 # Lane coordination
-│       │   │   ├── support_lead.py    # Run/Support lane
-│       │   │   ├── value_lead.py      # Value lane
-│       │   │   └── delivery_lead.py   # Delivery lane
 │       │   │
 │       │   ├── triage_agent.py        # Agent 6: Ticket Triage
 │       │   ├── troubleshoot_agent.py  # Agent 7: Troubleshooting
 │       │   ├── escalation_agent.py    # Agent 8: Escalation Writer
 │       │   ├── health_monitor.py      # Agent 9: Health Monitor
-│       │   ├── fathom_agent.py        # Call Intelligence
 │       │   ├── qbr_agent.py           # Agent 10: QBR / Value Narrative
 │       │   ├── sow_agent.py           # Agent 4: SOW & Prerequisite
 │       │   ├── deployment_intel_agent.py # Agent 5: Deployment Intelligence
-│       │   ├── meeting_followup_agent.py # Meeting Followup
 │       │   │
 │       │   ├── memory/                # Agent 2: Customer Memory (shared service)
 │       │   │   ├── memory_agent.py    # Customer Memory Manager
@@ -296,9 +280,7 @@ hivepro-cs-control-plane/
 │       │   ├── slack_service.py       # Slack Bot client
 │       │   ├── slack_chat_handler.py  # Slack message handler
 │       │   ├── slack_formatter.py     # Markdown → Block Kit
-│       │   ├── pipeline_service.py    # Pipeline execution
 │       │   ├── event_service.py       # Event routing
-│       │   ├── message_service.py     # Inter-agent messages
 │       │   ├── draft_service.py       # Draft create/approve/dismiss
 │       │   ├── alert_rules_engine.py  # 4 alert rules
 │       │   └── trend_service.py       # Analytics queries
@@ -346,7 +328,6 @@ hivepro-cs-control-plane/
 │   ├── utils/api.py                   # API client (JWT auth, polling)
 │   └── utils/style.py                 # CSS theming
 │
-└── e2e/                               # Playwright E2E tests
 ```
 
 ---
@@ -385,21 +366,17 @@ No sidebar. The Orbital Nav arc is the primary navigation at the bottom-center. 
 
 ### Rule 8: Hierarchical Delegation
 
-Tasks flow DOWN the hierarchy: Supervisor (T1) → Lane Lead (T2) → Specialist (T3). Results flow UP. Specialists NEVER delegate to each other directly — sideways requests go through the Message Board and the Lane Lead coordinates. The Foundation layer (T4) serves ALL tiers.
+The Orchestrator routes events directly to the appropriate specialist agent based on event type and lane. Specialists NEVER delegate to each other directly — sideways requests go through the Message Board. The Foundation layer (Customer Memory) serves ALL agents.
 
 ### Rule 9: YAML-Driven Configuration
 
 Agent identities, personalities, traits, tools, pipeline stages, org structure, and workflows are defined in YAML config files (`backend/config/`). **Never** hardcode agent behavior in Python. The code reads YAML at startup and constructs agents dynamically. To change an agent's behavior, edit YAML, not code.
 
-### Rule 10: Message Board Communication
-
-Agents communicate through typed messages on the Message Board (`agent_messages` table). Five message types: `task_assignment` (down), `deliverable` (up), `request` (sideways), `escalation` (up, urgent), `feedback` (down). Messages support threading via `thread_id` and `parent_id`. Every message links to its originating event.
-
-### Rule 11: 3-Tier Memory System
+### Rule 10: 3-Tier Memory System
 
 Every agent accesses three memory tiers: **Working** (in-process scratchpad, cleared per run), **Episodic** (ChromaDB `episodic_memory` collection, per-agent diary with tri-factor retrieval), **Semantic** (ChromaDB `shared_knowledge` collection, lane-scoped knowledge pools). Agents read episodic + semantic during `retrieve` stage, write to episodic during `reflect` stage, and optionally publish to semantic via `publish_knowledge` tool.
 
-### Rule 12: Pipeline Execution
+### Rule 11: Pipeline Execution
 
 Every agent runs a multi-round pipeline defined in `pipeline.yaml`. Stages: `perceive` → `retrieve` → `think` → `act` → `reflect` → `quality_gate` → `finalize`. Each stage is logged to `agent_execution_rounds` with tools called, tokens used, confidence, and duration. The pipeline engine handles quality gate failures (retry from a specific stage). Every stage broadcasts progress via WebSocket.
 
@@ -594,7 +571,6 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 | `alerts` | Customer health/SLA alerts |
 | `events` | Incoming events (type, status, payload) |
 | `agent_execution_rounds` | Pipeline stage execution logs |
-| `agent_messages` | Inter-agent messages (5 types, threaded) |
 | `agent_logs` | Agent activity logs |
 | `chat_conversations` | Chat conversation threads |
 | `chat_messages` | Individual chat messages |

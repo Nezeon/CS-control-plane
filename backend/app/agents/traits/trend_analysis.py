@@ -1,7 +1,7 @@
 """
 Trend Analysis trait — Frames analysis around patterns and trajectory.
 
-Used by: value_lead (T2), health_monitor_agent (T3), qbr_agent (T3)
+Used by: health_monitor_agent, qbr_agent
 """
 
 from app.agents.traits.base_trait import BaseTrait

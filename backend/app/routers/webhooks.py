@@ -126,7 +126,7 @@ async def fathom_webhook(
     # Extract action items
     fathom_action_items = payload.get("action_items", [])
 
-    # Build event payload matching what FathomAgent expects
+    # Build event payload for Fathom call processing
     event_payload = {
         "recording_id": str(recording_id),
         "title": title,

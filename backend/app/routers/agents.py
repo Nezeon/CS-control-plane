@@ -36,43 +36,9 @@ AGENT_REGISTRY = [
         "lane": "control",
         "role": "CS Manager",
         "description": "Strategic decomposition, delegation, quality evaluation, synthesis",
-        "manages": ["support_lead", "value_lead", "delivery_lead"],
+        "manages": ["triage_agent", "troubleshooter", "escalation_summary", "health_monitor", "qbr_value", "sow_prerequisite", "deployment_intelligence"],
     },
-    # Tier 2: Lane Leads
-    {
-        "name": "support_lead",
-        "agent_key": "support_lead",
-        "display_name": "Support Operations Lead",
-        "human_name": "Rachel Torres",
-        "tier": 2,
-        "lane": "support",
-        "role": "Support Operations Lead",
-        "description": "Manages support workflow, SLA tracking, ticket prioritization",
-        "manages": ["triage_agent", "troubleshooter_agent", "escalation_agent"],
-    },
-    {
-        "name": "value_lead",
-        "agent_key": "value_lead",
-        "display_name": "Value & Insights Lead",
-        "human_name": "Damon Reeves",
-        "tier": 2,
-        "lane": "value",
-        "role": "Value & Insights Lead",
-        "description": "Customer health analytics, churn prediction, value delivery insights",
-        "manages": ["health_monitor_agent", "fathom_agent", "qbr_agent"],
-    },
-    {
-        "name": "delivery_lead",
-        "agent_key": "delivery_lead",
-        "display_name": "Delivery Operations Lead",
-        "human_name": "Priya Mehta",
-        "tier": 2,
-        "lane": "delivery",
-        "role": "Delivery Operations Lead",
-        "description": "Delivery management, SOW tracking, deployment coordination",
-        "manages": ["sow_agent", "deployment_intel_agent"],
-    },
-    # Tier 3: Specialists — Support
+    # Specialists — Support
     {
         "name": "triage_agent",
         "agent_key": "triage_agent",
@@ -116,17 +82,6 @@ AGENT_REGISTRY = [
         "lane": "value",
         "role": "Health Analyst",
         "description": "Calculates customer health scores, trend analysis",
-        "manages": [],
-    },
-    {
-        "name": "fathom_agent",
-        "agent_key": "fathom_agent",
-        "display_name": "Fathom Agent",
-        "human_name": "Jordan Ellis",
-        "tier": 3,
-        "lane": "value",
-        "role": "Call Analyst",
-        "description": "Extracts insights from call transcripts",
         "manages": [],
     },
     {
@@ -399,7 +354,6 @@ async def trigger_agent(
     # Map agent_name to event_type for orchestrator routing
     agent_to_event = {
         "health_monitor": "manual_health_check",
-        "fathom_agent": "zoom_call_completed",
         "ticket_triage": "jira_ticket_created",
         "troubleshooter": "support_bundle_uploaded",
         "escalation_summary": "ticket_escalated",
@@ -473,8 +427,6 @@ async def trigger_agent(
                 agent_inst = AgentFactory.create(routed_agent) if routed_agent and AgentFactory.is_registered(routed_agent) else None
                 if agent_inst and routed_agent == "health_monitor" and hasattr(agent_inst, "save_score"):
                     agent_inst.save_score(sync_db, body.customer_id, agent_result)
-                elif agent_inst and routed_agent == "fathom_agent" and hasattr(agent_inst, "save_insight"):
-                    agent_inst.save_insight(sync_db, body.customer_id, event_dict.get("payload", {}), agent_result)
                 elif agent_inst and routed_agent == "troubleshooter" and hasattr(agent_inst, "save_result"):
                     ticket_id = event_dict.get("payload", {}).get("ticket_id")
                     if ticket_id:

@@ -2,7 +2,7 @@
 Escalation Agent — Tier 3 Specialist (Support Lane).
 
 Generates technical escalation summaries for L2/L3 engineering.
-Reports to: Rachel Torres (support_lead)
+Lane: Support
 Traits: sla_awareness, risk_assessment, customer_sentiment
 """
 

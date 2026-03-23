@@ -1,7 +1,7 @@
 """
 Deadline Tracking trait — Adds deadline urgency context and prioritization.
 
-Used by: delivery_lead (T2), sow_agent (T3)
+Used by: sow_agent, deployment_intel_agent
 """
 
 from app.agents.traits.base_trait import BaseTrait

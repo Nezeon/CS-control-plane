@@ -269,59 +269,7 @@ def process_event(self, event: dict) -> dict:
         # Post-processing: save agent-specific outputs
         if result.get("success"):
             agent = AgentFactory.create(agent_name) if AgentFactory.is_registered(agent_name) else None
-            # Fathom agent saves even without customer_id (Fathom sync)
-            if agent_name == "fathom_agent" and hasattr(agent, "save_insight"):
-                payload = event.get("payload", {})
-                # Resolve customer if missing
-                customer_name = ""
-                if not customer_id:
-                    customer_id, customer_name = _resolve_customer(
-                        db, payload.get("title", ""), payload.get("participants")
-                    )
-                agent.save_insight(db, customer_id, payload, result)
-                # Embed insight into ChromaDB for RAG similarity search
-                try:
-                    from app.services.rag_service import rag_service
-                    output = result.get("output", {})
-                    if isinstance(output, dict):
-                        topics = output.get("key_topics", [])
-                        embed_text = f"{output.get('summary', '')} {' '.join(topics) if isinstance(topics, list) else ''}"
-                        if embed_text.strip():
-                            from app.models.call_insight import CallInsight as _CI
-                            latest = db.query(_CI).filter_by(
-                                fathom_recording_id=payload.get("recording_id")
-                            ).order_by(_CI.processed_at.desc()).first()
-                            insight_id = str(latest.id) if latest else str(uuid.uuid4())
-                            rag_service.embed_insight(insight_id, embed_text, {
-                                "customer_id": str(customer_id) if customer_id else "",
-                                "sentiment": output.get("sentiment", ""),
-                                "call_date": payload.get("call_date", ""),
-                                "recording_id": payload.get("recording_id", ""),
-                            })
-                            logger.info(f"RAG: embedded call insight {insight_id}")
-                except Exception as rag_err:
-                    logger.warning(f"RAG embedding failed (non-critical): {rag_err}")
-                # Ingest into meeting_knowledge ChromaDB for agentic RAG
-                _ingest_to_knowledge_base(payload, result, customer_name)
-                # Notify Slack with the call summary (webhook path)
-                try:
-                    from app.services.slack_service import slack_service
-                    if slack_service.configured:
-                        output = result.get("output", result)
-                        if isinstance(output, dict):
-                            slack_service.send_call_insight_notification(
-                                title=payload.get("title", "Untitled"),
-                                customer_name=customer_name or "",
-                                summary=output.get("summary", ""),
-                                sentiment=output.get("sentiment", ""),
-                                sentiment_score=output.get("sentiment_score"),
-                                action_items=output.get("action_items", []),
-                                risks=output.get("risks", []),
-                                key_topics=output.get("key_topics", []),
-                            )
-                except Exception as slack_err:
-                    logger.warning(f"Slack call notification failed (non-critical): {slack_err}")
-            elif customer_id and agent_name == "health_monitor" and hasattr(agent, "save_score"):
+            if customer_id and agent_name == "health_monitor" and hasattr(agent, "save_score"):
                 agent.save_score(db, customer_id, result)
             elif agent_name == "troubleshooter" and hasattr(agent, "save_result"):
                 ticket_id = event.get("payload", {}).get("ticket_id")
@@ -387,12 +335,75 @@ def process_event(self, event: dict) -> dict:
         db.close()
 
 
+def _build_fathom_prompt(transcript: str, customer: dict, payload: dict) -> str:
+    """Build prompt for Fathom call transcript analysis."""
+    parts = [
+        "## Customer Context",
+        f"Customer: {customer.get('name', 'Unknown')}",
+        f"Industry: {customer.get('industry', 'N/A')} | Tier: {customer.get('tier', 'N/A')}",
+        "",
+        "## Call Details",
+        f"Title: {payload.get('title', 'N/A')}",
+        f"Participants: {', '.join(payload.get('participants', ['Unknown']))}",
+        f"Duration: {payload.get('duration_minutes', 'N/A')} minutes",
+        "",
+        "## Transcript",
+        transcript[:8000],
+        "",
+        "## Output Format",
+        "Respond with ONLY a JSON object (no markdown, no extra text). Use this exact schema:",
+        '{"summary": "2-3 paragraph executive summary of the call",',
+        ' "sentiment": "positive|neutral|negative|mixed",',
+        ' "sentiment_score": 0.75,',
+        ' "key_topics": ["topic1", "topic2"],',
+        ' "action_items": [{"task": "description", "owner": "person name", "deadline": "date or null"}],',
+        ' "decisions": ["decision1", "decision2"],',
+        ' "risks": ["risk1", "risk2"],',
+        ' "customer_recap_draft": "Brief recap suitable to send to the customer"}',
+    ]
+    return "\n".join(parts)
+
+
+def _save_call_insight(db, customer_id, event_payload: dict, result: dict) -> None:
+    """Save a CallInsight record from Claude analysis output."""
+    from app.models.call_insight import CallInsight
+
+    raw_date = event_payload.get("call_date")
+    if isinstance(raw_date, str) and raw_date:
+        try:
+            call_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            call_date = datetime.now(timezone.utc)
+    elif isinstance(raw_date, datetime):
+        call_date = raw_date
+    else:
+        call_date = datetime.now(timezone.utc)
+
+    insight = CallInsight(
+        id=uuid.uuid4(),
+        customer_id=customer_id,
+        fathom_recording_id=event_payload.get("recording_id"),
+        call_date=call_date,
+        participants=event_payload.get("participants", []),
+        summary=result.get("summary"),
+        decisions=result.get("decisions", []),
+        action_items=result.get("action_items", []),
+        risks=result.get("risks", []),
+        sentiment=result.get("sentiment"),
+        sentiment_score=result.get("sentiment_score"),
+        key_topics=result.get("key_topics", []),
+        customer_recap_draft=result.get("customer_recap_draft"),
+        raw_transcript=event_payload.get("transcript"),
+    )
+    db.add(insight)
+
+
 async def run_fathom_sync(days: int = 7) -> dict:
     """
     Core Fathom sync logic — reusable from Celery task, router, or startup.
 
     Fetches meetings from Fathom API, skips already-imported ones,
-    processes new recordings through the Fathom agent, and runs pattern detection.
+    processes new recordings through Claude, and runs pattern detection.
 
     Returns {status, imported, skipped, total, patterns_detected}.
     """
@@ -484,31 +495,32 @@ async def run_fathom_sync(days: int = 7) -> dict:
                 db, meeting_title, participants
             )
 
-            # Direct FathomAgent call — bypasses T1→T2→T3 pipeline for speed
-            # 1 Claude call per meeting (~30s) instead of ~6 calls (~3 min)
-            from app.agents.fathom_agent import FathomAgent
-            agent = FathomAgent()
-
-            customer_info = {}
-            if customer_name:
-                customer_info = {"name": customer_name}
-
-            prompt = agent._build_prompt(
-                transcript_text, customer_info, event_payload
+            # Direct Claude call for call analysis (no agent class needed)
+            prompt = _build_fathom_prompt(
+                transcript_text,
+                {"name": customer_name} if customer_name else {},
+                event_payload,
             )
-            response = agent._call_claude(prompt, max_tokens=3000, temperature=0.3)
-            result = agent._parse_claude(response)
-
-            if result.get("error"):
-                logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {result.get('error')}")
+            from app.services.claude_service import claude_service
+            response = claude_service.generate_sync(prompt, max_tokens=3000, temperature=0.3)
+            import json as _json
+            result = {}
+            try:
+                result = _json.loads(response) if isinstance(response, str) else response
+            except (_json.JSONDecodeError, TypeError):
+                logger.warning(f"Fathom sync: Claude parse error for {recording_id}")
                 skipped += 1
                 continue
 
-            # Wrap result in the format save_insight expects
+            if not isinstance(result, dict) or result.get("error"):
+                logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {result}")
+                skipped += 1
+                continue
+
             wrapped_result = {"success": True, "output": result}
 
-            # Save to DB
-            agent.save_insight(db, customer_id, event_payload, wrapped_result)
+            # Save CallInsight to DB
+            _save_call_insight(db, customer_id, event_payload, result)
 
             # RAG embed
             try:

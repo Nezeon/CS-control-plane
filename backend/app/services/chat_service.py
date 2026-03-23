@@ -733,9 +733,8 @@ class ChatService:
         _agent_names = {
             "triage_agent": "Kai Nakamura", "troubleshooter": "Leo Petrov",
             "escalation_summary": "Maya Santiago", "health_monitor": "Dr. Aisha Okafor",
-            "fathom_agent": "Jordan Ellis", "qbr_value": "Sofia Marquez",
+            "qbr_value": "Sofia Marquez",
             "sow_prerequisite": "Ethan Brooks", "deployment_intelligence": "Zara Kim",
-            "meeting_followup": "Riley Park",
         }
         specialist = EVENT_ROUTING.get(intent_info["event_type"])
         if specialist:
@@ -865,12 +864,7 @@ class ChatService:
         if not lanes_used and isinstance(result.get("output"), dict):
             lanes_used = result["output"].get("lanes_used", [])
 
-        from app.agents.orchestrator import LANE_LEAD_MAP, EVENT_ROUTING
-
-        for lane in lanes_used:
-            lead = LANE_LEAD_MAP.get(lane)
-            if lead:
-                agents.add(lead)
+        from app.agents.orchestrator import EVENT_ROUTING
 
         # Try to infer specialist from event type
         event_type = result.get("event_type", "")

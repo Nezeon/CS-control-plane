@@ -1,7 +1,7 @@
 """
 Delegation trait — Injects available agent roster and expertise for task assignment.
 
-Used by: cso_orchestrator (T1), support_lead (T2), value_lead (T2), delivery_lead (T2)
+Used by: cso_orchestrator
 """
 
 from app.agents.traits.base_trait import BaseTrait

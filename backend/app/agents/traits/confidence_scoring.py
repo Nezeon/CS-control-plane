@@ -1,7 +1,7 @@
 """
 Confidence Scoring trait — Tracks and scores confidence levels in agent outputs.
 
-Used by: meeting_followup and other agents that need to express certainty levels.
+Used by: agents that need to express certainty levels.
 """
 
 import json

@@ -278,8 +278,11 @@ class BaseAgent(ABC):
         if history:
             parts.append("## Recent Chat Context")
             for msg in history[-10:]:
-                role = "User" if msg["role"] == "user" else "Assistant"
-                parts.append(f"**{role}:** {msg['content'][:300]}")
+                role = "User" if msg.get("role") == "user" else "Assistant"
+                # 300-char limit: tighter than the 500-char fetch because full
+                # pipeline prompts already include rich context from memory/briefs
+                content = msg.get("content", "")[:300]
+                parts.append(f"**{role}:** {content}")
             parts.append("")
 
         self.logger.info(

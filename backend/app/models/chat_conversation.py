@@ -34,4 +34,9 @@ class ChatConversation(Base):
         sa.Index("idx_chat_conv_user", "user_id", created_at.desc()),
         sa.Index("idx_chat_conv_customer", "customer_id"),
         sa.Index("idx_chat_conv_status", "status"),
+        sa.Index(
+            "idx_chat_conv_metadata_slack_channel",
+            sa.text("((metadata->>'slack_channel'))"),
+            postgresql_where=sa.text("metadata->>'slack_channel' IS NOT NULL"),
+        ),
     )

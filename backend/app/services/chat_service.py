@@ -546,9 +546,11 @@ class ChatService:
 
         _stage("resolve_customer", "Resolving customer", 2, f"Customer: {customer_name or 'None matched'}")
 
+        # Fetch conversation once — reused for customer update + Slack channel detection
+        conv = db.query(ChatConversation).filter_by(id=conversation_id).first()
+
         # Update conversation with customer if resolved
         if resolved_customer_id:
-            conv = db.query(ChatConversation).filter_by(id=conversation_id).first()
             if conv and not conv.customer_id:
                 conv.customer_id = resolved_customer_id
                 db.commit()
@@ -604,9 +606,8 @@ class ChatService:
 
                 prefetched["meeting_chunks"] = chunks
 
-            # Detect Slack channel for per-channel context
-            conv_for_meta = db.query(ChatConversation).filter_by(id=conversation_id).first()
-            slack_channel = (conv_for_meta.metadata_ or {}).get("slack_channel") if conv_for_meta else None
+            # Detect Slack channel for per-channel context (reuses conv fetched above)
+            slack_channel = (conv.metadata_ or {}).get("slack_channel") if conv else None
 
             # Load conversation history — per-channel for Slack, per-conversation for web
             conv_history = self._get_recent_messages(
@@ -683,13 +684,17 @@ class ChatService:
         }
         logger.info(f"[Chat]   Payload keys: {list(event_payload.keys())}")
 
-        # 5. Create event record
+        # 5. Create event record — strip transient keys that are only needed
+        #    in-memory for the agent pipeline, not for DB persistence
+        _TRANSIENT_PAYLOAD_KEYS = {"conversation_history", "meeting_chunks"}
+        event_payload_for_db = {k: v for k, v in event_payload.items() if k not in _TRANSIENT_PAYLOAD_KEYS}
+
         logger.info("[Chat] ── STEP 4: Create event record ──")
         event = Event(
             id=uuid.uuid4(),
             event_type=intent_info["event_type"],
             source="user_chat",
-            payload=event_payload,
+            payload=event_payload_for_db,
             customer_id=resolved_customer_id,
             status="pending",
         )
@@ -907,6 +912,8 @@ class ChatService:
                 .all()
             )
 
+        # 500-char limit: used by fast path (Haiku) which needs fuller context;
+        # _prepend_brief() further trims to 300 for full pipeline prompts
         return [
             {"role": m.role, "content": m.content[:500]}
             for m in reversed(messages)

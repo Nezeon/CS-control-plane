@@ -10,8 +10,7 @@ You are continuing work on the **HivePro CS Control Plane** — an AI-powered Cu
 
 **Read these files FIRST before doing anything:**
 1. `CLAUDE.md` — Project rules, tech stack, architecture, coding standards
-2. `REBUILD_PLAN.md` — The full rebuild plan (2500+ lines) with 9 phases, agent identities, file inventory, and detailed specs
-3. `REFERENCE_ARCHITECTURE.md` — Reference architecture from an agentic simulation repo we're modeling after
+2. `docs/ARCHITECTURE.md` — System design, agent specs, event routing, implementation phases
 
 ## What's Already Done
 

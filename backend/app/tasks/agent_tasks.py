@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -338,6 +339,9 @@ def process_event(self, event: dict) -> dict:
 def _build_fathom_prompt(transcript: str, customer: dict, payload: dict) -> str:
     """Build prompt for Fathom call transcript analysis."""
     parts = [
+        "You are an expert call intelligence analyst. Analyze the following customer call "
+        "transcript and extract structured insights with precision and depth.",
+        "",
         "## Customer Context",
         f"Customer: {customer.get('name', 'Unknown')}",
         f"Industry: {customer.get('industry', 'N/A')} | Tier: {customer.get('tier', 'N/A')}",
@@ -503,11 +507,10 @@ async def run_fathom_sync(days: int = 7) -> dict:
             )
             from app.services.claude_service import claude_service
             response = claude_service.generate_sync(prompt, max_tokens=3000, temperature=0.3)
-            import json as _json
             result = {}
             try:
-                result = _json.loads(response) if isinstance(response, str) else response
-            except (_json.JSONDecodeError, TypeError):
+                result = json.loads(response) if isinstance(response, str) else response
+            except (json.JSONDecodeError, TypeError):
                 logger.warning(f"Fathom sync: Claude parse error for {recording_id}")
                 skipped += 1
                 continue
@@ -658,8 +661,6 @@ def _detect_call_patterns(db) -> list[dict]:
 
     # ── Pattern 2: Recurring topics across multiple meetings ────────
     try:
-        import json as _json
-
         rows = db.execute(text("""
             SELECT ci.key_topics, ci.customer_id, c.name
             FROM call_insights ci
@@ -675,7 +676,7 @@ def _detect_call_patterns(db) -> list[dict]:
             topics = rd.get("key_topics", [])
             if isinstance(topics, str):
                 try:
-                    topics = _json.loads(topics)
+                    topics = json.loads(topics)
                 except Exception:
                     topics = []
             cname = rd.get("name", "Unknown")
@@ -692,7 +693,7 @@ def _detect_call_patterns(db) -> list[dict]:
             topics = rd.get("key_topics", [])
             if isinstance(topics, str):
                 try:
-                    topics = _json.loads(topics)
+                    topics = json.loads(topics)
                 except Exception:
                     topics = []
             cid = rd.get("customer_id")

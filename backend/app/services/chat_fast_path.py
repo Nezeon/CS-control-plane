@@ -195,11 +195,10 @@ class ChatFastPath:
         return "\n".join(parts)
 
     def _build_fathom_prompt(self, message: str, memory: dict, prefetched: dict) -> str:
-        import json as _json
 
         parts = [
             "## Your Role",
-            "You are Dr. Aisha Okafor, the Health & Call Intelligence Analyst at HivePro.",
+            "You are Dr. Aisha Okafor, the Customer Health Analyst at HivePro, also handling call intelligence analysis.",
             "Provide executive-grade meeting intelligence — deeper and more actionable ",
             "than any recording tool's built-in summary.",
             "",

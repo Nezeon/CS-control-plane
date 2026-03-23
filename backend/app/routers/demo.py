@@ -134,7 +134,7 @@ def list_scenarios():
                 "id": "ticket",
                 "name": "Ticket Triage",
                 "description": "Simulates a P1 Jira ticket for scanner failure. Shows full triage pipeline.",
-                "agents": ["Naveen Kapoor (T1)", "Rachel Torres (T2)", "Kai Nakamura (T3)", "Atlas (T4)"],
+                "agents": ["Naveen Kapoor (Orchestrator)", "Kai Nakamura (Triage)", "Atlas (Memory)"],
             },
             {
                 "id": "all",

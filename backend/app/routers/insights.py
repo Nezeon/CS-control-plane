@@ -251,88 +251,29 @@ async def sync_fathom(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Pull recent Fathom meetings and process them through the Call Intelligence agent.
+    Pull recent Fathom meetings and process them through the call analysis pipeline.
 
-    Fetches meetings from the last `days` days, skips any already imported
-    (by fathom_recording_id), and pushes new ones into the event pipeline.
+    Delegates to run_fathom_sync() which handles: fetch, dedup, customer resolution,
+    Claude analysis, DB save, RAG embed, Slack notify, and pattern detection.
     """
-    from app.services.fathom_service import fathom_service, FathomAPIError
-    from app.services.event_service import event_service
-
     if not settings.FATHOM_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Fathom API key not configured",
         )
 
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    created_after = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    from app.tasks.agent_tasks import run_fathom_sync
 
-    try:
-        meetings = await fathom_service.list_all_meetings(
-            created_after=created_after,
-            include_transcript=True,
-            include_summary=True,
-            include_action_items=True,
-        )
-    except FathomAPIError as e:
-        raise HTTPException(status_code=e.status_code or 502, detail=str(e))
+    result = await run_fathom_sync(days)
 
-    # Check which recording_ids we've already processed
-    existing_ids_result = await db.execute(
-        select(CallInsight.fathom_recording_id)
-        .where(CallInsight.fathom_recording_id.isnot(None))
-    )
-    existing_ids = {row[0] for row in existing_ids_result.all()}
-
-    imported = 0
-    skipped = 0
-
-    for meeting in meetings:
-        recording_id = str(meeting.get("recording_id", ""))
-        if recording_id in existing_ids:
-            skipped += 1
-            continue
-
-        transcript_items = meeting.get("transcript", [])
-        if not transcript_items:
-            skipped += 1
-            continue
-
-        transcript_text = fathom_service.build_flat_transcript(transcript_items)
-        participants = fathom_service.extract_participants(meeting)
-        duration = fathom_service.estimate_duration_minutes(meeting)
-
-        summary_data = meeting.get("default_summary", {})
-        fathom_summary = summary_data.get("markdown_formatted") if summary_data else None
-
-        event_payload = {
-            "recording_id": recording_id,
-            "title": meeting.get("title", "Untitled"),
-            "transcript": transcript_text,
-            "participants": participants,
-            "duration_minutes": duration,
-            "fathom_summary": fathom_summary,
-            "fathom_action_items": meeting.get("action_items", []),
-            "call_date": meeting.get("recording_start_time") or meeting.get("created_at"),
-            "fathom_url": meeting.get("url"),
-            "share_url": meeting.get("share_url"),
-        }
-
-        await event_service.create_and_process_event(
-            db_session=db,
-            event_type="fathom_recording_ready",
-            source="fathom_sync",
-            payload=event_payload,
-            customer_id=None,
-        )
-        imported += 1
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result.get("error", "Fathom sync failed"))
 
     return {
-        "message": f"Fathom sync complete: {imported} imported, {skipped} skipped",
-        "imported": imported,
-        "skipped": skipped,
-        "total_meetings": len(meetings),
+        "message": f"Fathom sync complete: {result.get('imported', 0)} imported, {result.get('skipped', 0)} skipped",
+        "imported": result.get("imported", 0),
+        "skipped": result.get("skipped", 0),
+        "total_meetings": result.get("total", 0),
     }
 
 

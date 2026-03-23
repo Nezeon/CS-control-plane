@@ -2,8 +2,8 @@
 Webhook receivers for external integrations.
 
 Fathom sends a POST when new meeting content is ready. We verify the
-signature, extract the meeting data, and push a `fathom_recording_ready`
-event into the existing orchestrator pipeline.
+signature, extract the meeting data, and process it directly through
+Claude analysis (same path as run_fathom_sync).
 """
 
 import base64
@@ -140,39 +140,91 @@ async def fathom_webhook(
         "share_url": payload.get("share_url"),
     }
 
-    # Resolve customer from meeting title (sync DB for simplicity)
-    customer_id = None
+    # Process the meeting directly (no event pipeline — run_fathom_sync is the canonical path)
+    import json
+    from app.database import get_sync_session
+    from app.tasks.agent_tasks import (
+        _resolve_customer, _build_fathom_prompt,
+        _save_call_insight, _ingest_to_knowledge_base,
+    )
+    from app.services.claude_service import claude_service
+
+    sync_db = get_sync_session()
     try:
-        from app.database import get_sync_session
-        from app.tasks.agent_tasks import _resolve_customer
-        sync_db = get_sync_session()
+        # Resolve customer
+        customer_id, customer_name = _resolve_customer(sync_db, title, participants)
+
+        # Claude analysis
+        prompt = _build_fathom_prompt(
+            transcript_text,
+            {"name": customer_name} if customer_name else {},
+            event_payload,
+        )
+        response = claude_service.generate_sync(prompt, max_tokens=3000, temperature=0.3)
+        result = {}
         try:
-            customer_id, customer_name = _resolve_customer(sync_db, title, participants)
-            if customer_id:
-                sync_db.commit()
-                logger.info(f"Fathom webhook: matched customer '{customer_name}' for '{title}'")
-        finally:
-            sync_db.close()
+            result = json.loads(response) if isinstance(response, str) else response
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Fathom webhook: Claude parse error for {recording_id}")
+            return {"status": "parse_error", "recording_id": str(recording_id)}
+
+        if not isinstance(result, dict) or result.get("error"):
+            logger.warning(f"Fathom webhook: Claude error for {recording_id}: {result}")
+            return {"status": "analysis_error", "recording_id": str(recording_id)}
+
+        # Save CallInsight to DB
+        _save_call_insight(sync_db, customer_id, event_payload, result)
+
+        # RAG embed
+        try:
+            from app.services.rag_service import rag_service
+            from app.models.call_insight import CallInsight
+            topics = result.get("key_topics", [])
+            embed_text = f"{result.get('summary', '')} {' '.join(topics) if isinstance(topics, list) else ''}"
+            if embed_text.strip():
+                latest = sync_db.query(CallInsight).filter_by(
+                    fathom_recording_id=str(recording_id)
+                ).order_by(CallInsight.processed_at.desc()).first()
+                import uuid as _uuid
+                iid = str(latest.id) if latest else str(_uuid.uuid4())
+                rag_service.embed_insight(iid, embed_text, {
+                    "customer_id": str(customer_id) if customer_id else "",
+                    "sentiment": result.get("sentiment", ""),
+                    "call_date": event_payload.get("call_date", ""),
+                    "recording_id": str(recording_id),
+                })
+        except Exception:
+            pass
+
+        # Ingest into meeting knowledge ChromaDB
+        _ingest_to_knowledge_base(event_payload, {"success": True, "output": result}, customer_name or "")
+
+        sync_db.commit()
+        logger.info(f"Fathom webhook processed: recording_id={recording_id}, customer={customer_name or 'unknown'}")
+
+        # Slack notification (fire-and-forget)
+        try:
+            from app.services.slack_service import slack_service
+            if slack_service.configured:
+                slack_service.send_call_insight_notification(
+                    title=title,
+                    customer_name=customer_name or "",
+                    summary=result.get("summary", ""),
+                    sentiment=result.get("sentiment", ""),
+                    sentiment_score=result.get("sentiment_score"),
+                    action_items=result.get("action_items", []),
+                    risks=result.get("risks", []),
+                    key_topics=result.get("key_topics", []),
+                )
+        except Exception as e:
+            logger.warning(f"Fathom webhook: Slack notification failed (non-critical): {e}")
+
+        return {"status": "processed", "recording_id": str(recording_id)}
     except Exception as e:
-        logger.warning(f"Customer resolution failed (non-critical): {e}")
-
-    # Push into the event pipeline
-    from app.services.event_service import event_service
-
-    result = await event_service.create_and_process_event(
-        db_session=db,
-        event_type="fathom_recording_ready",
-        source="fathom_webhook",
-        payload=event_payload,
-        customer_id=customer_id,
-    )
-
-    logger.info(
-        f"Fathom webhook processed: recording_id={recording_id}, "
-        f"event_status={result.get('status')}"
-    )
-
-    return {"status": "received", "event_id": str(result.get("id"))}
+        logger.error(f"Fathom webhook processing failed: {e}")
+        return {"status": "error", "recording_id": str(recording_id)}
+    finally:
+        sync_db.close()
 
 
 # ── Jira Webhook ─────────────────────────────────────────────────────────

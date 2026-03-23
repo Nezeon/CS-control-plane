@@ -604,9 +604,15 @@ class ChatService:
 
                 prefetched["meeting_chunks"] = chunks
 
-            # Load conversation history for follow-up coherence
-            conv_history = self._get_recent_messages(db, conversation_id, limit=5)
-            logger.info(f"[Chat] Conversation history: {len(conv_history)} prior messages loaded")
+            # Detect Slack channel for per-channel context
+            conv_for_meta = db.query(ChatConversation).filter_by(id=conversation_id).first()
+            slack_channel = (conv_for_meta.metadata_ or {}).get("slack_channel") if conv_for_meta else None
+
+            # Load conversation history — per-channel for Slack, per-conversation for web
+            conv_history = self._get_recent_messages(
+                db, conversation_id, limit=10 if slack_channel else 5, slack_channel=slack_channel
+            )
+            logger.info(f"[Chat] Conversation history: {len(conv_history)} prior messages loaded (channel={slack_channel or 'none'})")
 
             # Single Claude Haiku call (~1-3s)
             fast_result = chat_fast_path.answer(
@@ -672,6 +678,7 @@ class ChatService:
             "message_id": assistant_msg_id_str,
             "intent": intent,
             "customer_name": customer_name,
+            "conversation_history": conv_history,
             **prefetched,
         }
         logger.info(f"[Chat]   Payload keys: {list(event_payload.keys())}")
@@ -868,18 +875,38 @@ class ChatService:
 
         return sorted(agents)
 
-    def _get_recent_messages(self, db: Session, conversation_id, limit: int = 5) -> list[dict]:
-        """Load recent conversation messages for follow-up context."""
+    def _get_recent_messages(self, db: Session, conversation_id, limit: int = 5, slack_channel: str | None = None) -> list[dict]:
+        """Load recent messages for follow-up context. Per-channel for Slack, per-conversation otherwise."""
         from app.models.chat_message import ChatMessage
+        from app.models.chat_conversation import ChatConversation
+        from sqlalchemy import select as sa_select
 
-        messages = (
-            db.query(ChatMessage)
-            .filter_by(conversation_id=conversation_id)
-            .filter(ChatMessage.pipeline_status != "processing")
-            .order_by(ChatMessage.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        if slack_channel:
+            # Per-channel: messages from ALL conversations in this Slack channel
+            channel_conv_ids = (
+                db.query(ChatConversation.id)
+                .filter(ChatConversation.metadata_["slack_channel"].astext == slack_channel)
+                .subquery()
+            )
+            messages = (
+                db.query(ChatMessage)
+                .filter(ChatMessage.conversation_id.in_(sa_select(channel_conv_ids.c.id)))
+                .filter(ChatMessage.pipeline_status != "processing")
+                .order_by(ChatMessage.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+        else:
+            # Per-conversation: original behavior (Streamlit/web)
+            messages = (
+                db.query(ChatMessage)
+                .filter_by(conversation_id=conversation_id)
+                .filter(ChatMessage.pipeline_status != "processing")
+                .order_by(ChatMessage.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+
         return [
             {"role": m.role, "content": m.content[:500]}
             for m in reversed(messages)

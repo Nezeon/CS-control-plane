@@ -237,12 +237,14 @@ class BaseAgent(ABC):
 
         Reads from task["specialist_brief"] (T3) or task["task_brief"] (T2).
         Also injects rework feedback when task["is_rework"] is True.
+        Appends per-channel chat history when available (chat events only).
         """
         brief = task.get("specialist_brief") or task.get("task_brief") or {}
         is_rework = task.get("is_rework", False)
+        history = task.get("payload", {}).get("conversation_history", [])
 
-        if not brief and not is_rework:
-            self.logger.info(f"[{self.agent_id}] _prepend_brief: no brief or rework — skipping")
+        if not brief and not is_rework and not history:
+            self.logger.info(f"[{self.agent_id}] _prepend_brief: no brief, rework, or chat history — skipping")
             return prompt
 
         parts = []
@@ -272,9 +274,18 @@ class BaseAgent(ABC):
                 parts.append(f"Success Criteria: {'; '.join(brief['success_criteria'])}")
             parts.append("")
 
+        # Per-channel chat history (only present for chat events, not webhooks/cron)
+        if history:
+            parts.append("## Recent Chat Context")
+            for msg in history[-10:]:
+                role = "User" if msg["role"] == "user" else "Assistant"
+                parts.append(f"**{role}:** {msg['content'][:300]}")
+            parts.append("")
+
         self.logger.info(
             f"[{self.agent_id}] _prepend_brief: is_rework={is_rework}, "
             f"brief_keys={list(brief.keys()) if brief else 'none'}, "
+            f"chat_history={len(history)} msgs, "
             f"prepended {len(parts)} sections"
         )
         return "\n".join(parts) + "\n" + prompt

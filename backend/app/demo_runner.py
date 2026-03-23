@@ -8,7 +8,7 @@ Usage:
     python -m app.demo_runner --scenario meeting  # meeting followup only
 
 Requires:
-    - Seeded database (python -m app.utils.seed)
+    - At least one customer in the database
     - ANTHROPIC_API_KEY set in .env
 """
 
@@ -53,7 +53,7 @@ def _pick_customer(db: Session) -> Customer:
     if not customer:
         customer = db.query(Customer).first()
     if not customer:
-        print("\n  ERROR: No customers found. Run: python -m app.utils.seed\n")
+        print("\n  ERROR: No customers found in database.\n")
         sys.exit(1)
     return customer
 

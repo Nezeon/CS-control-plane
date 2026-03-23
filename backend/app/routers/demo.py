@@ -59,7 +59,7 @@ def _get_customer(db: Session, customer_id: str | None) -> Customer:
     if not customer:
         customer = db.query(Customer).first()
     if not customer:
-        raise HTTPException(status_code=404, detail="No customers found. Run seed script first.")
+        raise HTTPException(status_code=404, detail="No customers found in database.")
     return customer
 
 

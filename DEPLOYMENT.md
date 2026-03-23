@@ -62,26 +62,15 @@ Redeploy backend or wait for next deploy.
 
 ---
 
-## 4. Seed Data
+## 4. Admin User
 
-The admin user is **auto-created on every startup**. For full demo data, run the seed script:
+The admin user is **auto-created on every startup** by `ensure_admin.py`.
 
-```bash
-cd backend
-SYNC_DATABASE_URL="postgresql://USER:PASS@ep-xxx.neon.tech/neondb?sslmode=require" python -m app.utils.seed
-```
-
-This creates: 5 users, 10 customers, 50 tickets, 100 call insights, 300 health scores, 15 alerts.
-
----
-
-## 5. Tester Credentials
+## 5. Credentials
 
 | Email | Password | Role |
 |-------|----------|------|
-| `ayushmaan@hivepro.com` | `password123` | admin (auto-created) |
-
-If full seed was run, 4 additional users exist with the same password.
+| `ayushmaan@hivepro.com` | `password123` | admin (auto-created on startup) |
 
 ---
 

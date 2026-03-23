@@ -3,7 +3,7 @@
 > **Codename:** Mission Control
 > **Author:** Ayushmaan Singh Naruka (AI Hub Team, HivePro)
 > **Design Tier:** Premium enterprise spatial 3D command center
-> **Last Updated:** March 2, 2026
+> **Last Updated:** March 23, 2026
 
 ---
 
@@ -12,7 +12,7 @@
 1. [Project Overview](#1-project-overview)
 2. [Problem Statement](#2-problem-statement)
 3. [Solution Summary](#3-solution-summary)
-4. [The 10 AI Agents](#4-the-10-ai-agents)
+4. [The 14 AI Agents](#4-the-14-ai-agents)
 5. [Tech Stack](#5-tech-stack)
 6. [Architecture Rules](#6-architecture-rules)
 7. [Design System](#7-design-system)
@@ -31,7 +31,7 @@
 20. [Frontend API Services](#20-frontend-api-services)
 21. [Frontend Components](#21-frontend-components)
 22. [3D Components](#22-3d-components)
-23. [Seed Data](#23-seed-data)
+23. [Initial Data](#23-initial-data)
 24. [Environment Variables](#24-environment-variables)
 25. [Deployment Configuration](#25-deployment-configuration)
 26. [Development Phases](#26-development-phases)
@@ -43,9 +43,9 @@
 
 ## 1. Project Overview
 
-The CS Control Plane is an AI-powered spatial dashboard that orchestrates **10 specialized agents** to automate Customer Success workflows at HivePro. It replaces manual processes like call analysis, ticket triage, health monitoring, and report generation with an always-on virtual CS workforce.
+The CS Control Plane is an AI-powered platform that orchestrates **14 agents across a 4-tier hierarchy** to automate Customer Success workflows at HivePro. It replaces manual processes like call analysis, ticket triage, health monitoring, and report generation with an always-on virtual CS workforce.
 
-The frontend is a spatial 3D command center (not a traditional flat dashboard) built with React + Three.js. The backend is a FastAPI service with PostgreSQL, ChromaDB (vector search), and Celery (async task queue). All AI calls go through Claude (Anthropic API).
+The system follows a **Slack-first delivery model**: agents push their outputs as interactive cards to 9 dedicated Slack channels. CS team members review, approve, or edit directly in Slack. A dashboard provides drill-down views when deeper context is needed. The backend is a FastAPI service with PostgreSQL (Neon cloud), ChromaDB (vector search), and Celery (async task queue). All AI calls go through Claude (Anthropic API).
 
 ---
 
@@ -72,26 +72,50 @@ Six critical pain points this project solves:
 
 ---
 
-## 4. The 10 AI Agents
+## 4. The 14 AI Agents
 
-| # | Agent Name | Lane | Trigger Event | Primary Output |
-|---|------------|------|---------------|----------------|
-| 1 | **CS Orchestrator** | Control | All events | Routes to correct agent |
-| 2 | **Customer Memory** | Control | Called by all agents | Structured customer profile from DB |
-| 3 | **Call Intelligence** | Value | `zoom_call_completed`, `fathom_recording_ready` | Summary, action items, sentiment, customer recap draft |
-| 4 | **Health Monitor** | Value | `daily_health_check`, `manual_health_check` | Health score (0-100), risk level, factors, flags |
-| 5 | **QBR/Value Narrative** | Value | `renewal_approaching` | QBR report content, value narrative |
-| 6 | **Ticket Triage** | Support | `jira_ticket_created`, `jira_ticket_updated` | Category, severity, root cause hypothesis, action |
-| 7 | **Troubleshooter** | Support | `support_bundle_uploaded` | Root cause analysis, resolution steps, communication draft |
-| 8 | **Escalation Summary** | Support | `ticket_escalated` | Engineering escalation package with repro steps |
-| 9 | **SOW & Prerequisite** | Delivery | `new_enterprise_customer` | Pre-deployment checklist |
-| 10 | **Deployment Intelligence** | Delivery | `deployment_started` | Known issues, config guidance |
+The system uses a **4-tier hierarchy**. Tasks flow DOWN (T1 → T2 → T3). Results flow UP. Specialists never talk directly to each other — sideways coordination goes through Lane Leads via the Message Board.
 
-**Agent Lanes & Colors:**
-- **Control** (Teal `#00F5D4`): Orchestrator, Memory
-- **Value** (Emerald `#34D399`): Health Monitor, Call Intel, QBR
-- **Support** (Amber `#FBBF24`): Triage, Troubleshooter, Escalation
-- **Delivery** (Cyan `#22D3EE`): SOW, Deployment Intel
+### Tier 1 — Supervisor
+
+| Agent | Identity | File | Role |
+|-------|----------|------|------|
+| **CS Orchestrator** | Naveen Kapoor | `orchestrator.py` | Classifies events, routes to correct lane. Never analyzes — pure routing. |
+
+### Tier 2 — Lane Leads
+
+| Agent | Identity | Lane | File | Role |
+|-------|----------|------|------|------|
+| **Support Lead** | Rachel Torres | Run / Support | `leads/support_lead.py` | Ticket routing, escalation coordination |
+| **Value Lead** | Damon Reeves | Value | `leads/value_lead.py` | Health monitoring, QBR, renewals |
+| **Delivery Lead** | Priya Mehta | Delivery | `leads/delivery_lead.py` | Deployment, SOW, onboarding |
+
+### Tier 3 — Specialists
+
+| Agent | Identity | Lane | File | Trigger Event | Primary Output |
+|-------|----------|------|------|---------------|----------------|
+| **Ticket Triage** | Kai Nakamura | Support | `triage_agent.py` | `jira_ticket_created`, `jira_ticket_updated` | Category, severity, root cause hypothesis, action |
+| **Troubleshooter** | Leo Petrov | Support | `troubleshoot_agent.py` | `support_bundle_uploaded` | Root cause analysis, resolution steps, communication draft |
+| **Escalation Writer** | Maya Santiago | Support | `escalation_agent.py` | `ticket_escalated` | Engineering escalation package with repro steps |
+| **Health Monitor** | Dr. Aisha Okafor | Value | `health_monitor.py` | `daily_health_check`, `manual_health_check` | Health score (0-100), risk level, factors, flags |
+| **Call Intelligence** | Jordan Ellis | Value | `fathom_agent.py` | `zoom_call_completed`, `fathom_recording_ready` | Summary, action items, sentiment, customer recap draft |
+| **QBR / Value Narrative** | Sofia Marquez | Value | `qbr_agent.py` | `renewal_approaching` | QBR report content, value narrative |
+| **Meeting Followup** | Riley Park | Value | `meeting_followup_agent.py` | Post-meeting trigger | Action item tracking, followup tasks |
+| **SOW & Prerequisite** | Ethan Brooks | Delivery | `sow_agent.py` | `new_enterprise_customer` | Pre-deployment checklist, SOW docs |
+| **Deployment Intelligence** | Zara Kim | Delivery | `deployment_intel_agent.py` | `deployment_started` | Known issues, config guidance |
+
+### Tier 4 — Foundation
+
+| Agent | Identity | File | Role |
+|-------|----------|------|------|
+| **Customer Memory** | Atlas | `memory_agent.py` + `memory/` | Per-customer knowledge store. 3-tier memory: Working + Episodic + Semantic. Serves ALL tiers. |
+
+### Agent Lanes & Colors
+- **Control** (Teal `#00F5D4`): T1 Orchestrator
+- **Support** (Amber `#FBBF24`): T2 Rachel → T3 Kai, Leo, Maya
+- **Value** (Emerald `#34D399`): T2 Damon → T3 Aisha, Jordan, Sofia, Riley
+- **Delivery** (Cyan `#22D3EE`): T2 Priya → T3 Ethan, Zara
+- **Foundation** (Slate): T4 Atlas (Customer Memory)
 
 ---
 
@@ -123,25 +147,36 @@ Six critical pain points this project solves:
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | FastAPI | 0.109+ | API framework |
-| PostgreSQL | 16 | Primary database |
+| PostgreSQL | 16 | Primary database (Neon cloud) |
 | SQLAlchemy | 2.0 | ORM (async via asyncpg, sync via psycopg2) |
-| Alembic | 1.13+ | Database migrations |
-| ChromaDB | 0.4+ | Vector database for RAG embeddings |
-| Celery | 5.3+ | Async task queue for AI calls |
+| Alembic | 1.13+ | Database migrations (6 migration files) |
+| ChromaDB | 0.4+ | Vector database (6 collections for RAG + agent memory) |
+| Celery | 5.3+ | Async task queue (eager mode — no Redis required locally) |
 | Redis | 7.x | Celery broker/backend (optional, has sync fallback) |
 | python-jose | 3.3+ | JWT authentication |
 | passlib[bcrypt] | 1.7+ | Password hashing |
-| Anthropic SDK | latest | Claude API client |
-| Playwright | 1.40+ | Browser automation (Phase 2) |
+| Anthropic SDK | latest | Claude API client (Sonnet 4.5 + Haiku 4.5) |
+| httpx | 0.26+ | Async HTTP client (Jira, Fathom, external APIs) |
+| slack-sdk | 3.27+ | Slack WebClient + Block Kit formatting |
+| APScheduler | 3.10+ | Cron-style scheduling (Jira/Fathom sync) |
+| PyYAML | 6.0+ | YAML-driven agent configuration |
+| pydantic-settings | 2.1+ | Settings from .env (40+ env vars) |
+| Playwright | 1.40+ | Browser automation (E2E testing) |
+
+### Alternative UI (Streamlit)
+
+| Technology | Purpose |
+|------------|---------|
+| Streamlit | 6-page operational UI (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary) |
 
 ### Deployment
 
 | Platform | Purpose |
 |----------|---------|
-| Render | Backend hosting (FastAPI + Celery worker) |
-| Vercel | Frontend hosting (Vite static) |
+| Render | Backend hosting (FastAPI + optional Celery worker) |
+| Vercel | Frontend hosting (React Vite static) |
 | Neon | Cloud PostgreSQL 16 |
-| Upstash | Cloud Redis (optional) |
+| Upstash | Cloud Redis (optional — not required for basic usage) |
 
 ---
 
@@ -169,6 +204,21 @@ Three surface levels: near (0.65 opacity), mid (0.45), far (0.25). All surfaces 
 
 ### Rule 7: Orbital Navigation
 No sidebar. The Orbital Nav arc is the primary navigation at the bottom-center. Command Palette (Cmd+K) is the power-user alternative. Breadcrumbs float at top-left. Content fills the full viewport.
+
+### Rule 8: Hierarchical Delegation
+Tasks flow DOWN the hierarchy: Supervisor (T1) → Lane Lead (T2) → Specialist (T3). Results flow UP. Specialists NEVER delegate to each other directly — sideways requests go through the Message Board and the Lane Lead coordinates. The Foundation layer (T4) serves ALL tiers.
+
+### Rule 9: YAML-Driven Configuration
+Agent identities, personalities, traits, tools, pipeline stages, org structure, and workflows are defined in YAML config files (`backend/config/`). **Never** hardcode agent behavior in Python. The code reads YAML at startup and constructs agents dynamically. To change an agent's behavior, edit YAML, not code.
+
+### Rule 10: Message Board Communication
+Agents communicate through typed messages on the Message Board (`agent_messages` table). Five message types: `task_assignment` (down), `deliverable` (up), `request` (sideways), `escalation` (up, urgent), `feedback` (down). Messages support threading via `thread_id` and `parent_id`. Every message links to its originating event.
+
+### Rule 11: 3-Tier Memory System
+Every agent accesses three memory tiers: **Working** (in-process scratchpad, cleared per run), **Episodic** (ChromaDB `episodic_memory` collection, per-agent diary with tri-factor retrieval), **Semantic** (ChromaDB `shared_knowledge` collection, lane-scoped knowledge pools). Agents read episodic + semantic during `retrieve` stage, write to episodic during `reflect` stage.
+
+### Rule 12: Pipeline Execution
+Every agent runs a multi-round pipeline defined in `pipeline.yaml`. Stages: `perceive` → `retrieve` → `think` → `act` → `reflect` → `quality_gate` → `finalize`. Each stage is logged to `agent_execution_rounds` with tools called, tokens used, confidence, and duration. The pipeline engine handles quality gate failures (retry from a specific stage). Every stage broadcasts progress via WebSocket.
 
 ---
 
@@ -225,80 +275,150 @@ The actual frontend uses a slightly adapted palette in `tailwind.config.js`:
 
 ```
 hivepro-cs-control-plane/
-├── CLAUDE.md                          # AI development context
+├── CLAUDE.md                          # AI development context (source of truth)
 ├── DOCUMENTATION.md                   # THIS FILE
 ├── README.md                          # Quick start guide
-├── .env.example                       # Environment template (dev)
-├── .env.production.example            # Environment template (production)
+├── DEPLOYMENT.md                      # Deployment instructions
+├── .env.example                       # Environment template
 ├── render.yaml                        # Render deployment config
 │
 ├── docs/
+│   ├── ARCHITECTURE.md                # System design, agent hierarchy
 │   ├── PRD.md                         # Product Requirements Document
 │   ├── WIREFRAMES.md                  # UI/UX specifications
 │   ├── API_CONTRACT.md                # API endpoint contracts
 │   └── DATABASE_SCHEMA.md             # Schema design document
 │
 ├── backend/
-│   ├── requirements.txt               # Python dependencies
+│   ├── requirements.txt               # 47 Python packages
 │   ├── alembic.ini                    # Migration config
 │   ├── Procfile                       # Render start command
 │   ├── runtime.txt                    # Python 3.11.7
+│   ├── chromadb_data/                 # Persistent vector DB (6 collections)
 │   ├── alembic/
-│   │   ├── env.py
-│   │   └── versions/
-│   │       └── 72e7ed43351d_initial_tables.py
+│   │   └── versions/                  # 6 migration files
+│   │
+│   ├── config/                        # YAML-driven agent configuration
+│   │   ├── org_structure.yaml         # 4-tier hierarchy, lanes, reporting
+│   │   ├── agent_profiles.yaml        # 14 agent definitions, traits, tools
+│   │   ├── pipeline.yaml              # Pipeline stage definitions per tier
+│   │   └── workflows.yaml             # Event → agent routing
+│   │
 │   └── app/
-│       ├── main.py                    # FastAPI entry, CORS, routers, WebSocket
-│       ├── config.py                  # Settings from .env (pydantic-settings)
+│       ├── main.py                    # FastAPI entry + APScheduler setup
+│       ├── config.py                  # Settings from .env (40+ env vars)
 │       ├── database.py                # Async + Sync PostgreSQL engines
-│       ├── chromadb_client.py         # ChromaDB client (persistent/ephemeral)
+│       ├── chromadb_client.py         # ChromaDB client (6 collections)
 │       ├── websocket_manager.py       # WebSocket connection manager
-│       ├── models/                    # SQLAlchemy models (10 tables)
-│       ├── schemas/                   # Pydantic request/response schemas
-│       ├── routers/                   # API endpoint handlers (10 routers)
-│       ├── agents/                    # AI agent implementations (10 agents)
-│       ├── services/                  # Business logic (Claude, RAG, events)
+│       ├── demo_data.py               # Demo scenario data
+│       ├── demo_runner.py             # CLI demo tool
+│       │
+│       ├── models/                    # SQLAlchemy models (17 tables)
+│       ├── schemas/                   # Pydantic request/response schemas (17 files)
+│       ├── routers/                   # API endpoint handlers (23 routers)
+│       │
+│       ├── agents/                    # 14 AI agent implementations
+│       │   ├── base_agent.py          # Pipeline execution base class
+│       │   ├── pipeline_engine.py     # Multi-round pipeline runner
+│       │   ├── reflection_engine.py   # Reflection + quality gate
+│       │   ├── agent_factory.py       # Agent registration
+│       │   ├── profile_loader.py      # YAML profile loading
+│       │   ├── demo_logger.py         # Rich terminal logging
+│       │   ├── fathom_engine.py       # Fathom processing engine
+│       │   ├── orchestrator.py        # T1: Naveen (CS Orchestrator)
+│       │   ├── leads/                 # T2: Rachel, Damon, Priya (Lane Leads)
+│       │   ├── triage_agent.py        # T3: Kai (Ticket Triage)
+│       │   ├── troubleshoot_agent.py  # T3: Leo (Troubleshooter)
+│       │   ├── escalation_agent.py    # T3: Maya (Escalation Writer)
+│       │   ├── health_monitor.py      # T3: Aisha (Health Monitor)
+│       │   ├── fathom_agent.py        # T3: Jordan (Call Intelligence)
+│       │   ├── qbr_agent.py           # T3: Sofia (QBR / Value Narrative)
+│       │   ├── meeting_followup_agent.py # T3: Riley (Meeting Followup)
+│       │   ├── sow_agent.py           # T3: Ethan (SOW & Prerequisite)
+│       │   ├── deployment_intel_agent.py # T3: Zara (Deployment Intelligence)
+│       │   ├── memory_agent.py        # T4: Atlas (Customer Memory)
+│       │   ├── memory/                # 3-tier memory system
+│       │   │   ├── memory_manager.py  # Memory lifecycle
+│       │   │   ├── working_memory.py  # In-process scratchpad
+│       │   │   ├── episodic_memory.py # ChromaDB per-agent diary
+│       │   │   └── semantic_memory.py # ChromaDB lane-scoped pools
+│       │   └── traits/                # 13 pluggable trait behaviors
+│       │       ├── confidence_scoring.py
+│       │       ├── customer_sentiment.py
+│       │       ├── deadline_tracking.py
+│       │       ├── delegation.py
+│       │       ├── pattern_recognition.py
+│       │       ├── quality_evaluation.py
+│       │       ├── risk_assessment.py
+│       │       ├── root_cause_analysis.py
+│       │       ├── sla_awareness.py
+│       │       ├── strategic_oversight.py
+│       │       └── trend_analysis.py
+│       │
+│       ├── services/                  # 17 business logic modules
+│       │   ├── claude_service.py      # Claude API wrapper (Sonnet + Haiku)
+│       │   ├── chat_service.py        # Unified chat orchestration
+│       │   ├── chat_fast_path.py      # Haiku fast responses
+│       │   ├── rag_service.py         # RAG/semantic search
+│       │   ├── jira_service.py        # Jira Cloud client (httpx)
+│       │   ├── fathom_service.py      # Fathom API client
+│       │   ├── meeting_knowledge_service.py # Meeting knowledge RAG
+│       │   ├── slack_service.py       # Slack Bot client
+│       │   ├── slack_chat_handler.py  # Bidirectional Slack chat
+│       │   ├── slack_formatter.py     # Markdown → Block Kit
+│       │   ├── pipeline_service.py    # Pipeline execution
+│       │   ├── event_service.py       # Event routing + draft creation
+│       │   ├── message_service.py     # Inter-agent messages
+│       │   ├── draft_service.py       # Draft create/approve/dismiss
+│       │   ├── alert_rules_engine.py  # 4 alert rules
+│       │   └── trend_service.py       # Analytics queries
+│       │
 │       ├── tasks/                     # Celery async tasks
-│       ├── middleware/auth.py         # JWT authentication middleware
+│       │   ├── celery_app.py          # Celery config (eager mode fallback)
+│       │   ├── agent_tasks.py         # 20+ async agent tasks
+│       │   └── jira_sync.py           # Jira bulk + incremental sync
+│       │
+│       ├── middleware/
+│       │   └── auth.py                # JWT authentication middleware
 │       └── utils/
 │           ├── security.py            # Password hashing, token generation
-│           └── seed.py                # Demo data seeder
+│           └── ensure_admin.py        # Auto-creates admin user on startup
 │
-├── frontend/
+├── frontend/                          # React spatial dashboard
 │   ├── package.json
 │   ├── vite.config.js                 # Dev proxy, chunk splitting
 │   ├── tailwind.config.js             # Custom colors, fonts, animations
 │   ├── vercel.json                    # Vercel deployment config
-│   ├── index.html
 │   └── src/
-│       ├── main.jsx                   # React entry point
-│       ├── App.jsx                    # Router + layout + auth guard
-│       ├── index.css                  # Global CSS (void bg, cards, skeleton)
+│       ├── main.jsx / App.jsx / index.css
+│       ├── pages/                     # DashboardPage, CustomerDetailPage, PipelineAnalyticsPage
 │       ├── stores/                    # Zustand state (11 stores)
 │       ├── services/                  # Axios API clients + WebSocket
-│       ├── three/                     # 3D scenes (lazy-loaded, code-split)
 │       ├── components/
-│       │   ├── layout/                # AppLayout, Sidebar, TopBar, CommandPalette
-│       │   ├── shared/                # SurfaceCard, HealthRing, AnimatedCounter, etc.
-│       │   ├── dashboard/             # FloatingOrbsGrid, NeuralSphereWrapper, LivePulse
-│       │   ├── customers/             # PremiumGrid, DataTable, CustomerHero, HealthStory
-│       │   ├── agents/                # NeuralNetwork, AgentBrainPanel, ReasoningLog
-│       │   ├── insights/              # SentimentSpectrum, InsightCard, ActionTracker
-│       │   ├── tickets/               # WarroomTable, TicketDetailDrawer, Constellation
-│       │   └── reports/               # HealthHeatmap, TicketVelocity, SentimentRiver, AgentThroughput
-│       ├── pages/                     # 9 page components
-│       ├── data/                      # Seed/demo data for offline mode
-│       ├── hooks/                     # useScrollReveal
-│       └── utils/                     # formatters, chartHelpers, cn
+│       │   ├── layout/                # AppLayout, shared layout
+│       │   └── shared/                # GlassCard, HealthRing, KpiCard, etc.
+│       └── utils/                     # formatters
 │
-└── e2e/                               # Playwright E2E tests (Phase 16)
+├── streamlit_app/                     # Alternative UI (6 pages, fully functional)
+│   ├── app.py                         # Entry (login + home)
+│   ├── pages/
+│   │   ├── 1_Ask.py                   # Chat interface
+│   │   ├── 2_Dashboard.py             # Metrics dashboard
+│   │   ├── 3_Customers.py             # Customer list + detail
+│   │   ├── 4_Agents.py                # Agent status + profiles
+│   │   ├── 5_Tickets.py               # Ticket board
+│   │   └── 6_Executive_Summary.py     # Executive summary + charts
+│   └── utils/                         # API client (JWT auth, polling) + CSS
+│
+├── prompt-templates/                  # Reusable prompt templates
+└── e2e/                               # Playwright E2E tests
 ```
 
 ---
 
 ## 9. Database Schema
 
-PostgreSQL 16 with 10 tables. All primary keys are UUIDs. Timestamps use `TIMESTAMPTZ` with server defaults. JSONB columns store flexible structured data.
+PostgreSQL 16 with 17 tables. All primary keys are UUIDs. Timestamps use `TIMESTAMPTZ` with server defaults. JSONB columns store flexible structured data.
 
 ### 9.1 users
 
@@ -329,6 +449,7 @@ PostgreSQL 16 with 10 tables. All primary keys are UUIDs. Timestamps use `TIMEST
 | primary_contact_name | VARCHAR(255) | |
 | primary_contact_email | VARCHAR(255) | |
 | cs_owner_id | UUID | FK -> users(id) |
+| jira_project_key | VARCHAR(20) | Maps Jira projects to customers (e.g. "CS", "ACME") |
 | deployment_mode | VARCHAR(50) | DEFAULT `'OVA'` (OVA, Cloud, Hybrid, On-Premise) |
 | product_version | VARCHAR(50) | |
 | integrations | JSONB | DEFAULT `'[]'` — list of integration names |
@@ -535,27 +656,152 @@ PostgreSQL 16 with 10 tables. All primary keys are UUIDs. Timestamps use `TIMEST
 
 **Indexes:** report_type, customer_id, generated_at DESC
 
+### 9.11 chat_conversations
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| user_id | UUID | FK -> users(id) NOT NULL |
+| title | VARCHAR(500) | nullable |
+| customer_id | UUID | FK -> customers(id), nullable |
+| status | VARCHAR(20) | DEFAULT `'active'` |
+| metadata | JSONB | DEFAULT `'{}'` — stores `slack_channel`, `slack_thread_ts` for Slack integration |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW(), auto-update |
+
+**Indexes:** (user_id, created_at DESC), customer_id, status, metadata slack_channel (partial)
+**Relationships:** user, customer, messages
+
+### 9.12 chat_messages
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| conversation_id | UUID | FK -> chat_conversations(id) NOT NULL |
+| role | VARCHAR(20) | NOT NULL (user, assistant, system) |
+| content | TEXT | NOT NULL |
+| event_id | UUID | FK -> events(id), nullable |
+| agents_involved | JSONB | DEFAULT `'[]'` |
+| pipeline_status | VARCHAR(20) | nullable (processing, completed, failed) |
+| execution_metadata | JSONB | DEFAULT `'{}'` |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() |
+
+**Indexes:** (conversation_id, created_at ASC), event_id
+
+### 9.13 agent_execution_rounds
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| execution_id | UUID | NOT NULL — groups stages of a single agent run |
+| event_id | UUID | FK -> events(id), nullable |
+| agent_id | VARCHAR(100) | NOT NULL |
+| agent_name | VARCHAR(255) | nullable |
+| tier | INTEGER | CHECK (1-4) NOT NULL |
+| stage_number | INTEGER | NOT NULL |
+| stage_name | VARCHAR(100) | NOT NULL (perceive, retrieve, think, act, reflect, quality_gate, finalize) |
+| lane | VARCHAR(50) | nullable |
+| stage_type | VARCHAR(50) | NOT NULL |
+| input_summary | TEXT | nullable |
+| output_summary | TEXT | nullable |
+| tools_called | JSONB | DEFAULT `'[]'` |
+| tokens_used | INTEGER | nullable |
+| duration_ms | INTEGER | nullable |
+| confidence | FLOAT | nullable |
+| status | VARCHAR(20) | DEFAULT `'running'` (running, completed, failed) |
+| error_message | TEXT | nullable |
+| metadata | JSONB | DEFAULT `'{}'` |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() |
+
+**Indexes:** execution_id, (agent_id, created_at DESC), event_id, status, tier, lane
+
+### 9.14 agent_messages
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| thread_id | UUID | nullable — groups related messages into a thread |
+| parent_id | UUID | FK -> agent_messages(id), nullable |
+| from_agent | VARCHAR(100) | NOT NULL |
+| from_name | VARCHAR(255) | nullable |
+| to_agent | VARCHAR(100) | NOT NULL |
+| to_name | VARCHAR(255) | nullable |
+| message_type | VARCHAR(50) | NOT NULL (task_assignment, deliverable, request, escalation, feedback) |
+| direction | VARCHAR(20) | NOT NULL (down, up, sideways) |
+| content | TEXT | NOT NULL |
+| priority | INTEGER | CHECK (1-10) DEFAULT 5 |
+| event_id | UUID | FK -> events(id), nullable |
+| execution_id | UUID | nullable |
+| customer_id | UUID | FK -> customers(id), nullable |
+| status | VARCHAR(20) | DEFAULT `'pending'` |
+| metadata | JSONB | DEFAULT `'{}'` |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() |
+
+**Indexes:** thread_id, (from_agent, created_at DESC), (to_agent, created_at DESC), message_type, event_id, execution_id, status
+
+### 9.15 agent_drafts
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| agent_id | VARCHAR(50) | NOT NULL |
+| event_id | UUID | FK -> events(id) ON DELETE SET NULL, nullable |
+| customer_id | UUID | FK -> customers(id) ON DELETE SET NULL, nullable |
+| draft_type | VARCHAR(50) | NOT NULL (triage, call_intel, escalation, health_alert, etc.) |
+| draft_content | JSONB | NOT NULL — full agent output |
+| status | VARCHAR(20) | DEFAULT `'pending'` (pending, approved, edited, dismissed) |
+| slack_message_ts | VARCHAR(50) | nullable — Slack ts for updating message |
+| slack_channel | VARCHAR(100) | nullable |
+| approved_by | VARCHAR(100) | nullable |
+| approved_at | TIMESTAMPTZ | nullable |
+| edit_diff | JSONB | nullable — what the human changed |
+| confidence | FLOAT | nullable |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() |
+
+**Indexes:** status, agent_id, customer_id, created_at
+
+### 9.16 audit_log
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | UUID | PK |
+| timestamp | TIMESTAMPTZ | DEFAULT NOW() |
+| agent | VARCHAR(50) | NOT NULL |
+| event_id | UUID | nullable |
+| customer_id | UUID | nullable |
+| action | VARCHAR(100) | NOT NULL (classify_ticket, analyze_call, etc.) |
+| input_summary | TEXT | nullable |
+| output_summary | TEXT | nullable |
+| confidence | FLOAT | nullable |
+| human_action | VARCHAR(20) | nullable (approved, edited, dismissed) |
+| human_edit_diff | JSONB | nullable |
+| dashboard_url | VARCHAR(500) | nullable |
+
+**Indexes:** agent, timestamp, customer_id, human_action
+
 ---
 
 ## 10. ChromaDB Vector Store
 
-ChromaDB provides semantic similarity search (RAG) across three collections. Uses default sentence-transformers for embeddings. L2 (Euclidean) distance metric. Similarity is calculated as `max(0.0, 1.0 - distance)`.
+ChromaDB provides semantic similarity search (RAG) and agent memory across **6 collections**. Uses default sentence-transformers for embeddings. L2 (Euclidean) distance metric. Similarity is calculated as `max(0.0, 1.0 - distance)`.
 
 **Modes:**
 - `persistent` (local dev) — saves to `./chromadb_data` on disk
-- `ephemeral` (production/Render) — in-memory, lost on restart
+- `ephemeral` (production/Render) — in-memory, lost on restart (backfill from PostgreSQL runs on startup)
 
 ### Collection: ticket_embeddings
 - **Purpose:** Find similar past tickets for triage and troubleshooting
 - **Document:** Ticket summary + description + resolution (if resolved)
-- **Metadata:** `{jira_id, customer_name, status, severity, resolution}`
+- **Metadata:** `{jira_id, customer_id, status, severity}`
 - **Used by:** Triage Agent (top 5 similar), Troubleshooter Agent (top 5 resolved), ticket similar endpoint
+- **Backfill:** Re-embedded from PostgreSQL `tickets` table on startup
 
 ### Collection: call_insight_embeddings
 - **Purpose:** Find similar call discussions, surface patterns
-- **Document:** Call summary + key topics + risks + decisions
-- **Metadata:** `{customer_name, sentiment, key_topics}`
+- **Document:** Call summary + key topics
+- **Metadata:** `{customer_id, sentiment, recording_id}`
 - **Used by:** Call Intelligence Agent, insights API
+- **Backfill:** Re-embedded from PostgreSQL `call_insights` table on startup
 
 ### Collection: problem_embeddings
 - **Purpose:** Cross-customer pattern matching for known problems
@@ -563,26 +809,36 @@ ChromaDB provides semantic similarity search (RAG) across three collections. Use
 - **Metadata:** `{customer_id, customer_name, ticket_id, resolved_in_days}`
 - **Used by:** Troubleshooter Agent, knowledge base queries
 
-### Seed Data Counts
+### Collection: meeting_knowledge
+- **Purpose:** Agentic RAG retrieval for customer meeting context
+- **Document:** 155+ real customer meeting chunks (5 categories, 4 section types)
+- **Metadata:** Category, section type, customer context
+- **Used by:** Fathom Agent, Chat fast path
+- **Backfill:** Re-populated from PostgreSQL `call_insights` via `meeting_knowledge_service` on startup
 
-| Table | Count |
-|-------|-------|
-| users | 5 |
-| customers | 10 |
-| health_scores | ~300 (30 days x 10 customers) |
-| tickets | 50 |
-| call_insights | 100 |
-| agent_logs | 200 |
-| events | 150 |
-| alerts | 15 |
-| action_items | 30 |
-| reports | 8 |
+### Collection: episodic_memory
+- **Purpose:** Per-agent execution diary for experience recall
+- **Document:** Agent execution summaries, decisions, outcomes
+- **Metadata:** `{agent_id, event_type, customer_id, timestamp}`
+- **Used by:** All agents during `retrieve` stage (tri-factor retrieval: recency + relevance + importance)
+- **Written by:** All agents during `reflect` stage
+
+### Collection: shared_knowledge
+- **Purpose:** Lane-scoped knowledge pool for collective intelligence
+- **Document:** Published knowledge from agent executions
+- **Metadata:** `{lane, agent_id, knowledge_type}`
+- **Used by:** All agents during `retrieve` stage (filtered by lane)
+- **Written by:** Agents that opt to `publish_knowledge` after execution
+
+### Initial Data
+
+The admin user (`ayushmaan@hivepro.com`) is auto-created on startup by `ensure_admin.py`. All other data comes from live integrations (Jira sync, Fathom sync, HubSpot webhooks). On startup, ChromaDB collections are backfilled from PostgreSQL data.
 
 ---
 
 ## 11. Backend API Endpoints
 
-All endpoints are prefixed with `/api`. Authentication uses Bearer JWT tokens (except login and health check).
+All endpoints are prefixed with `/api`. Authentication uses Bearer JWT tokens (except login, health check, and webhooks). There are **23 routers** total.
 
 ### 11.1 Auth (`/api/auth`)
 
@@ -687,11 +943,76 @@ All endpoints are prefixed with `/api`. Authentication uses Bearer JWT tokens (e
 - `GET /api/health` — HTTP health check (`{status: "healthy", version: "1.0.0"}`)
 - `WS /api/ws` — WebSocket endpoint for real-time events
 
+### 11.12 Chat (`/api/chat`)
+
+| Method | Path | Input | Output | Description |
+|--------|------|-------|--------|-------------|
+| POST | `/send` | `{message}` | `{conversation_id, message_id}` | Send chat message (fast path via Haiku, fallback to full pipeline) |
+| GET | `/conversations` | Bearer token | `[{id, title, status, created_at}]` | List user's conversations |
+| GET | `/conversations/:id` | UUID | `{id, messages, pipeline_status}` | Conversation detail (used for polling) |
+
+### 11.13 Jira (`/api/jira`)
+
+| Method | Path | Output | Description |
+|--------|------|--------|-------------|
+| GET | `/status` | `{configured, url, project, last_sync}` | Jira connection status |
+| POST | `/sync` | `{task_id, stats}` | Trigger manual Jira sync (bulk) |
+| POST | `/sync/:key` | `{task_id, stats}` | Sync a single Jira issue by key |
+
+### 11.14 Fathom (`/api/fathom`)
+
+| Method | Path | Input | Output | Description |
+|--------|------|-------|--------|-------------|
+| POST | `/sync` | `?days=7` | `{imported, skipped, errors}` | Trigger Fathom meeting sync |
+
+### 11.15 Executive (`/api/executive`)
+
+| Method | Path | Output | Description |
+|--------|------|--------|-------------|
+| GET | `/summary` | Executive dashboard data | Portfolio snapshot, at-risk, trending |
+| GET | `/trends` | `{health_trends, ticket_velocity, sentiment_shifts}` | Multi-metric trend analysis |
+| POST | `/check-rules` | `{alerts_created, details}` | Run 4 alert rules engine |
+
+### 11.16 Drafts (`/api/drafts`)
+
+| Method | Path | Output | Description |
+|--------|------|--------|-------------|
+| GET | `/` | `[{id, agent_id, draft_type, status, confidence, created_at}]` | List agent drafts |
+| GET | `/:id` | Full draft with content | Draft detail |
+| POST | `/:id/approve` | `{id, status: "approved"}` | Approve a draft → executes action |
+| POST | `/:id/dismiss` | `{id, status: "dismissed"}` | Dismiss a draft → logs rejection |
+
+### 11.17 Webhooks (`/api/webhooks`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/jira` | Jira Cloud webhook receiver (verifies secret, syncs issue, fires triage event) |
+| POST | `/slack` | Slack Events API receiver (url_verification + message handling for chat) |
+| POST | `/slack/interactions` | Slack interactive message callbacks (Approve/Edit/Dismiss buttons) |
+
+### 11.18 Demo (`/api/demo`)
+
+| Method | Path | Input | Description |
+|--------|------|-------|-------------|
+| POST | `/trigger` | `{scenario}` | Trigger demo scenario (all, triage, fathom, etc.) |
+
+### 11.19 v2 Endpoints (Hierarchy-Aware)
+
+| Router | Prefix | Description |
+|--------|--------|-------------|
+| hierarchy | `/v2/hierarchy` | Agent hierarchy, tier structure, lane assignments |
+| messages | `/v2/messages` | Inter-agent message board (5 message types, threaded) |
+| pipeline | `/v2/pipeline` | Pipeline execution rounds, stage logs |
+| memory | `/v2/memory` | Agent memory operations (episodic, semantic) |
+| workflows | `/v2/workflows` | Event → agent workflow routing |
+
 ---
 
 ## 12. Agent Implementations
 
-All agents inherit from `BaseAgent` which provides: timing (`perf_counter`), exception handling, logging (`AgentLog` record creation), and a standard return format: `{success, output, reasoning_summary}`.
+All agents inherit from `BaseAgent` which provides: multi-stage pipeline execution (`perceive` → `retrieve` → `think` → `act` → `reflect` → `quality_gate` → `finalize`), timing, exception handling, logging (`AgentLog` + `AgentExecutionRound` record creation), and a standard return format: `{success, output, reasoning_summary}`.
+
+Agents are registered via `AgentFactory` and configured from YAML profiles (`backend/config/agent_profiles.yaml`). Each agent has pluggable traits from the `traits/` directory (e.g., `confidence_scoring`, `risk_assessment`, `pattern_recognition`).
 
 ### 12.1 CS Orchestrator (`orchestrator.py`)
 
@@ -788,7 +1109,7 @@ deployment_started      -> deployment_intelligence
 
 **Save:** Creates `HealthScore` record via `save_score()` method
 
-### 12.7 Call Intelligence Agent (`call_intel_agent.py`)
+### 12.7 Call Intelligence Agent (`fathom_agent.py`)
 
 **Trigger:** `zoom_call_completed`, `fathom_recording_ready`
 **Required Payload:** `{transcript}` (+ optional participants, duration_minutes, recording_id)
@@ -825,6 +1146,39 @@ deployment_started      -> deployment_intelligence
 
 **Output:** Known issues, configuration guidance, similar deployment insights from RAG
 **Save:** No persistence path currently implemented (output discarded)
+
+### 12.11 Lane Leads (`leads/support_lead.py`, `leads/value_lead.py`, `leads/delivery_lead.py`)
+
+**Tier 2** agents that coordinate specialist routing within their lane.
+
+- Each has a `SPECIALIST_MAP` dict mapping event types to T3 specialists
+- `_fallback_plan()` handles unknown events with a reasonable default
+- Receives tasks from T1 Orchestrator, delegates to appropriate T3 specialist
+- Collects results from specialists and passes them back up
+
+### 12.12 Meeting Followup Agent (`meeting_followup_agent.py`)
+
+**Trigger:** Post-meeting events
+**Identity:** Riley Park (T3, Value lane)
+**Role:** Tracks post-meeting action items, generates followup summaries
+
+### 12.13 Pipeline Engine (`pipeline_engine.py`)
+
+Runs the multi-stage pipeline defined in `pipeline.yaml` for each agent execution:
+
+1. **perceive** — Process raw input into structured understanding
+2. **retrieve** — Fetch relevant episodic + semantic memories from ChromaDB
+3. **think** — Reason about the task using Claude with `tool_use`
+4. **act** — Execute the decided action (create draft, update DB, etc.)
+5. **reflect** — Evaluate own performance, write to episodic memory
+6. **quality_gate** — Check output quality (retry from specific stage if failed)
+7. **finalize** — Format output, broadcast via WebSocket
+
+Each stage creates an `AgentExecutionRound` record with tools called, tokens used, confidence, and duration.
+
+### 12.14 Reflection Engine (`reflection_engine.py`)
+
+Post-execution reflection and quality gate. Agents evaluate their own output quality and can trigger re-execution from a specific pipeline stage if the quality gate fails.
 
 ---
 
@@ -866,6 +1220,100 @@ Processes events through the orchestrator and broadcasts via WebSocket.
 5. Set status to "completed" or "failed"
 6. Broadcast `event_processed`
 7. If risk_level in (high_risk, critical): broadcast `new_alert`
+8. If non-chat event: auto-create draft via `_create_draft_for_output()`
+
+### 13.4 ChatService (`services/chat_service.py`)
+
+Unified chat orchestration for both Streamlit and Slack interfaces.
+
+- `process_message_full(conversation_id, message_text)` — Background entry point: creates messages, tries fast path (Haiku), falls back to full agent pipeline
+- Manages conversation lifecycle, message creation, response threading
+
+### 13.5 ChatFastPath (`services/chat_fast_path.py`)
+
+Bypasses full T1→T2→T3 pipeline for interactive chat. Single Claude Haiku call for instant responses.
+
+- Intent-specific prompt builders (ticket lookup, health status, general Q&A)
+- Uses `CLAUDE_FAST_MODEL` (Haiku 4.5) for speed
+- Falls back to full pipeline if fast path can't handle the query
+
+### 13.6 JiraService (`services/jira_service.py`)
+
+Jira Cloud REST API client via httpx.
+
+- Basic Auth (email + API token)
+- JQL search, issue-to-Ticket mapping, ADF text extraction
+- `configured` property checks if credentials are set
+
+### 13.7 FathomService (`services/fathom_service.py`)
+
+Fathom API v1 client. Syncs call recordings, extracts transcripts, summaries, and metadata.
+
+### 13.8 SlackService (`services/slack_service.py`)
+
+Real `slack_sdk` WebClient with Block Kit formatting and graceful degradation.
+
+- `send_agent_card()` — Standard card with Approve/Edit/Dismiss interactive buttons + deep-links
+- `send_message()` — General message with optional `thread_ts` for threading
+- `get_user_info()` — Lookup Slack user details
+- Graceful degradation: if `SLACK_ENABLED=false`, all calls are no-ops
+
+### 13.9 SlackChatHandler (`services/slack_chat_handler.py`)
+
+Bidirectional Slack chat handler.
+
+- Signature verification (HMAC)
+- Deduplication of Slack retry requests
+- User mapping (single system user `slack-bot@hivepro.com`)
+- Conversation threading: Slack `thread_ts` maps to `ChatConversation` via `metadata_` JSONB
+- Reuses `ChatService.process_message_full()` — same fast path / full pipeline as Streamlit
+
+### 13.10 SlackFormatter (`services/slack_formatter.py`)
+
+Converts markdown to Slack Block Kit format (headings, bold, bullets, dividers, code blocks).
+
+### 13.11 DraftService (`services/draft_service.py`)
+
+Draft-first approval workflow.
+
+- `create_draft(agent_id, event_id, customer_id, draft_type, content, confidence)` — Creates `AgentDraft` record
+- `approve_draft(draft_id, approved_by)` — Executes the approved action + creates `AuditLog` entry
+- `dismiss_draft(draft_id, dismissed_by)` — Logs rejection + creates `AuditLog` entry
+- `edit_draft(draft_id, edit_diff)` — Records human edits
+
+### 13.12 AlertRulesEngine (`services/alert_rules_engine.py`)
+
+4 automated alert rules that check for critical conditions:
+
+1. **health_drop_15** — Health score dropped 15+ points in 7 days
+2. **critical_tickets_stale** — Critical tickets open for too long
+3. **renewal_at_risk** — At-risk customer with renewal within 90 days
+4. **negative_sentiment_streak** — Multiple consecutive negative call sentiments
+
+Rules deduplicate: won't create duplicate open alerts for the same customer + type.
+
+### 13.13 TrendService (`services/trend_service.py`)
+
+Executive analytics queries (all pure SQL):
+
+- `health_trends(days)` — Daily average health scores + at-risk counts
+- `ticket_velocity(days)` — Ticket creation/resolution rates by severity
+- `sentiment_shifts(days)` — Sentiment distribution over time
+- `portfolio_snapshot()` — Current state of all customers
+
+### 13.14 MeetingKnowledgeService (`services/meeting_knowledge_service.py`)
+
+Manages the `meeting_knowledge` ChromaDB collection for Fathom Agent RAG retrieval.
+
+- `backfill_from_db()` — Re-populates ChromaDB from PostgreSQL `call_insights` table on startup
+
+### 13.15 PipelineService (`services/pipeline_service.py`)
+
+Pipeline execution coordination, stage logging, and progress broadcasting.
+
+### 13.16 MessageService (`services/message_service.py`)
+
+Inter-agent message operations on the Message Board (`agent_messages` table). Creates, queries, and manages typed messages between agents.
 
 ---
 
@@ -992,7 +1440,7 @@ Singleton that manages all WebSocket connections with thread-safe asyncio.Lock.
 - Split layout: left side shows 3D NeuralSphere (lazy-loaded), right side shows login form
 - KPI pills display live stats (Avg Health, Customers, Agents)
 - Email/password form with password visibility toggle
-- **Demo mode:** If backend is unreachable (network error), accepts any credentials and uses seed data
+- **Demo mode:** If backend is unreachable (network error), accepts any credentials and uses fallback data from `frontend/src/data/`
 - On success: stores JWT tokens in localStorage, connects WebSocket, navigates to `/`
 
 ### DashboardPage (Command Center)
@@ -1073,7 +1521,7 @@ Singleton that manages all WebSocket connections with thread-safe asyncio.Lock.
 **State:** `stats, agents, events, quickHealth, isLoading, error`
 
 **Actions:**
-- `fetchAll()` — Parallel `Promise.allSettled` of stats, agents, events, quickHealth. Falls back to seed data in demo mode.
+- `fetchAll()` — Parallel `Promise.allSettled` of stats, agents, events, quickHealth. Falls back to fallback data in demo mode.
 - `updateAgentStatus(agentName, status, task)` — WebSocket handler
 - `prependEvent(event)` — Adds event to front, keeps last 50
 - `updateQuickHealth(customerId, newScore, riskLevel)` — Real-time health update
@@ -1310,9 +1758,11 @@ const NeuralSphereWrapper = () => (
 
 ---
 
-## 23. Seed Data
+## 23. Initial Data
 
-### Frontend Seed Data (`frontend/src/data/`)
+The backend seed script has been removed. The admin user (`ayushmaan@hivepro.com`) is auto-created on startup by `backend/app/utils/ensure_admin.py`. All other data comes from live integrations (Jira sync, Fathom sync, HubSpot webhooks).
+
+### Frontend Fallback Data (`frontend/src/data/`)
 
 Used for **demo mode** (when backend is unreachable). Stores use this data as fallback.
 
@@ -1325,22 +1775,6 @@ Used for **demo mode** (when backend is unreachable). Stores use this data as fa
 | `agents.js` | `seedAgentList`, `seedAgentLogs`, `seedOrchestrationFlow` |
 | `analytics.js` | `seedAnalyticsKpis`, `seedTicketVolume`, `seedHealthTrend`, `seedAgentPerformance`, `seedSentimentStream`, `seedReports` |
 | `healthHistory.js` | `seedHealthHistory[customerId]` — 90 days of daily scores |
-
-### Backend Seed Script (`backend/app/utils/seed.py`)
-
-Run via: `python -m app.utils.seed`
-
-Creates:
-- 5 users (2 admin, 2 cs_engineer, 1 cs_manager)
-- 10 customers (mix of enterprise/mid-market/SMB)
-- ~300 health scores (30 days x 10 customers)
-- 50 tickets (various severities and statuses)
-- 100 call insights (mixed sentiments)
-- 200 agent logs
-- 150 events
-- 15 alerts
-- 30 action items
-- 8 reports
 
 ### Utilities & Hooks
 
@@ -1355,10 +1789,12 @@ Creates:
 
 ### Development (.env)
 
+See `.env.example` for a complete template with inline comments and setup links.
+
 ```bash
 # Database (Neon PostgreSQL)
-DATABASE_URL=postgresql+asyncpg://USER:PASS@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require
-SYNC_DATABASE_URL=postgresql://USER:PASS@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgresql+asyncpg://USER:PASS@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
+SYNC_DATABASE_URL=postgresql://USER:PASS@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
 
 # Redis (optional — leave empty for sync task execution)
 REDIS_URL=
@@ -1372,17 +1808,48 @@ REFRESH_TOKEN_EXPIRE_DAYS=7
 # Claude API
 ANTHROPIC_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
+CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001
 
 # ChromaDB
 CHROMADB_PATH=./chromadb_data
 CHROMADB_MODE=persistent
 
-# External (Phase 2 — leave empty)
+# Demo Mode
+DEMO_MODE=true
+
+# Jira (Atlassian Cloud)
 JIRA_API_URL=https://hivepro.atlassian.net
+JIRA_EMAIL=your-email@hivepro.com
 JIRA_API_TOKEN=
-SLACK_BOT_TOKEN=
-FATHOM_EMAIL=
-FATHOM_PASSWORD=
+JIRA_WEBHOOK_SECRET=
+JIRA_DEFAULT_PROJECT=CS
+
+# Fathom
+FATHOM_API_KEY=fth_...
+FATHOM_API_BASE_URL=https://api.fathom.ai/external/v1
+
+# Slack
+SLACK_ENABLED=true
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=
+SLACK_BOT_USER_ID=
+SLACK_CHAT_CHANNEL=
+# 9 dedicated channels
+SLACK_CH_TICKET_TRIAGE=#cs-ticket-triage
+SLACK_CH_CALL_INTEL=#cs-call-intelligence
+SLACK_CH_HEALTH_ALERTS=#cs-health-alerts
+SLACK_CH_ESCALATIONS=#cs-escalations
+SLACK_CH_DELIVERY=#cs-delivery
+SLACK_CH_QBR_DRAFTS=#cs-qbr-drafts
+SLACK_CH_PRESALES=#cs-presales-funnel
+SLACK_CH_EXEC_DIGEST=#cs-executive-digest
+SLACK_CH_EXEC_URGENT=#cs-executive-urgent
+
+# Dashboard base URL for deep-links in Slack cards
+DASHBOARD_BASE_URL=http://localhost:5173
+
+# Sync schedule timezone
+SYNC_TIMEZONE=Asia/Kolkata
 
 # Frontend
 VITE_API_URL=http://localhost:8000/api
@@ -1396,6 +1863,8 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 REDIS_URL=rediss://default:PASS@xxx.upstash.io:6379    # Upstash Redis (TLS)
 CHROMADB_MODE=ephemeral                                  # In-memory on Render
 FRONTEND_URL=https://your-app.vercel.app                 # CORS restriction
+DASHBOARD_BASE_URL=https://your-app.vercel.app           # Slack deep-links
+DEMO_MODE=false
 VITE_API_URL=https://cs-control-plane-api.onrender.com/api
 VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 ```
@@ -1405,22 +1874,34 @@ VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 | Variable | Required | Default | Used By |
 |----------|----------|---------|---------|
 | `DATABASE_URL` | Yes | — | FastAPI async engine (asyncpg) |
-| `SYNC_DATABASE_URL` | Yes | — | Alembic, Celery, seed script (psycopg2) |
+| `SYNC_DATABASE_URL` | Yes | — | Alembic, Celery, sync tasks (psycopg2) |
 | `REDIS_URL` | No | `""` (sync fallback) | Celery broker/backend |
 | `JWT_SECRET_KEY` | Yes | placeholder | Token signing/verification |
 | `JWT_ALGORITHM` | No | `HS256` | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | `15` | Access token TTL |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | No | `7` | Refresh token TTL |
-| `ANTHROPIC_API_KEY` | Yes | — | Claude API calls |
-| `CLAUDE_MODEL` | No | `claude-sonnet-4-5-20250929` | Model selection |
+| `ANTHROPIC_API_KEY` | Yes | — | Claude API calls (all agents) |
+| `CLAUDE_MODEL` | No | `claude-sonnet-4-5-20250929` | Main model (full pipeline) |
+| `CLAUDE_FAST_MODEL` | No | `claude-haiku-4-5-20251001` | Fast model (interactive chat) |
 | `CHROMADB_PATH` | No | `./chromadb_data` | Persistent storage path |
 | `CHROMADB_MODE` | No | `persistent` | `persistent` or `ephemeral` |
 | `FRONTEND_URL` | No | `""` (open CORS) | CORS origin restriction |
-| `JIRA_API_URL` | No | `""` | Phase 2 Jira integration |
-| `JIRA_API_TOKEN` | No | `""` | Phase 2 Jira auth |
-| `SLACK_BOT_TOKEN` | No | `""` | Phase 2 Slack notifications |
-| `FATHOM_EMAIL` | No | `""` | Phase 2 Fathom sync |
-| `FATHOM_PASSWORD` | No | `""` | Phase 2 Fathom auth |
+| `DEMO_MODE` | No | `true` | Enable demo features + rich terminal logging |
+| `JIRA_API_URL` | No | `https://hivepro.atlassian.net` | Jira Cloud base URL |
+| `JIRA_EMAIL` | No | `""` | Jira Basic Auth email |
+| `JIRA_API_TOKEN` | No | `""` | Jira API token |
+| `JIRA_WEBHOOK_SECRET` | No | `""` | Jira webhook HMAC verification |
+| `JIRA_DEFAULT_PROJECT` | No | `CS` | Default Jira project for sync |
+| `FATHOM_API_KEY` | No | `""` | Fathom API v1 key |
+| `FATHOM_API_BASE_URL` | No | `https://api.fathom.ai/external/v1` | Fathom API base URL |
+| `SLACK_ENABLED` | No | `false` | Master switch for all Slack features |
+| `SLACK_BOT_TOKEN` | No | `""` | Slack Bot OAuth token (`xoxb-...`) |
+| `SLACK_SIGNING_SECRET` | No | `""` | Slack app signing secret (HMAC verification) |
+| `SLACK_BOT_USER_ID` | No | `""` | Bot's own user ID (to ignore own messages) |
+| `SLACK_CHAT_CHANNEL` | No | `""` | Restrict chat to specific channel(s) |
+| `SLACK_CH_*` (9 vars) | No | Channel names | 9 dedicated Slack channels for agent output |
+| `DASHBOARD_BASE_URL` | No | `http://localhost:5173` | Deep-link URLs in Slack cards |
+| `SYNC_TIMEZONE` | No | `Asia/Kolkata` | APScheduler cron job timezone |
 | `VITE_API_URL` | No | `/api` | Frontend API base URL |
 | `VITE_WS_URL` | No | `ws://127.0.0.1:8000/api/ws` | Frontend WebSocket URL |
 
@@ -1474,7 +1955,7 @@ VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 | 4 | Core Services | Done | Claude wrapper, ChromaDB + RAG, mock services |
 | 5 | Agent Framework | Done | BaseAgent, Orchestrator, Memory Agent, Celery setup |
 | 6 | Event System + WebSocket | Done | Event model, routing, WebSocket manager |
-| 7 | Remaining Agents | Done | All 10 agents implemented (Triage, Troubleshoot, Escalation, Health, Call Intel, QBR, SOW, Deployment) |
+| 7 | Remaining Agents | Done | All 10 agents implemented |
 | 8 | Frontend Shell | Done | Design system, Tailwind, Sidebar, TopBar, CommandPalette |
 | 9 | Login + Dashboard (2D) | Done | Login page, dashboard KPIs, live pulse, health grid |
 | 10 | Dashboard 3D | Done | NeuralSphere, FloatingOrbs, DataFlowRivers, HealthTerrain |
@@ -1482,8 +1963,17 @@ VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 | 12 | Agent Nexus | Done | NeuralNetwork (D3), AgentBrainPanel, ReasoningLog |
 | 13 | Signal Intelligence + Warroom | Done | SentimentSpectrum, InsightCard, WarroomTable, TicketDetailDrawer |
 | 14 | Analytics Lab | Done | HealthHeatmap, TicketVelocity, SentimentRiver, AgentThroughput, cross-filtering |
-| 15 | Seed Data + Polish | Partial | Seed script done. Animations, empty states, toasts done. Settings page done. |
+| 15 | Polish | Partial | Animations, empty states, toasts done. Settings page done. |
 | 16 | E2E Testing + Performance | Pending | Playwright tests, 3D perf audit, bundle audit, Lighthouse |
+| A | Architecture Upgrade | Done | 4-tier hierarchy (T1→T2→T3→T4), 14 agents, YAML-driven config, pipeline engine, 3-tier memory, message board, traits system, reflection engine |
+| B | Fathom Integration | Done | Fathom API sync, meeting knowledge service, call intelligence pipeline, ChromaDB backfill |
+| C | Jira Integration | Done | Jira REST API (httpx), bulk + incremental sync, webhook receiver, auto-triage events, `jira_project_key` mapping |
+| D | Slack Integration | Done | Real slack-sdk, Block Kit formatting, 9 dedicated channels, interactive buttons (Approve/Edit/Dismiss), draft-first workflow, `agent_drafts` + `audit_log` tables |
+| D.2 | Slack Chat | Done | Bidirectional chat, signature verification, conversation threading, markdown→Block Kit, user mapping, reuses chat fast path |
+| E | Executive Summaries | Done | Trend service (pure SQL), alert rules engine (4 rules), executive router, Streamlit page |
+| F | Chat Fast Path | Done | Haiku fast responses, intent-specific prompts, background processing, unified chat service for Streamlit + Slack |
+| G | Streamlit UI | Done | 6-page app (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary), JWT auth, API polling |
+| H | Demo System | Done | Demo runner CLI, demo data constants, rich terminal logging, demo API endpoint |
 
 ---
 
@@ -1498,34 +1988,40 @@ VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 ### Backend Setup
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-# Configure .env (copy from .env.example, fill in DATABASE_URL + ANTHROPIC_API_KEY)
-alembic upgrade head            # Create all 10 tables
-python -m app.utils.seed        # Seed demo data
-uvicorn app.main:app --reload   # Start on http://localhost:8000
+# Configure .env (copy from .env.example, fill in DATABASE_URL + SYNC_DATABASE_URL + ANTHROPIC_API_KEY)
+alembic upgrade head            # Create all tables
+uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend Setup
+On startup the backend will:
+- Auto-create the admin user (`ayushmaan@hivepro.com` / `password123`)
+- Pre-warm database connection pools (mitigates Neon cold start)
+- Backfill ChromaDB from PostgreSQL
+- Start APScheduler jobs (Jira daily at 8 AM, Fathom at 6 AM & 6 PM)
+
+### Streamlit UI (Primary)
+```bash
+cd streamlit_app
+streamlit run app.py            # Start on http://localhost:8501
+```
+
+### React Frontend (Optional)
 ```bash
 cd frontend
 npm install
 npm run dev                     # Start on http://localhost:5173
 ```
 
-### Test Accounts (After Seed)
+### Admin Account (Auto-Created on Startup)
 
 | Email | Password | Role |
 |-------|----------|------|
 | ayushmaan@hivepro.com | password123 | admin |
-| ariza@hivepro.com | password123 | admin |
-| vignesh@hivepro.com | password123 | cs_engineer |
-| chaitanya@hivepro.com | password123 | cs_engineer |
-| kazi@hivepro.com | password123 | cs_manager |
 
 ### Demo Mode
-If the backend is unreachable, the frontend falls back to **demo mode**: accepts any credentials, uses seed data from `frontend/src/data/`, and runs fully offline.
+- **Backend:** Set `DEMO_MODE=true` in `.env`. Enables rich terminal logging + `POST /api/demo/trigger` endpoint. CLI: `python -m app.demo_runner --scenario all`
+- **React Frontend:** If the backend is unreachable, falls back to demo mode: accepts any credentials, uses fallback data from `frontend/src/data/`, and runs fully offline.
 
 ---
 
@@ -1539,8 +2035,7 @@ If the backend is unreachable, the frontend falls back to **demo mode**: accepts
 6. **RAG for cross-customer intelligence** — ChromaDB embeddings find similar past issues across all customers.
 7. **Three surface levels** — Spatial depth hierarchy (near/mid/far) replaces traditional borders/shadows.
 8. **Sidebar navigation** (adapted from spec) — Originally designed as Orbital Nav arc; implemented as collapsible sidebar with CommandPalette for power users.
-9. **Demo mode** — Frontend works fully offline with seed data when backend is down.
-10. **Seed data system** — Single CLI command creates complete demo environment for instant walkthrough.
+9. **Demo mode** — Frontend works fully offline with fallback data when backend is down.
 
 ---
 
@@ -1549,26 +2044,28 @@ If the backend is unreachable, the frontend falls back to **demo mode**: accepts
 ### Agents
 - **SOW & Prerequisite Agent** — Code is complete but has **no persistence path**. Output from Claude is generated but discarded after the run.
 - **Deployment Intelligence Agent** — Same issue: output is discarded, no save logic exists.
+- **Pre-Sales Funnel Agent** — Listed in spec but no dedicated Python file exists. Pipeline analytics may be handled through other means.
 - **Generic trigger endpoint** — Most agents require manually constructed payloads via `POST /agents/:name/trigger`. Only Ticket Triage and Troubleshooter have dedicated endpoints that auto-populate data from the DB.
 
-### External Integrations (Phase 2)
-- **Jira** — No live webhook integration. Tickets are created manually or via seed data.
-- **Fathom** — No live recording sync. Call insights are seeded or manually created.
-- **Slack** — No bot integration. Alerts have a `slack_notified` flag but nothing sends to Slack.
+### External Integrations
+- **Jira** — ✅ Fully integrated. Live webhook + daily sync (8 AM IST). Tickets come from Jira via `jira_service.py`.
+- **Fathom** — ✅ Fully integrated. Live API sync at 6 AM & 6 PM IST. Call insights from Fathom API v1.
+- **Slack** — ✅ Fully integrated. Real `slack-sdk` WebClient, 9 dedicated channels, interactive buttons (Approve/Edit/Dismiss), bidirectional chat, Block Kit formatting.
+- **HubSpot** — ⬜ Not yet integrated (planned). Deal pipeline sync + webhook on stage change.
 
 ### Infrastructure
-- **Redis** — Optional. Without it, all Celery tasks run synchronously (no background processing, no task queueing).
-- **ChromaDB ephemeral mode** — In production (Render), vector embeddings are lost on restart. Need a persistent vector DB solution for production.
+- **Redis** — Optional. Without it, all Celery tasks run synchronously (no background processing, no task queueing). Fine for dev, not ideal for production load.
+- **ChromaDB ephemeral mode** — In production (Render), vector embeddings are lost on restart. Backfill from PostgreSQL runs automatically on startup, but first-request latency is higher.
+- **Neon free tier** — ~6s cold start on first DB connection. Pool pre-warming on startup mitigates subsequent requests.
 
 ### Testing
 - **E2E tests** — Playwright config exists but test suite is not yet written (Phase 16).
 - **Unit tests** — Backend test directory exists but coverage is minimal.
 
 ### Frontend
-- **Solar System View** — Referenced in the spec but may not be fully implemented yet.
-- **Ticket Constellation 3D** — Exists but may need polish.
+- **React dashboard** — 3 pages functional (Dashboard, CustomerDetail, PipelineAnalytics). Original 9-page spec partially implemented.
 - **Accessibility** — Basic support (focus rings, reduced motion, semantic HTML) but no comprehensive audit.
 
 ---
 
-*This document was generated on March 2, 2026 by analyzing every file in the HivePro CS Control Plane codebase.*
+*This document was originally generated on March 2, 2026 and updated on March 23, 2026 to reflect the current state of the codebase (Phases A-H: architecture upgrade, Jira/Fathom/Slack integration, chat system, executive summaries, Streamlit UI, demo system).*

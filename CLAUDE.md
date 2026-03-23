@@ -118,7 +118,7 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 | **PRD** | `/docs/PRD.md` | Features, user stories, acceptance criteria |
 | **Wireframes** | `/docs/WIREFRAMES.md` | UI component specs, 3D specs, colors, fonts, layouts |
 | **API Contract** | `/docs/API_CONTRACT.md` | API endpoint request/response JSON shapes |
-| **Database Schema** | `/docs/DATABASE_SCHEMA.md` | Models, migrations, seed data |
+| **Database Schema** | `/docs/DATABASE_SCHEMA.md` | Models, migrations |
 | **Executive QA** | `/docs/EXECUTIVE_QA_COVERAGE.md` | Executive feature test coverage |
 
 **Read order for a new feature:** Architecture (context) → PRD (what) → Wireframes (how it looks) → API Contract (data shape) → Database Schema (storage)
@@ -313,7 +313,7 @@ hivepro-cs-control-plane/
 │       │
 │       └── utils/
 │           ├── security.py            # JWT + password utils
-│           ├── seed.py                # Comprehensive seed data
+│           ├── ensure_admin.py        # Auto-creates admin user on startup
 │           └── ensure_admin.py
 │
 ├── frontend/                          # React dashboard (minimal, 3 pages)
@@ -616,8 +616,7 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 | **Chat endpoint** | `POST /api/chat/send` with `{"message": text}` (NOT `{"text": text}`) |
 | **Chat polling** | `poll_for_response()` checks conversation for `pipeline_status != "processing"` |
 | **Model fields** | `HealthScore.calculated_at` (not scored_at), `Ticket.summary` (not title), `Ticket.severity` (not priority) |
-| **Seed data** | Auto-seeds on startup via `is_seeded()` check; 5 users, 10 customers, 50 tickets, 100 insights, etc. |
-| **Seed user** | `ayushmaan@hivepro.com` / password in seed.py |
+| **Admin user** | `ayushmaan@hivepro.com` / auto-created on startup by `ensure_admin.py` |
 | **Demo mode** | `DEMO_MODE=true` + `python -m app.demo_runner --scenario all` or `POST /api/demo/trigger` |
 | **Neon latency** | ~6s cold start, ~1s warm query from local dev |
 

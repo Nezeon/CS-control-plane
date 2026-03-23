@@ -9,9 +9,11 @@
 
 # HivePro CS Control Plane
 
-> **Codename: Mission Control** &mdash; An AI-powered command center that orchestrates **14 named agents across a 4-tier hierarchy** to automate Customer Success workflows at HivePro.
+> **Codename: Mission Control** &mdash; An AI-powered command center that orchestrates **14 agents across a 4-tier hierarchy** to automate Customer Success workflows at HivePro.
 
-This isn't a chatbot or a dashboard. It's a fully autonomous CS operations engine that triages Jira tickets, analyzes call recordings, monitors customer health, drafts Slack messages, and coordinates multi-step workflows &mdash; all through a hierarchy of AI agents that think, delegate, and reflect.
+10 specialized AI agents watch Jira tickets, Fathom call recordings, and HubSpot deals &mdash; then triage issues, analyze calls, monitor customer health, draft actions, and coordinate multi-step workflows. Everything goes through Slack first; a dashboard provides deep-dives when needed.
+
+Every agent output starts as a **draft**. Nothing customer-facing happens without human approval.
 
 ---
 
@@ -19,7 +21,7 @@ This isn't a chatbot or a dashboard. It's a fully autonomous CS operations engin
 
 ```
                          External Events
-                    (Jira / Fathom / Slack / Cron)
+                    (Jira / Fathom / HubSpot / Cron)
                               |
                               v
                    +---------------------+
@@ -56,43 +58,43 @@ This isn't a chatbot or a dashboard. It's a fully autonomous CS operations engin
                +-------------+
 ```
 
-**Key principle:** Tasks flow DOWN the hierarchy (T1 -> T2 -> T3). Results flow UP. Specialists never talk to each other directly &mdash; sideways coordination goes through Lane Leads.
+Tasks flow **DOWN** the hierarchy (T1 &rarr; T2 &rarr; T3). Results flow **UP**. Specialists never talk directly to each other &mdash; sideways coordination goes through Lane Leads via the Message Board.
 
 ---
 
 ## The 14 Agents
 
-Each agent has a human identity, personality traits, specialized tools, and a multi-stage pipeline.
+Each agent has a human identity, personality traits, specialized tools, and a multi-stage pipeline (`perceive` &rarr; `retrieve` &rarr; `think` &rarr; `act` &rarr; `reflect` &rarr; `quality_gate` &rarr; `finalize`).
 
 ### Tier 1 &mdash; Supervisor
 | Agent | Identity | Role |
 |-------|----------|------|
-| CSO Orchestrator | Naveen Kapoor | Strategic decomposition, delegation, quality evaluation, synthesis |
+| CS Orchestrator | Naveen Kapoor | Classifies events, routes to correct lane. Never analyzes &mdash; pure routing. |
 
 ### Tier 2 &mdash; Lane Leads
 | Agent | Identity | Lane | Role |
 |-------|----------|------|------|
-| Support Lead | Rachel Torres | Support | Ticket routing, escalation coordination |
+| Support Lead | Rachel Torres | Run / Support | Ticket routing, escalation coordination |
 | Value Lead | Damon Reeves | Value | Health monitoring, QBR, renewals |
 | Delivery Lead | Priya Mehta | Delivery | Deployment, SOW, onboarding |
 
 ### Tier 3 &mdash; Specialists
 | Agent | Identity | Lane | Role |
 |-------|----------|------|------|
-| Ticket Triage | Kai Nakamura | Support | Auto-classify severity, suggest actions |
-| Troubleshooter | Leo Petrov | Support | Root cause analysis, resolution |
-| Escalation Summary | Maya Santiago | Support | L2/L3 escalation packages |
-| Health Monitor | Dr. Aisha Okafor | Value | Daily health scores, at-risk flags |
-| Call Intelligence | Jordan Ellis | Value | Call transcript analysis, action items |
-| QBR Value | Sofia Marquez | Value | Quarterly business review content |
+| Ticket Triage | Kai Nakamura | Support | Classifies Jira tickets: category, severity, duplicates, email draft |
+| Troubleshooter | Leo Petrov | Support | Root cause analysis with confidence scoring. &lt;70% &rarr; escalates |
+| Escalation Writer | Maya Santiago | Support | Compiles escalation docs with full context and evidence |
+| Health Monitor | Dr. Aisha Okafor | Value | Daily health scores, risk flags, cross-customer patterns |
+| Call Intelligence | Jordan Ellis | Value | Call transcript analysis, summaries, action items, sentiment |
+| QBR / Value Narrative | Sofia Marquez | Value | Quarterly business review content, renewal recs |
 | Meeting Followup | Riley Park | Value | Post-meeting action tracking |
-| SOW Prerequisite | Ethan Brooks | Delivery | Pre-deployment checklists |
-| Deployment Intelligence | Zara Kim | Delivery | Deployment guidance via RAG |
+| SOW & Prerequisite | Ethan Brooks | Delivery | SOW docs, infra/security checklists for new customers |
+| Deployment Intelligence | Zara Kim | Delivery | Validates deployments, flags failures |
 
 ### Tier 4 &mdash; Foundation
 | Agent | Identity | Role |
 |-------|----------|------|
-| Customer Memory | Atlas | Context provider for all tiers, 3-tier memory system |
+| Customer Memory | Atlas | Per-customer knowledge store. 3-tier memory: Working + Episodic + Semantic |
 
 ---
 
@@ -100,48 +102,52 @@ Each agent has a human identity, personality traits, specialized tools, and a mu
 
 | Integration | What It Does | How |
 |-------------|--------------|-----|
-| **Jira** | Auto-syncs UCSE project tickets every 60s, links to customers, tracks status | REST API + webhooks |
-| **Fathom** | Ingests call recordings, extracts summaries + action items + sentiment | REST API + webhooks |
-| **Slack** | Bidirectional chat (ask questions, get AI answers), agent draft cards with Approve/Edit/Dismiss buttons, 9 dedicated channels | Events API + interactive messages |
+| **Jira** | Syncs UCSC project tickets, links to customers, tracks status | REST API + webhooks |
+| **Fathom** | Ingests call recordings, extracts summaries + action items + sentiment | REST API (6 AM & 6 PM sync) |
+| **HubSpot** | Deals pipeline, stages, contacts, close reasons | Daily API pull + webhook |
+| **Slack** | Bidirectional chat, agent draft cards with Approve/Edit/Dismiss, 9 dedicated channels | Events API + interactive messages |
 | **Claude API** | Powers all agent reasoning via Haiku (fast path) and Sonnet (full pipeline) | Anthropic SDK |
 
-### Slack Chat Interface
-Users can ask questions directly in Slack and get AI-powered responses:
-- **"How many open tickets does PDO have?"** &rarr; Instant answer with ticket breakdown
-- **"What's the health status of Etisalat?"** &rarr; Health score, trends, flags
-- Responses are threaded, formatted with Block Kit, and cite real data
+### Slack Channels
+
+| Channel | Content |
+|---------|---------|
+| `#cs-ticket-triage` | Ticket classifications + troubleshooting results |
+| `#cs-call-intelligence` | Post-call summaries + action items + sentiment |
+| `#cs-health-alerts` | Daily health checks + risk flags |
+| `#cs-executive-digest` | Weekly portfolio summary (Monday 9 AM) |
+| `#cs-executive-urgent` | Threshold alerts (health crash, SLA cascade, churn signal) |
+| `#cs-presales-funnel` | Pipeline analytics + stalled deals |
+| `#cs-qbr-drafts` | QBR document drafts |
+| `#cs-escalations` | Engineering escalation docs |
+| `#cs-delivery` | SOW drafts + deployment status |
 
 ---
 
 ## Tech Stack
 
-### Backend
-| Component | Technology |
-|-----------|-----------|
-| API Framework | FastAPI 0.109+ |
+| Layer | Technology |
+|-------|-----------|
+| API Framework | FastAPI 0.109+ (Python 3.11+) |
 | Database | PostgreSQL 16 (Neon cloud) |
-| Vector Store | ChromaDB 0.4+ (persistent) |
+| Vector Store | ChromaDB 0.4+ (6 collections) |
 | ORM | SQLAlchemy 2.0 (async + sync) |
-| Migrations | Alembic |
-| LLM | Claude API (Sonnet 4.5 + Haiku 4.5) |
-| Task Queue | Celery + Redis (optional, eager mode for local dev) |
+| Migrations | Alembic (6 migration files) |
+| AI (main) | Claude Sonnet 4.5 |
+| AI (fast) | Claude Haiku 4.5 |
+| Task Queue | Celery (eager mode &mdash; no Redis required locally) |
+| Scheduling | APScheduler (cron-style, fixed times) |
 | Config | YAML-driven (4 config files define all agent behavior) |
 | HTTP Client | httpx (async) |
-
-### Frontend
-| Component | Technology |
-|-----------|-----------|
-| Framework | React 18 + Vite 5 |
-| Styling | Tailwind CSS 3 |
-| State | Zustand 4 |
-| Routing | React Router 6 |
-| HTTP | Axios |
+| Slack | slack-sdk (WebClient + Block Kit) |
+| Auth | python-jose (JWT) + passlib |
 
 ### Dual Frontend
-The project has two frontends:
 
-- **React Dashboard** (`/frontend/`) &mdash; Spatial command center with dark void UI, customer health grid, pipeline analytics
-- **Streamlit App** (`/streamlit_app/`) &mdash; 6-page operational UI (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary)
+| UI | Tech | URL |
+|----|------|-----|
+| **React Dashboard** | React 18, Vite 5, Tailwind, Three.js, Zustand, D3 | `localhost:5173` |
+| **Streamlit App** | Streamlit (6 pages: Ask, Dashboard, Customers, Agents, Tickets, Executive Summary) | `localhost:8501` |
 
 Both connect to the same FastAPI backend.
 
@@ -151,42 +157,46 @@ Both connect to the same FastAPI backend.
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+
-- PostgreSQL 16 (local or [Neon](https://neon.tech))
-- Anthropic API key
-- Redis (optional &mdash; without it, tasks run synchronously)
+- Node.js 18+ (for React dashboard, optional)
+- A [Neon](https://neon.tech) PostgreSQL database
+- [Anthropic API key](https://console.anthropic.com)
 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/Nezeon/CS-control-plane.git
+git clone <repo-url>
 cd hivepro-cs-control-plane
 cp .env.example .env
+# Edit .env &mdash; fill in DATABASE_URL, SYNC_DATABASE_URL, ANTHROPIC_API_KEY at minimum
 ```
-
-Edit `.env` with your credentials (see [Environment Variables](#environment-variables) below).
 
 ### 2. Backend
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Run migrations
-alembic upgrade head
-
-# Start the server (auto-creates admin user on first run)
+alembic upgrade head          # Create/migrate database tables
 uvicorn app.main:app --reload --port 8000
 ```
 
-On first startup, the server will:
-- Create admin user `ayushmaan@hivepro.com`
-- Start Jira periodic sync (every 60s)
-- Pre-warm database connection pools
+On startup the backend will:
+- Auto-create the admin user (`ayushmaan@hivepro.com` / `password123`)
+- Pre-warm database connection pools (mitigates Neon cold start)
+- Backfill ChromaDB from PostgreSQL (RAG embeddings + meeting knowledge)
+- Start APScheduler jobs (Jira daily at 8 AM, Fathom at 6 AM & 6 PM)
 
-### 3. React Frontend
+Verify: `GET http://localhost:8000/api/health` &rarr; `{"status": "healthy"}`
+
+### 3. Streamlit UI
+
+```bash
+cd streamlit_app
+streamlit run app.py
+```
+
+Open `http://localhost:8501`. Log in with admin credentials.
+
+### 4. React Dashboard (optional)
 
 ```bash
 cd frontend
@@ -194,67 +204,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`
-
-### 4. Streamlit Frontend (alternative)
-
-```bash
-cd streamlit_app
-pip install streamlit
-streamlit run app.py
-```
-
-Open `http://localhost:8501`
-
----
-
-## Environment Variables
-
-```bash
-# ── Database ──
-DATABASE_URL=postgresql+asyncpg://user:pass@host/db
-SYNC_DATABASE_URL=postgresql://user:pass@host/db
-
-# ── Auth ──
-JWT_SECRET_KEY=change-this-in-production
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=15
-
-# ── Claude API ──
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-sonnet-4-5-20250929
-CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001
-
-# ── ChromaDB ──
-CHROMADB_PATH=./chromadb_data
-CHROMADB_MODE=persistent
-
-# ── Redis (optional) ──
-REDIS_URL=redis://localhost:6379/0
-
-# ── Jira ──
-JIRA_API_URL=https://your-instance.atlassian.net
-JIRA_EMAIL=your-email
-JIRA_API_TOKEN=your-token
-JIRA_DEFAULT_PROJECT=UCSE
-JIRA_SYNC_INTERVAL_SECONDS=60
-
-# ── Fathom ──
-FATHOM_API_KEY=your-key
-FATHOM_WEBHOOK_SECRET=your-secret
-
-# ── Slack ──
-SLACK_ENABLED=false
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_SIGNING_SECRET=your-secret
-SLACK_BOT_USER_ID=U0123456789
-SLACK_CHAT_CHANNEL=C0123456789
-# 9 dedicated channels (SLACK_CH_TRIAGE, SLACK_CH_HEALTH, etc.)
-
-# ── Frontend ──
-VITE_API_URL=http://localhost:8000/api
-VITE_WS_URL=ws://localhost:8000/api/ws
-```
+Open `http://localhost:5173`.
 
 ---
 
@@ -262,77 +212,97 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 
 ```
 hivepro-cs-control-plane/
-|
-+-- backend/
-|   +-- config/                     # YAML-driven agent configuration
-|   |   +-- agent_profiles.yaml     # 14 agent identities, traits, tools
-|   |   +-- org_structure.yaml      # 4-tier hierarchy, lanes
-|   |   +-- pipeline.yaml           # 7-stage pipeline per tier
-|   |   +-- workflows.yaml          # Event -> agent routing
-|   |
-|   +-- app/
-|   |   +-- main.py                 # FastAPI entry + startup hooks
-|   |   +-- config.py               # Settings from .env
-|   |   +-- database.py             # PostgreSQL (async + sync)
-|   |   +-- chromadb_client.py      # Vector store connection
-|   |   +-- websocket_manager.py    # Real-time broadcast
-|   |   |
-|   |   +-- agents/                 # 14 AI agent implementations
-|   |   |   +-- orchestrator.py     # T1: Naveen Kapoor
-|   |   |   +-- leads/              # T2: Rachel, Damon, Priya
-|   |   |   +-- triage_agent.py     # T3: Specialists
-|   |   |   +-- memory_agent.py     # T4: Atlas
-|   |   |   +-- base_agent.py       # Pipeline execution base
-|   |   |   +-- pipeline_engine.py  # Multi-round pipeline runner
-|   |   |   +-- tools/              # 12+ Claude tool_use definitions
-|   |   |   +-- traits/             # 9 pluggable trait behaviors
-|   |   |   +-- message_board.py    # Inter-agent communication
-|   |   |
-|   |   +-- models/                 # SQLAlchemy models (12 tables)
-|   |   +-- schemas/                # Pydantic request/response
-|   |   +-- routers/                # 22 API routers
-|   |   +-- services/               # Business logic
-|   |   |   +-- claude_service.py   # LLM calls
-|   |   |   +-- jira_service.py     # Jira REST client
-|   |   |   +-- fathom_service.py   # Fathom API client
-|   |   |   +-- slack_service.py    # Slack WebClient
-|   |   |   +-- slack_chat_handler.py  # Bidirectional Slack chat
-|   |   |   +-- chat_fast_path.py   # Fast single-call responses
-|   |   |   +-- draft_service.py    # Approval workflow
-|   |   |   +-- event_service.py    # Event processing
-|   |   |   +-- trend_service.py    # Executive analytics
-|   |   |
-|   |   +-- tasks/                  # Celery async tasks
-|   |   |   +-- jira_sync.py        # Periodic Jira sync
-|   |   +-- utils/
-|   |       +-- ensure_admin.py     # Admin user creation
-|   |       +-- security.py         # JWT + password hashing
-|   |
-|   +-- alembic/                    # Database migrations
-|   +-- requirements.txt
-|
-+-- frontend/                       # React spatial dashboard
-|   +-- src/
-|       +-- pages/                  # Dashboard, CustomerDetail, Pipeline
-|       +-- components/             # Shared UI (GlassCard, KpiCard, etc.)
-|       +-- stores/                 # Zustand (dashboard, customer)
-|       +-- services/               # API client + WebSocket
-|
-+-- streamlit_app/                  # Streamlit operational UI
-|   +-- app.py                      # Login + navigation
-|   +-- pages/                      # 6 pages
-|   +-- utils/api.py                # API client with JWT
-|
-+-- docs/
-|   +-- ARCHITECTURE.md             # Full architecture spec
-|   +-- PRD.md                      # Product requirements
-|   +-- WIREFRAMES.md               # UI/UX specs + design system
-|   +-- API_CONTRACT.md             # Endpoint contracts
-|   +-- DATABASE_SCHEMA.md          # Schema definitions
-|
-+-- CLAUDE.md                       # AI development context
-+-- render.yaml                     # Render deployment config
+├── backend/
+│   ├── config/                      # YAML-driven agent configuration
+│   │   ├── agent_profiles.yaml      # 14 agent definitions, traits, tools
+│   │   ├── org_structure.yaml       # 4-tier hierarchy, lanes, reporting
+│   │   ├── pipeline.yaml            # Pipeline stage definitions per tier
+│   │   └── workflows.yaml           # Event → agent routing
+│   │
+│   ├── app/
+│   │   ├── main.py                  # FastAPI entry + APScheduler setup
+│   │   ├── config.py                # 40+ env vars (pydantic-settings)
+│   │   ├── database.py              # PostgreSQL async + sync engines
+│   │   ├── chromadb_client.py       # Vector store connection
+│   │   ├── websocket_manager.py     # Real-time broadcast
+│   │   │
+│   │   ├── agents/                  # 14 AI agent implementations
+│   │   │   ├── orchestrator.py      # T1: Naveen — event routing
+│   │   │   ├── leads/               # T2: Rachel, Damon, Priya
+│   │   │   ├── triage_agent.py      # T3: Kai — ticket classification
+│   │   │   ├── troubleshoot_agent.py # T3: Leo — root cause
+│   │   │   ├── escalation_agent.py  # T3: Maya — escalation docs
+│   │   │   ├── health_monitor.py    # T3: Aisha — daily health
+│   │   │   ├── fathom_agent.py      # T3: Jordan — call intel
+│   │   │   ├── qbr_agent.py         # T3: Sofia — QBR content
+│   │   │   ├── meeting_followup_agent.py  # T3: Riley — followups
+│   │   │   ├── sow_agent.py         # T3: Ethan — SOW docs
+│   │   │   ├── deployment_intel_agent.py  # T3: Zara — deployments
+│   │   │   ├── memory_agent.py      # T4: Atlas — customer memory
+│   │   │   ├── base_agent.py        # Pipeline execution base class
+│   │   │   ├── pipeline_engine.py   # Multi-round pipeline runner
+│   │   │   ├── reflection_engine.py # Reflection + quality gate
+│   │   │   ├── memory/              # 3-tier memory system
+│   │   │   └── traits/              # 13 pluggable trait behaviors
+│   │   │
+│   │   ├── models/                  # 17 SQLAlchemy models
+│   │   ├── schemas/                 # Pydantic request/response schemas
+│   │   ├── routers/                 # 23 API route modules
+│   │   ├── services/                # 17 business logic modules
+│   │   │   ├── claude_service.py    # LLM calls (Sonnet + Haiku)
+│   │   │   ├── chat_service.py      # Unified chat orchestration
+│   │   │   ├── chat_fast_path.py    # Haiku fast responses
+│   │   │   ├── jira_service.py      # Jira REST client
+│   │   │   ├── fathom_service.py    # Fathom API client
+│   │   │   ├── slack_service.py     # Slack Bot client
+│   │   │   ├── slack_chat_handler.py # Bidirectional Slack chat
+│   │   │   ├── draft_service.py     # Approval workflow
+│   │   │   └── ...
+│   │   │
+│   │   ├── tasks/                   # Celery tasks + sync jobs
+│   │   │   ├── jira_sync.py         # Jira bulk + incremental sync
+│   │   │   └── agent_tasks.py       # 20+ async agent tasks
+│   │   └── utils/
+│   │       ├── ensure_admin.py      # Auto-create admin on startup
+│   │       └── security.py          # JWT + password hashing
+│   │
+│   ├── alembic/                     # 6 database migrations
+│   └── requirements.txt
+│
+├── frontend/                        # React spatial dashboard (3 pages)
+│   └── src/
+│       ├── pages/                   # Dashboard, CustomerDetail, PipelineAnalytics
+│       ├── components/              # GlassCard, HealthRing, KpiCard, etc.
+│       ├── stores/                  # Zustand (dashboard, customer)
+│       └── services/                # API client + WebSocket
+│
+├── streamlit_app/                   # Streamlit operational UI (6 pages)
+│   ├── app.py                       # Login + navigation
+│   ├── pages/                       # Ask, Dashboard, Customers, Agents, Tickets, Executive Summary
+│   └── utils/                       # API client + styling
+│
+├── prompt-templates/                # Reusable prompt templates
+├── docs/                            # Architecture, PRD, wireframes, API contract, DB schema
+├── render.yaml                      # Render deployment config
+├── CLAUDE.md                        # AI development context
+├── DEPLOYMENT.md                    # Deployment guide
+└── DOCUMENTATION.md                 # Comprehensive technical docs
 ```
+
+---
+
+## Data Sync Schedule
+
+Both Jira and Fathom sync automatically via APScheduler (cron-style, fixed times in IST).
+
+| Source | Schedule | Behavior |
+|--------|----------|----------|
+| **Jira** | Daily at **8:00 AM** + on startup | First run: 6-month catchup. Then incremental (last 25 hours). |
+| **Fathom** | **6:00 AM** & **6:00 PM** + on startup (30s delay) | Syncs last 7 days each run. Deduplicates automatically. |
+
+Timezone is configurable via `SYNC_TIMEZONE` (default: `Asia/Kolkata`).
+
+Manual sync: `POST /api/jira/sync` or `POST /api/fathom/sync?days=14`
 
 ---
 
@@ -346,11 +316,13 @@ hivepro-cs-control-plane/
 | `GET` | `/api/dashboard/stats` | KPI summary (customers, tickets, health) |
 | `GET` | `/api/dashboard/quick-health` | Customer health grid with ticket counts |
 | `GET` | `/api/dashboard/events` | Recent event feed |
-| `GET` | `/api/customers` | All customers (sorted, filterable) |
+| `GET` | `/api/customers` | All customers |
 | `GET` | `/api/customers/:id` | Customer detail |
 | `GET` | `/api/customers/:id/tickets` | Customer's Jira tickets |
 | `GET` | `/api/customers/:id/health-history` | 90-day health trend |
 | `POST` | `/api/chat/send` | Send message to AI agents |
+| `GET` | `/api/executive/summary` | Executive dashboard data |
+| `GET` | `/api/executive/trends` | Health trends, ticket velocity, sentiment |
 
 ### Integration Endpoints
 
@@ -359,88 +331,58 @@ hivepro-cs-control-plane/
 | `GET` | `/api/jira/status` | Jira connection status |
 | `POST` | `/api/jira/sync` | Trigger manual Jira sync |
 | `POST` | `/api/webhooks/jira` | Jira Cloud webhook receiver |
-| `POST` | `/api/webhooks/fathom` | Fathom webhook receiver |
 | `POST` | `/api/webhooks/slack` | Slack Events API receiver |
-| `POST` | `/api/webhooks/slack/interactions` | Slack button callbacks |
+| `POST` | `/api/webhooks/slack/interactions` | Slack button callbacks (Approve/Edit/Dismiss) |
 
-### Agent Pipeline Endpoints
+### Draft Approval
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/agents` | All 14 agents with stats |
-| `POST` | `/api/agents/:name/trigger` | Manually trigger agent |
-| `GET` | `/api/drafts` | Agent draft outputs |
-| `POST` | `/api/drafts/:id/approve` | Approve agent draft |
-| `GET` | `/api/executive/summary` | Executive dashboard data |
-| `POST` | `/api/executive/check-rules` | Run alert rules engine |
+| `GET` | `/api/drafts` | List agent draft outputs |
+| `POST` | `/api/drafts/:id/approve` | Approve a draft |
+| `POST` | `/api/drafts/:id/dismiss` | Dismiss a draft |
 
 Full API contracts: [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 
 ---
 
+## Environment Variables
+
+Copy `.env.example` and fill in your values. Minimum required:
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DATABASE_URL` | Yes | PostgreSQL asyncpg connection string |
+| `SYNC_DATABASE_URL` | Yes | PostgreSQL psycopg2 connection string |
+| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `JWT_SECRET_KEY` | Production | Auth token signing (auto-generated on Render) |
+| `JIRA_EMAIL` + `JIRA_API_TOKEN` | For Jira | Atlassian Cloud credentials |
+| `FATHOM_API_KEY` | For calls | Fathom API key |
+| `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` | For Slack | Slack app credentials |
+
+See [.env.example](.env.example) for the full list with inline comments and setup links.
+
+---
+
 ## Architecture Principles
 
-1. **Event-Driven** &mdash; External events (Jira, Fathom, Slack) create event records. The Orchestrator reads and routes them. Agents never call each other directly.
+1. **Event-Driven** &mdash; External events create records. The Orchestrator reads and routes them. Agents never call each other directly.
 
-2. **YAML-Driven Config** &mdash; Agent identities, personalities, tools, pipeline stages, and workflows are defined in 4 YAML files. To change behavior, edit YAML &mdash; not Python.
+2. **YAML-Driven Config** &mdash; Agent identities, traits, tools, pipelines, and workflows are in 4 YAML files (`backend/config/`). Change behavior by editing YAML, not Python.
 
-3. **Hierarchical Delegation** &mdash; T1 decomposes tasks, T2 coordinates lanes, T3 executes. Results flow back up. Foundation (T4) serves all tiers.
+3. **Hierarchical Delegation** &mdash; T1 decomposes tasks, T2 coordinates lanes, T3 executes. Results flow back up. T4 serves all tiers.
 
-4. **3-Tier Memory** &mdash; Working memory (in-process scratchpad), Episodic memory (ChromaDB per-agent diary), Semantic memory (ChromaDB shared knowledge pools).
+4. **Draft-First** &mdash; Agents produce drafts, not final actions. Humans approve/edit/dismiss via Slack buttons or the API.
 
-5. **Draft-First Workflow** &mdash; Agents produce drafts, not final actions. Humans approve/edit/dismiss via Slack buttons or the dashboard.
+5. **3-Tier Memory** &mdash; Working (in-process scratchpad), Episodic (ChromaDB per-agent diary), Semantic (ChromaDB shared knowledge pools).
 
-6. **Real Data Only** &mdash; No seed/demo data. All customers and tickets come from live Jira sync. Fathom provides real call data.
+6. **Slack-Push, Dashboard-Pull** &mdash; Slack is where notifications go. The dashboard is opened via deep-links from Slack cards.
 
-7. **Async AI** &mdash; All Claude API calls run in background threads (or Celery tasks with Redis). API endpoints never block.
+7. **Async AI** &mdash; All Claude API calls run in background threads. API endpoints return immediately.
 
 8. **WebSocket Everything** &mdash; Real-time updates for pipeline progress, agent status, new events. Frontend never polls.
 
----
-
-## Current Customers (Live from Jira)
-
-The system tracks **25 real customers** synced from the UCSE Jira project:
-
-> Etisalat, PDO, Mubadala Capital, Yas Holdings, Sohar Bank, Ooredoo, KSAA, KSGAA, DMS, Ujjivan Bank, Libra Solutions, GPH, Alraedah Finance, Goosehead Insurance, JES, DEG, Tencent, Meet Marigold, Datamount, IT Monkey, ConnexPay, VisionBank, Saudi Exim, Kazi, Apache (Internal)
-
----
-
-## Development
-
-```bash
-# Backend with auto-reload
-cd backend && uvicorn app.main:app --reload --port 8000
-
-# React frontend with HMR
-cd frontend && npm run dev
-
-# Streamlit (alternative UI)
-cd streamlit_app && streamlit run app.py
-
-# With Redis for async tasks (optional)
-redis-server
-celery -A app.tasks.celery_app worker --loglevel=info
-```
-
-### Local Dev Notes
-- Without Redis, all Celery tasks run synchronously (eager mode)
-- ChromaDB runs in persistent mode by default (`./chromadb_data/`)
-- Jira sync runs every 60s automatically on startup
-- First startup creates admin user and pre-warms DB pools
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full system architecture, agent hierarchy, pipeline stages |
-| [`PRD.md`](docs/PRD.md) | Product requirements, user stories, acceptance criteria |
-| [`WIREFRAMES.md`](docs/WIREFRAMES.md) | UI specs, 3D specs, design system, responsive fallbacks |
-| [`API_CONTRACT.md`](docs/API_CONTRACT.md) | Every endpoint with request/response JSON shapes |
-| [`DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | All 12 tables, relationships, ChromaDB collections |
-| [`CLAUDE.md`](CLAUDE.md) | AI development context (rules, patterns, phases) |
+9. **Customer Isolation** &mdash; Every DB query scoped to `customer_id`. Memory is per-customer.
 
 ---
 
@@ -448,10 +390,37 @@ celery -A app.tasks.celery_app worker --loglevel=info
 
 | Component | Platform | Config |
 |-----------|----------|--------|
-| Backend API | Render | `render.yaml` |
-| React Frontend | Vercel | `vercel.json` |
+| Backend API | Render | [`render.yaml`](render.yaml) |
+| React Frontend | Vercel | [`vercel.json`](frontend/vercel.json) |
 | Database | Neon PostgreSQL | Cloud managed |
-| Vector DB | ChromaDB | Persistent (local) or ephemeral (cloud) |
+| Vector DB | ChromaDB | Persistent (local) / Ephemeral (cloud) |
+
+Full deployment guide with Slack setup: [DEPLOYMENT.md](DEPLOYMENT.md)
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [DOCUMENTATION.md](DOCUMENTATION.md) | Comprehensive technical docs (29 sections covering everything) |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Step-by-step deployment (Render, Vercel, Neon, Slack) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, agent specs, event routing, pipeline stages |
+| [docs/PRD.md](docs/PRD.md) | Product requirements, user stories, acceptance criteria |
+| [docs/WIREFRAMES.md](docs/WIREFRAMES.md) | UI specs, design system, 3D specs |
+| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | Every endpoint with request/response JSON shapes |
+| [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) | All 17 tables + ChromaDB collections |
+| [CLAUDE.md](CLAUDE.md) | AI development context (conventions, rules, patterns) |
+
+---
+
+## Known Limitations
+
+- **Neon free tier**: ~6s cold start on first DB connection. Pool pre-warming mitigates subsequent requests.
+- **Render free tier**: ~30s cold start after inactivity.
+- **No Redis required**: Celery runs in eager mode locally. Fine for dev, not ideal for production load.
+- **ChromaDB ephemeral on Render**: Vector data is lost on restart. Backfill from PostgreSQL runs automatically on startup.
+- **WebSockets**: May not work on Render free tier. The app degrades gracefully.
 
 ---
 

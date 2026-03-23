@@ -31,8 +31,8 @@ if not st.session_state.authenticated:
         st.divider()
 
         with st.form("login_form"):
-            email = st.text_input("Email", value="ayushmaan@hivepro.com")
-            password = st.text_input("Password", type="password", value="password123")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Sign In", use_container_width=True)
 
             if submitted:
@@ -44,7 +44,7 @@ if not st.session_state.authenticated:
                 except Exception as e:
                     st.error(f"Login failed: {e}")
 
-        st.caption("Default credentials: ayushmaan@hivepro.com / password123")
+        st.caption("Sign in with your admin credentials")
     st.stop()
 
 # ── Sidebar ──

@@ -265,7 +265,7 @@ async def _run_health_check():
 
         logger.info("[HealthCheck] Starting daily health check for all customers")
         result = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: run_health_check_all()
+            None, lambda: run_health_check_all.apply().get()
         )
         succeeded = result.get("succeeded", 0)
         total = result.get("total", 0)

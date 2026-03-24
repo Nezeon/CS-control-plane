@@ -136,10 +136,16 @@ async def run_health_check(
     except Exception:
         pass
 
-    # Fallback: return 202 with mock task_id (Celery unavailable)
+    # Fallback: run synchronously in background thread (Celery unavailable)
+    import asyncio
+    from app.tasks.agent_tasks import run_health_check_all
+
+    asyncio.get_event_loop().run_in_executor(
+        None, lambda: run_health_check_all.apply().get()
+    )
     return RunCheckResponse(
         task_id=task_id,
-        message="Health check initiated for all customers (Celery unavailable — run manually)",
+        message="Health check running synchronously (Celery unavailable)",
         status="processing",
     )
 

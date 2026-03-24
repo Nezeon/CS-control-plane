@@ -56,6 +56,8 @@ class HealthMonitorAgent(BaseAgent):
         for row in rows:
             sev = row[0]
             created = row[1]
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             age_days = (now - created).days if created else 0
 
             if sev in ("P0", "critical"):
@@ -157,6 +159,7 @@ class HealthMonitorAgent(BaseAgent):
             SELECT score, calculated_at
             FROM health_scores
             WHERE customer_id = CAST(:cid AS uuid)
+              AND calculated_at > NOW() - INTERVAL '14 days'
             ORDER BY calculated_at DESC
             LIMIT 2
         """), {"cid": str(customer_id)}).fetchall()

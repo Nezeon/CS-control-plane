@@ -862,25 +862,6 @@ def run_health_check_all(self) -> dict:
                 if success and hasattr(specialist, "save_score"):
                     specialist.save_score(db, customer.id, result)
 
-                # Create draft for non-healthy customers (Slack card to #cs-health-alerts)
-                if success and risk_level != "healthy":
-                    try:
-                        from app.services import draft_service
-                        draft_service.create_draft(
-                            db=db,
-                            agent_id="health_monitor",
-                            event_id=None,
-                            customer_id=customer.id,
-                            draft_content=output,
-                            confidence=output.get("confidence"),
-                            event_type="daily_health_check",
-                            customer_name=customer.name,
-                            health_score=score,
-                            priority=risk_level,
-                        )
-                    except Exception as e:
-                        logger.warning(f"[HealthCheck] Draft failed for {customer.name}: {e}")
-
                 # Threshold alert to #cs-executive-urgent for high_risk/critical
                 if success and risk_level in ("high_risk", "critical"):
                     try:
@@ -954,7 +935,7 @@ def run_health_check_all(self) -> dict:
             from app.services.slack_service import slack_service
             if slack_service.configured:
                 digest = (
-                    f":chart_with_upwards_trend: *Daily Health Check Complete*\n"
+                    f":chart_with_upwards_trend: *Health Check Complete*\n"
                     f"Customers scored: {succeeded}/{len(results)}\n"
                     f"At-risk: {len(at_risk)}"
                 )

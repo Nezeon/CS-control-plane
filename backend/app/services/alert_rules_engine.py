@@ -47,22 +47,40 @@ ALERT_RULES = [
         "action_template": "Schedule an urgent check-in call with {name} to identify root causes",
     },
     {
-        "name": "critical_tickets_stale",
-        "title": "Critical/P1 ticket open >3 days without resolution",
+        "name": "critical_tickets_stale_p0",
+        "title": "Critical/P0 ticket open >7 days without resolution",
         "severity": "high",
-        "alert_type": "sla_breach",
+        "alert_type": "stale_p0_ticket",
         "query": """
             SELECT c.id AS customer_id, c.name,
                    t.summary, t.severity,
                    EXTRACT(DAY FROM NOW() - t.created_at)::int AS days_open
             FROM tickets t
             JOIN customers c ON t.customer_id = c.id
-            WHERE t.severity IN ('P1', 'critical')
+            WHERE t.severity IN ('P0', 'critical')
               AND t.status NOT IN ('resolved', 'closed')
-              AND t.created_at < NOW() - INTERVAL '3 days'
+              AND t.created_at < NOW() - INTERVAL '7 days'
+        """,
+        "detail_template": "P0 ticket \"{summary}\" open for {days_open} days",
+        "action_template": "Escalate {name}'s P0 ticket immediately — aging beyond threshold",
+    },
+    {
+        "name": "critical_tickets_stale_p1",
+        "title": "P1 ticket open >10 days without resolution",
+        "severity": "high",
+        "alert_type": "stale_p1_ticket",
+        "query": """
+            SELECT c.id AS customer_id, c.name,
+                   t.summary, t.severity,
+                   EXTRACT(DAY FROM NOW() - t.created_at)::int AS days_open
+            FROM tickets t
+            JOIN customers c ON t.customer_id = c.id
+            WHERE t.severity = 'P1'
+              AND t.status NOT IN ('resolved', 'closed')
+              AND t.created_at < NOW() - INTERVAL '10 days'
         """,
         "detail_template": "P1 ticket \"{summary}\" open for {days_open} days",
-        "action_template": "Escalate {name}'s P1 ticket immediately — SLA at risk",
+        "action_template": "Escalate {name}'s P1 ticket — aging beyond threshold",
     },
     {
         "name": "renewal_at_risk",

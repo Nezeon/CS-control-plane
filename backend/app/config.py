@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     SLACK_CH_EXEC_URGENT: str = "#cs-executive-urgent"
 
     # Dashboard base URL for deep-links in Slack cards
-    DASHBOARD_BASE_URL: str = "http://localhost:5173"
+    DASHBOARD_BASE_URL: str = "https://cs-control-plane-ggtt6b4vn-nezeons-projects.vercel.app"
 
     model_config = {"env_file": [".env", "../.env"], "extra": "ignore"}
 

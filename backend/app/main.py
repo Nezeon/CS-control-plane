@@ -148,11 +148,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Fathom sync setup failed (non-fatal): {e}")
 
-    # Health Monitor: daily at 8:30 AM (after Jira sync at 8:00 AM)
+    # Health Monitor: every 3 days at 8:30 AM (after Jira sync at 8:00 AM)
     try:
-        scheduler.add_job(_run_health_check, "cron", hour=8, minute=30,
-                          id="health_daily", misfire_grace_time=3600)
-        logger.info(f"Health check scheduled: daily at 08:30 {settings.SYNC_TIMEZONE}")
+        import pytz
+        tz = pytz.timezone(settings.SYNC_TIMEZONE)
+        now_local = datetime.now(tz)
+        first_run = now_local.replace(hour=8, minute=30, second=0, microsecond=0)
+        if first_run <= now_local:
+            first_run += timedelta(days=1)
+        scheduler.add_job(_run_health_check, "interval", days=3,
+                          start_date=first_run,
+                          id="health_3day", misfire_grace_time=3600)
+        logger.info(f"Health check scheduled: every 3 days at 08:30 {settings.SYNC_TIMEZONE}")
     except Exception as e:
         logger.warning(f"Health check setup failed (non-fatal): {e}")
 

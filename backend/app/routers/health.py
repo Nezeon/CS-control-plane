@@ -121,31 +121,20 @@ async def get_at_risk(
 async def run_health_check(
     current_user: User = Depends(get_current_user),
 ):
-    """Run health check for all customers. Dispatches via Celery if available."""
-    task_id = str(uuid_mod.uuid4())
-    try:
-        from app.tasks.agent_tasks import _is_celery_available, run_health_check_all
-
-        if _is_celery_available():
-            result = run_health_check_all.apply_async(task_id=task_id)
-            return RunCheckResponse(
-                task_id=result.id,
-                message="Health check dispatched via Celery for all customers",
-                status="processing",
-            )
-    except Exception:
-        pass
-
-    # Fallback: run synchronously in background thread (Celery unavailable)
-    import asyncio
+    """Run health check for all customers. Always fires in a background thread."""
+    import threading
     from app.tasks.agent_tasks import run_health_check_all
 
-    asyncio.get_event_loop().run_in_executor(
-        None, lambda: run_health_check_all.apply().get()
-    )
+    task_id = str(uuid_mod.uuid4())
+
+    threading.Thread(
+        target=lambda: run_health_check_all.apply().get(),
+        daemon=True,
+    ).start()
+
     return RunCheckResponse(
         task_id=task_id,
-        message="Health check running synchronously (Celery unavailable)",
+        message="Health check running in background",
         status="processing",
     )
 

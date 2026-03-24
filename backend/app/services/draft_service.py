@@ -118,6 +118,7 @@ def create_draft(
             dashboard_url=dashboard_url,
             jira_id=jira_id,
             jira_base_url=settings.JIRA_API_URL if jira_id else None,
+            confidence=confidence,
         )
         if isinstance(resp, dict) and resp.get("ts"):
             draft.slack_message_ts = resp["ts"]
@@ -316,14 +317,14 @@ def _log_audit(
 def _extract_summary(content: dict) -> str:
     """Extract a human-readable summary from draft content."""
     if isinstance(content, dict):
-        for key in ("summary", "reasoning_summary", "output_summary", "detail"):
+        for key in ("summary", "reasoning_summary", "output_summary", "detail", "reasoning"):
             val = content.get(key)
             if val and isinstance(val, str):
                 return val[:800]
         # Try nested output
         output = content.get("output", {})
         if isinstance(output, dict):
-            for key in ("summary", "reasoning_summary"):
+            for key in ("summary", "reasoning_summary", "reasoning"):
                 val = output.get(key)
                 if val and isinstance(val, str):
                     return val[:800]

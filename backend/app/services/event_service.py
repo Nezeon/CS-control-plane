@@ -271,17 +271,27 @@ class EventService:
             except Exception:
                 pass
 
-            # Extract priority from output
+            # Extract priority from output, fall back to event payload
             priority = None
             if isinstance(output, dict):
                 priority = output.get("severity") or output.get("priority")
+            if not priority and isinstance(payload, dict):
+                priority = payload.get("severity") or payload.get("priority")
+
+            # Merge payload fields into draft_content so jira_id/summary are available
+            draft_content = dict(output) if isinstance(output, dict) else {"raw": str(output)[:2000]}
+            if isinstance(payload, dict):
+                if not draft_content.get("jira_id") and payload.get("jira_id"):
+                    draft_content["jira_id"] = payload["jira_id"]
+                if not draft_content.get("summary") and payload.get("summary"):
+                    draft_content["summary"] = payload["summary"]
 
             draft_service.create_draft(
                 db=sync_db,
                 agent_id=agent_name,
                 event_id=event_id,
                 customer_id=customer_id,
-                draft_content=output if isinstance(output, dict) else {"raw": str(output)[:2000]},
+                draft_content=draft_content,
                 confidence=confidence,
                 event_type=event_type,
                 customer_name=customer_name,

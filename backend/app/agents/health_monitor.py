@@ -62,11 +62,11 @@ class HealthMonitorAgent(BaseAgent):
 
             if sev in ("P0", "critical"):
                 score -= 20
-                if age_days > 3:
+                if age_days > 7:
                     aging_found = True
             elif sev == "P1":
                 score -= 10
-                if age_days > 5:
+                if age_days > 12:
                     aging_found = True
 
         score = max(score, 0)

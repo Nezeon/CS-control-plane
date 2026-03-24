@@ -83,9 +83,11 @@ class TicketTriageAgent(BaseAgent):
     def act(self, task: dict, thinking: dict) -> dict:
         if "error" in thinking:
             return {"success": False, **thinking}
+        payload = task.get("payload", {})
         return {
             "success": True,
             **thinking,
+            "jira_id": payload.get("jira_id"),
             "reasoning_summary": thinking.get("reasoning", "Ticket triaged."),
         }
 

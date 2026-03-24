@@ -86,6 +86,17 @@
 
 ---
 
+### Q11: What are the chances of us getting the Marriott deal?
+
+| | |
+|---|---|
+| **Covered?** | No (currently) → Yes (Phase 2) |
+| **How** | Requires HubSpot integration (Day 17) to pull deal data — stage, amount, age, contacts, close probability. Pre-Sales Funnel Agent (Agent 3, Day 18) analyzes win probability by cross-referencing: (1) HubSpot deal stage + historical win rates for similar deals, (2) Fathom call sentiment from Marriott-related calls, (3) Deal age and velocity vs pipeline benchmarks, (4) Blocker patterns from similar deals that stalled at the same stage. Chat fast path needs a `deal` intent with `DEAL_KEYWORDS` (deal, chances, win, close, pipeline, probability) and a `_build_deal_prompt` that injects deal stage, history, and call sentiment into the Claude context. |
+| **Gap** | **Three things missing today:** (1) No HubSpot integration — no deal data in DB at all, (2) No `deal` intent in chat classification — query falls to `general` intent with no pipeline context, (3) No deal-aware prompt builder — even if data existed, the fast path doesn't inject it. All three are resolved by Phase 2 (Day 17-19) + a small chat fast path enhancement to add deal intent routing. |
+| **Phase** | Phase 2 (HubSpot integration Day 17, Pre-Sales Funnel Agent Day 18, Pipeline Analytics Day 19) + chat fast path deal intent wiring |
+
+---
+
 ## 3. QBR Questions
 
 ### Q8: We did QBR with 10 customers. How many are happy, moderately happy, unhappy?
@@ -134,6 +145,7 @@
 | Q5 | Call sentiment — objection type classification | **Partial** — needs objection taxonomy | Phase 1 + prompt fix |
 | Q6 | What went wrong during the POC? | **Partial** — needs POC evaluation framework | Phase 2 + enhancement |
 | Q7 | Was the platform smooth / time spent? | **Not Covered** — needs product analytics data | Not in any phase |
+| Q11 | What are the chances of getting [specific deal]? | **Not Covered (now) → Fully Covered (Phase 2)** | Phase 2 (Day 17-19) |
 | Q8 | How many customers happy/moderate/unhappy? | **Fully Covered** | Phase 3 (Day 23-24) |
 | Q9 | Why are unhappy customers unhappy? (attribution) | **Partial** — needs responsibility classification | Phase 3 + prompt fix |
 | Q10 | Recommend specific actions to make them happy | **Partial** — needs prescriptive remediation engine | Phase 3 + enhancement |
@@ -144,6 +156,7 @@
 |--------|-------|-----------|
 | **Fully Covered** | 5 | Q1, Q2, Q3, Q4, Q8 |
 | **Partially Covered** | 4 | Q5, Q6, Q9, Q10 |
+| **Not Covered (now) → Covered in Phase 2** | 1 | Q11 |
 | **Not Covered** | 1 | Q7 |
 
 ---
@@ -180,6 +193,14 @@
 - **Effort:** Medium (2-3 days). Fits within existing architecture — no new agents or tables needed.
 - **When:** Can be built as an enhancement in Phase 3 (Day 25-26 window) or as a fast-follow after Phase 3.
 
+### Gap 4: Deal Win Probability via Chat
+
+- **Affects:** Q11 (deal-specific win probability queries)
+- **What's missing:** Three pieces: (1) HubSpot integration for deal data, (2) `deal` intent in chat intent classifier with keywords (deal, chances, win, close, pipeline, probability, convert), (3) `_build_deal_prompt` in chat fast path that injects deal stage, amount, age, velocity, call sentiment, and historical win rates.
+- **Fix:** Items 1-2 are already in Phase 2 scope (Day 17-18). Item 3 is a small addition to `chat_fast_path.py` — add `DEAL_KEYWORDS`, a `deal` entry in `INTENT_AGENT_MAP` pointing to Pre-Sales Funnel Agent, and a `_build_deal_prompt` method. Wire prefetch to pull deal data from HubSpot deals table.
+- **Effort:** Low (half day on top of Phase 2 HubSpot work). No architecture changes needed.
+- **When:** Phase 2 (Day 18-19), alongside Pre-Sales Funnel Agent and Pipeline Analytics.
+
 ---
 
 ## 7. Phase Availability Timeline
@@ -203,7 +224,7 @@ PHASE 2 (Days 13-22):
   [Day 19] Pipeline Analytics dashboard
   [Day 20] Executive Reporter — feature demand, portfolio health
 
-  Questions answerable: Q1, Q2, Q3, Q4, Q5 (with prompt fix), Q6 (partial)
+  Questions answerable: Q1, Q2, Q3, Q4, Q5 (with prompt fix), Q6 (partial), Q11
 
 PHASE 3 (Days 23-30):
   [Day 23] QBR Agent — sentiment bucketing, root cause analysis

@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     SLACK_ENABLED: bool = False
     SLACK_SIGNING_SECRET: str = ""       # Slack app signing secret (HMAC request verification)
     SLACK_CHAT_CHANNEL: str = ""         # Optional: restrict bot to specific channel(s), comma-separated
+    SLACK_CHAT_CHANNEL_IGNORE: str = ""  # Optional: comma-separated channel IDs to IGNORE (blocklist)
     SLACK_BOT_USER_ID: str = ""          # Bot's own Slack user ID (to ignore its own messages)
 
     # Slack — 9 dedicated channels (ARCHITECTURE.md Section 6.1)

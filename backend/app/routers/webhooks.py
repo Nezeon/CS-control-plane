@@ -347,6 +347,12 @@ async def slack_events(request: Request):
         if channel not in allowed:
             return {"ok": True}
 
+    # Optional: ignore specific channel(s) — used to exclude test channels in production
+    if settings.SLACK_CHAT_CHANNEL_IGNORE:
+        ignored = [c.strip() for c in settings.SLACK_CHAT_CHANNEL_IGNORE.split(",")]
+        if channel in ignored:
+            return {"ok": True}
+
     # Deduplicate (Slack retries after 3s if no 200)
     if slack_chat_handler.is_duplicate(event_id):
         logger.debug(f"[SlackWebhook] Duplicate event {event_id}, skipping")

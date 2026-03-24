@@ -1,5 +1,8 @@
+import logging
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger("routers.health")
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import cast, Date, func, select
@@ -127,10 +130,13 @@ async def run_health_check(
 
     task_id = str(uuid_mod.uuid4())
 
-    threading.Thread(
-        target=lambda: run_health_check_all.apply().get(),
-        daemon=True,
-    ).start()
+    def _run_health_check_bg():
+        try:
+            run_health_check_all.apply().get()
+        except Exception as e:
+            logger.error(f"Background health check failed: {e}")
+
+    threading.Thread(target=_run_health_check_bg, daemon=True).start()
 
     return RunCheckResponse(
         task_id=task_id,

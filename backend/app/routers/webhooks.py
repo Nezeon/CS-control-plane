@@ -307,6 +307,12 @@ async def slack_events(request: Request):
     from app.services.slack_chat_handler import slack_chat_handler
 
     body = await request.body()
+    payload = json.loads(body)
+
+    # ── URL verification challenge (Slack app setup handshake) ──────
+    # Handle BEFORE signature check so initial setup always works
+    if payload.get("type") == "url_verification":
+        return {"challenge": payload["challenge"]}
 
     # ── Verify signature ────────────────────────────────────────────
     slack_signature = request.headers.get("x-slack-signature", "")
@@ -314,16 +320,11 @@ async def slack_events(request: Request):
 
     if settings.SLACK_SIGNING_SECRET:
         if not slack_chat_handler.verify_signature(slack_timestamp, body, slack_signature):
+            logger.warning("[SlackWebhook] Signature verification failed")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Slack signature",
             )
-
-    payload = json.loads(body)
-
-    # ── URL verification challenge (Slack app setup handshake) ──────
-    if payload.get("type") == "url_verification":
-        return {"challenge": payload["challenge"]}
 
     # ── Event callbacks ─────────────────────────────────────────────
     if payload.get("type") != "event_callback":

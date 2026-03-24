@@ -20,6 +20,17 @@ SEVERITY_COLORS = {
     "low": "#2563EB",       # blue-600
 }
 
+# Human-readable alert type names for Slack cards
+ALERT_TYPE_LABELS = {
+    "action_item_overload": "Too Many Action Items",
+    "call_sentiment_pattern": "Negative Call Sentiment",
+    "recurring_topic_pattern": "Recurring Problem Topic",
+    "health_drop_15": "Health Score Drop",
+    "critical_tickets_stale": "Stale Critical Tickets",
+    "renewal_at_risk": "Renewal At Risk",
+    "negative_sentiment_streak": "Negative Sentiment Streak",
+}
+
 
 def _text_to_section_blocks(text: str, label: str | None = None) -> list[dict]:
     """Convert a long text into one or more Slack section blocks.
@@ -147,7 +158,7 @@ class SlackService:
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Severity:*\n{severity.upper()}"},
                     {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name}"},
-                    {"type": "mrkdwn", "text": f"*Type:*\n{alert.alert_type}"},
+                    {"type": "mrkdwn", "text": f"*Type:*\n{ALERT_TYPE_LABELS.get(alert.alert_type, (alert.alert_type or '').replace('_', ' ').title())}"},
                     {"type": "mrkdwn", "text": f"*Status:*\n{alert.status}"},
                 ],
             },
@@ -187,12 +198,27 @@ class SlackService:
         action_items: list,
         risks: list,
         key_topics: list,
+        participants: list | None = None,
+        call_date: str | None = None,
     ) -> bool:
         """Post a meeting intelligence summary to the CS alerts channel after processing."""
         if not self.configured:
             return False
 
-        channel = settings.SLACK_CHAT_CHANNEL or settings.SLACK_CH_CALL_INTEL
+        channel = settings.SLACK_CH_CALL_INTEL or settings.SLACK_CHAT_CHANNEL
+
+        # Format call date
+        date_str = ""
+        if call_date:
+            try:
+                from datetime import datetime
+                if isinstance(call_date, str):
+                    dt = datetime.fromisoformat(call_date.replace("Z", "+00:00"))
+                else:
+                    dt = call_date
+                date_str = dt.strftime("%b %d, %Y at %I:%M %p")
+            except Exception:
+                date_str = str(call_date)
 
         # Sentiment emoji
         sent_emoji = {
@@ -217,6 +243,16 @@ class SlackService:
                 ],
             },
         ]
+
+        # Date and participants row
+        meta_fields = []
+        if date_str:
+            meta_fields.append({"type": "mrkdwn", "text": f"*Date:*\n{date_str}"})
+        if participants:
+            names = ", ".join(str(p) for p in participants[:8])
+            meta_fields.append({"type": "mrkdwn", "text": f"*Attendees:*\n{names}"})
+        if meta_fields:
+            blocks.append({"type": "section", "fields": meta_fields})
 
         if summary:
             blocks.extend(_text_to_section_blocks(summary, label="Summary"))

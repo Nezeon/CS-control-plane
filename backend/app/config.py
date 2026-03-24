@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     JIRA_SYNC_JQL: str = ""
     JIRA_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
 
+    # SLA targets (hours from ticket creation to deadline, by severity)
+    SLA_HOURS_P1: int = 4    # Critical
+    SLA_HOURS_P2: int = 24   # High
+    SLA_HOURS_P3: int = 72   # Medium
+    SLA_HOURS_P4: int = 168  # Low (1 week)
+
     # Slack
     SLACK_BOT_TOKEN: str = ""
     SLACK_ENABLED: bool = False

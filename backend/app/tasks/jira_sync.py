@@ -176,7 +176,7 @@ def _upsert_ticket(db: Session, jira_issue: dict) -> dict:
         # Update existing ticket if Jira has newer data
         changed = False
         old_status = ticket.status
-        for field in ("summary", "description", "ticket_type", "severity", "status", "resolved_at"):
+        for field in ("summary", "description", "ticket_type", "severity", "status", "resolved_at", "sla_deadline"):
             new_val = mapped.get(field)
             if new_val is not None and getattr(ticket, field) != new_val:
                 setattr(ticket, field, new_val)
@@ -217,6 +217,7 @@ def _upsert_ticket(db: Session, jira_issue: dict) -> dict:
             assigned_to_id=assigned_to_id,
             created_at=mapped["created_at"],
             resolved_at=mapped["resolved_at"],
+            sla_deadline=mapped["sla_deadline"],
         )
         db.add(ticket)
         db.flush()  # Get the ID

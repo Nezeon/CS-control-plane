@@ -810,46 +810,185 @@ def _detect_call_patterns(db) -> list[dict]:
 
 @celery_app.task(name="run_health_check_all", bind=True)
 def run_health_check_all(self) -> dict:
-    """Run health check for all customers."""
+    """Run daily health check for all customers.
+
+    For each customer: runs 5 deterministic health checks + Claude narrative,
+    saves score, creates drafts for at-risk customers, sends threshold alerts,
+    runs alert rules engine, and posts daily digest to Slack.
+    """
+    from collections import Counter
+
     from app.agents.agent_factory import AgentFactory
     from app.agents.memory_agent import CustomerMemoryAgent
+    from app.config import settings
     from app.database import get_sync_session
     from app.models.customer import Customer
 
     db = get_sync_session()
     try:
         customers = db.query(Customer).all()
+        if not customers:
+            logger.info("[HealthCheck] No customers found — skipping")
+            return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
+
         memory_agent = CustomerMemoryAgent()
         results = []
+        all_flags: list[str] = []
+
         for customer in customers:
-            event = {
-                "event_type": "daily_health_check",
-                "source": "celery_cron",
-                "customer_id": customer.id,
-                "payload": {},
-            }
-            # Direct routing to health_monitor
-            customer_memory = memory_agent.build_memory(db, customer.id)
-            specialist = AgentFactory.create("health_monitor")
-            result = specialist.run(db, event, customer_memory)
+            try:
+                event = {
+                    "event_type": "daily_health_check",
+                    "source": "cron",
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "payload": {},
+                }
 
-            # Save score if successful
-            if result.get("success"):
-                agent = AgentFactory.create("health_monitor")
-                if hasattr(agent, "save_score"):
-                    agent.save_score(db, customer.id, result)
+                customer_memory = memory_agent.build_memory(db, customer.id)
+                specialist = AgentFactory.create("health_monitor")
+                result = specialist.run(db, event, customer_memory)
 
-            results.append({
-                "customer_id": str(customer.id),
-                "customer_name": customer.name,
-                "success": result.get("success", False),
-            })
+                output = result.get("output", {})
+                if not isinstance(output, dict):
+                    output = {}
 
+                success = result.get("success", False)
+                risk_level = output.get("risk_level", "unknown")
+                score = output.get("score", output.get("health_score"))
+                risk_flags = output.get("risk_flags", [])
+
+                # Save health score to DB
+                if success and hasattr(specialist, "save_score"):
+                    specialist.save_score(db, customer.id, result)
+
+                # Create draft for non-healthy customers (Slack card to #cs-health-alerts)
+                if success and risk_level != "healthy":
+                    try:
+                        from app.services import draft_service
+                        draft_service.create_draft(
+                            db=db,
+                            agent_id="health_monitor",
+                            event_id=None,
+                            customer_id=customer.id,
+                            draft_content=output,
+                            confidence=output.get("confidence"),
+                            event_type="daily_health_check",
+                            customer_name=customer.name,
+                            health_score=score,
+                            priority=risk_level,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[HealthCheck] Draft failed for {customer.name}: {e}")
+
+                # Threshold alert to #cs-executive-urgent for high_risk/critical
+                if success and risk_level in ("high_risk", "critical"):
+                    try:
+                        from app.services.slack_service import slack_service
+                        if slack_service.configured:
+                            flags_str = ", ".join(risk_flags) or "None"
+                            slack_service.send_message(
+                                channel=settings.SLACK_CH_EXEC_URGENT,
+                                text=(
+                                    f":rotating_light: *Health Alert — {customer.name}*\n"
+                                    f"Score: {score}/100 | Risk: {risk_level}\n"
+                                    f"Flags: {flags_str}\n"
+                                    f"Summary: {output.get('summary', 'N/A')[:300]}"
+                                ),
+                            )
+                    except Exception as e:
+                        logger.warning(f"[HealthCheck] Urgent alert failed for {customer.name}: {e}")
+
+                all_flags.extend(risk_flags)
+                results.append({
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "success": success,
+                    "score": score,
+                    "risk_level": risk_level,
+                    "risk_flags": risk_flags,
+                })
+            except Exception as e:
+                logger.warning(f"[HealthCheck] Failed for {customer.name}: {e}")
+                results.append({
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "success": False,
+                    "score": None,
+                    "risk_level": "unknown",
+                    "risk_flags": [],
+                })
+
+        # Cross-customer pattern detection: 5+ customers with same flag → executive urgent
+        flag_counts = Counter(all_flags)
+        threshold_alerts = []
+        for flag, count in flag_counts.items():
+            if count >= 5:
+                threshold_alerts.append({"type": "issue_cluster", "issue": flag, "affected_count": count})
+                try:
+                    from app.services.slack_service import slack_service
+                    if slack_service.configured:
+                        slack_service.send_message(
+                            channel=settings.SLACK_CH_EXEC_URGENT,
+                            text=(
+                                f":warning: *Cross-Customer Pattern Detected*\n"
+                                f"Issue: `{flag}` affecting {count} customers\n"
+                                f"This exceeds the 5-customer threshold — requires executive attention."
+                            ),
+                        )
+                except Exception:
+                    pass
+
+        # Run alert rules engine (health_drop_15, stale tickets, renewal risk, sentiment)
+        try:
+            from app.services.alert_rules_engine import alert_rules_engine
+            alert_stats = alert_rules_engine.evaluate_all(db)
+            logger.info(f"[HealthCheck] Alert rules: {alert_stats.get('alerts_created', 0)} alerts created")
+        except Exception as e:
+            logger.warning(f"[HealthCheck] Alert rules failed (non-fatal): {e}")
+
+        # Post daily digest to #cs-health-alerts
         succeeded = sum(1 for r in results if r["success"])
+        at_risk = [r for r in results if r.get("risk_level") in ("watch", "high_risk", "critical")]
+        try:
+            from app.services.slack_service import slack_service
+            if slack_service.configured:
+                digest = (
+                    f":chart_with_upwards_trend: *Daily Health Check Complete*\n"
+                    f"Customers scored: {succeeded}/{len(results)}\n"
+                    f"At-risk: {len(at_risk)}"
+                )
+                if at_risk:
+                    digest += "\n\n*At-Risk Customers:*\n"
+                    for r in sorted(at_risk, key=lambda x: x.get("score") or 999):
+                        digest += (
+                            f"- *{r['customer_name']}* — "
+                            f"Score: {r.get('score', '?')}/100, "
+                            f"Risk: {r.get('risk_level', '?')}\n"
+                        )
+                if threshold_alerts:
+                    digest += "\n*Threshold Alerts:*\n"
+                    for ta in threshold_alerts:
+                        digest += f"- `{ta['issue']}` affecting {ta['affected_count']} customers\n"
+
+                slack_service.send_message(
+                    channel=settings.SLACK_CH_HEALTH_ALERTS,
+                    text=digest,
+                )
+        except Exception as e:
+            logger.warning(f"[HealthCheck] Digest post failed (non-fatal): {e}")
+
+        logger.info(
+            f"[HealthCheck] Done: {succeeded}/{len(results)} succeeded, "
+            f"{len(at_risk)} at-risk, {len(threshold_alerts)} threshold alerts"
+        )
+
         return {
             "total": len(results),
             "succeeded": succeeded,
             "failed": len(results) - succeeded,
+            "at_risk": len(at_risk),
+            "threshold_alerts": threshold_alerts,
             "results": results,
         }
     finally:

@@ -1301,11 +1301,16 @@ Celery task with `max_retries=2`.
 
 ### Task: `run_health_check_all` (`tasks/agent_tasks.py`)
 
-Runs health checks for all customers.
+Runs daily health checks for all customers using 5 deterministic checks.
 
 1. Query all customers from DB
-2. For each customer: create event, route through orchestrator, save health score
-3. Return `{total, succeeded, failed, results: [{customer_id, customer_name, success}]}`
+2. For each customer: build memory → run health_monitor pipeline (5 checks + Claude narrative) → save score
+3. Create drafts for non-healthy customers (Slack card to #cs-health-alerts)
+4. Send threshold alerts to #cs-executive-urgent for high_risk/critical
+5. Cross-customer pattern detection (5+ customers with same risk flag → executive urgent)
+6. Run alert_rules_engine.evaluate_all() for health_drop_15, stale tickets, etc.
+7. Post daily digest summary to #cs-health-alerts
+8. Return `{total, succeeded, failed, at_risk, threshold_alerts, results}`
 
 ---
 

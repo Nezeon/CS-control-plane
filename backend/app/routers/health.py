@@ -139,7 +139,7 @@ async def run_health_check(
     # Fallback: return 202 with mock task_id (Celery unavailable)
     return RunCheckResponse(
         task_id=task_id,
-        message="Health check initiated for all customers (Celery unavailable - run manually)",
+        message="Health check initiated for all customers (Celery unavailable — run manually)",
         status="processing",
     )
 

@@ -270,7 +270,7 @@ How it works:
 
 **Trigger:** daily_health_check (scheduled, 8 AM daily).
 
-**Checks:** Scan freshness (\>48hr = flag), connector heartbeat (\>24hr down = flag), license utilization, job failure ratio (\>20% = flag), open P0/P1 \>5 days, renewal \<90 days + risk flags.
+**Checks:** Ticket severity load (open P0/P1 \>5 days = flag), call sentiment trend (2+ negative in 14 days = flag), renewal proximity (\<90 days + risk flags = elevated), historical health trend (drop \>15 points in 7 days = flag), open alert load.
 
 **Output:** Per-customer health score (0--100), risk_flags\[\], DRAFT proactive Jira tickets.
 
@@ -585,7 +585,7 @@ These fire immediately to #cs-executive-urgent. Do NOT wait for weekly digest.
   -------------------------- --------------------------------------------------------------------------------------------------------------------- --------------------------------------
   **Requirement**            **Solution**                                                                                                          **Visible In**
 
-  At-risk customers          Health Monitor daily: composite score from scan freshness, connectors, tickets, sentiment, license. \<60 = at-risk.   At-Risk Dashboard (main view)
+  At-risk customers          Health Monitor daily: composite score from ticket severity, call sentiment, renewal proximity, health trend, open alerts. \<60 = at-risk.   At-Risk Dashboard (main view)
 
   Feature request priority   Triage Agent tags feature-requests. QBR Agent aggregates by customer count + ARR impact.                              At-Risk Dashboard + Customer Profile
 

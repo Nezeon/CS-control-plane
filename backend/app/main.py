@@ -34,6 +34,7 @@ for _logger_name in [
     "agents.orchestrator",
     "agents.fathom",
     "agents.base",
+    "agents.health_monitor",
     "services.slack_chat",
     "startup",
 ]:
@@ -147,6 +148,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Fathom sync setup failed (non-fatal): {e}")
 
+    # Health Monitor: daily at 8:30 AM (after Jira sync at 8:00 AM)
+    try:
+        scheduler.add_job(_run_health_check, "cron", hour=8, minute=30,
+                          id="health_daily", misfire_grace_time=3600)
+        logger.info(f"Health check scheduled: daily at 08:30 {settings.SYNC_TIMEZONE}")
+    except Exception as e:
+        logger.warning(f"Health check setup failed (non-fatal): {e}")
+
     scheduler.start()
 
     yield
@@ -247,6 +256,23 @@ async def _run_fathom_sync():
             logger.debug(f"[FathomSync] No new meetings")
     except Exception as e:
         logger.warning(f"[FathomSync] Failed: {e}")
+
+
+async def _run_health_check():
+    """APScheduler job: daily health check for all customers."""
+    try:
+        from app.tasks.agent_tasks import run_health_check_all
+
+        logger.info("[HealthCheck] Starting daily health check for all customers")
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: run_health_check_all()
+        )
+        succeeded = result.get("succeeded", 0)
+        total = result.get("total", 0)
+        at_risk = result.get("at_risk", 0)
+        logger.info(f"[HealthCheck] Done: {succeeded}/{total} succeeded, {at_risk} at-risk")
+    except Exception as e:
+        logger.warning(f"[HealthCheck] Failed: {e}")
 
 
 app = FastAPI(

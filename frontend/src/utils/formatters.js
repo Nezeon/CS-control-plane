@@ -18,6 +18,14 @@ export function formatDate(dateString) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+export function formatDateTime(dateString) {
+  if (!dateString) return '—'
+  const d = new Date(dateString)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' at '
+    + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+}
+
 export function formatRelativeTime(dateString) {
   if (!dateString) return '—'
   const now = Date.now()

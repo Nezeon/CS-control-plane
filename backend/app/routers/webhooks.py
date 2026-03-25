@@ -182,6 +182,18 @@ async def fathom_webhook(
             logger.warning(f"Fathom webhook: Claude parse error for {recording_id}: {str(result)[:200]}")
             return {"status": "parse_error", "recording_id": str(recording_id)}
 
+        # ML-based sentiment analysis (VADER) on transcript/summary
+        try:
+            from app.services.sentiment_analyzer import analyze_sentiment
+            sentiment_input = event_payload.get("transcript") or result.get("summary", "")
+            sentiment_result = analyze_sentiment(sentiment_input)
+            result["sentiment"] = sentiment_result["sentiment"]
+            result["sentiment_score"] = sentiment_result["sentiment_score"]
+        except Exception as e:
+            logger.warning(f"VADER sentiment failed for {recording_id}, defaulting to neutral: {e}")
+            result["sentiment"] = "neutral"
+            result["sentiment_score"] = 0.5
+
         # Save CallInsight to DB
         _save_call_insight(sync_db, customer_id, event_payload, result)
 

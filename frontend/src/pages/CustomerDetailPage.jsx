@@ -9,8 +9,9 @@ import GlassCard from '../components/shared/GlassCard'
 import HealthRing from '../components/shared/HealthRing'
 import StatusPill from '../components/shared/StatusPill'
 import LoadingSkeleton from '../components/shared/LoadingSkeleton'
-import { formatDate, formatRelativeTime } from '../utils/formatters'
+import { formatDate, formatDateTime, formatRelativeTime } from '../utils/formatters'
 import TicketDetailDrawer from '../components/shared/TicketDetailDrawer'
+import CallDetailDrawer from '../components/shared/CallDetailDrawer'
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Shield },
@@ -270,47 +271,50 @@ function TicketsTab({ tickets }) {
 }
 
 function CallsTab({ insights }) {
+  const [selectedInsight, setSelectedInsight] = useState(null)
+
   return (
-    <GlassCard level="near">
-      <h3 className="text-sm font-semibold text-text-primary mb-4">Call Insights ({insights.length})</h3>
-      {insights.length === 0 ? (
-        <p className="text-sm text-text-muted py-4 text-center">No call insights</p>
-      ) : (
-        <div className="space-y-4">
-          {insights.map((insight) => (
-            <div key={insight.id} className="p-3 rounded-lg bg-bg-hover/30 border border-border-subtle/50">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <StatusPill status={insight.sentiment || 'neutral'} />
-                  {insight.sentiment_score != null && (
-                    <span className="text-xxs text-text-ghost font-mono">
-                      ({(insight.sentiment_score * 100).toFixed(0)}%)
-                    </span>
-                  )}
+    <>
+      <GlassCard level="near">
+        <h3 className="text-sm font-semibold text-text-primary mb-4">Call Insights ({insights.length})</h3>
+        {insights.length === 0 ? (
+          <p className="text-sm text-text-muted py-4 text-center">No call insights</p>
+        ) : (
+          <div className="space-y-2">
+            {insights.map((insight) => (
+              <div
+                key={insight.id}
+                onClick={() => setSelectedInsight(insight)}
+                className="p-3 rounded-lg bg-bg-hover/30 border border-border-subtle/50 cursor-pointer hover:bg-bg-hover/60 hover:border-border-subtle transition-colors"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-text-secondary font-medium">
+                    {formatDateTime(insight.call_date)}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <StatusPill status={insight.sentiment || 'neutral'} />
+                    {insight.sentiment_score != null && (
+                      <span className="text-xxs text-text-ghost font-mono">
+                        ({(insight.sentiment_score * 100).toFixed(0)}%)
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-xxs text-text-ghost">{formatDate(insight.call_date)}</span>
+                <p className="text-xs text-text-muted truncate">
+                  {insight.summary || 'No summary available'}
+                </p>
               </div>
-              <p className="text-xs text-text-secondary mb-2">{insight.summary || 'No summary'}</p>
-              {insight.key_topics?.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {insight.key_topics.map((t, i) => (
-                    <span key={i} className="text-xxs px-1.5 py-0.5 rounded bg-accent/10 text-accent">{t}</span>
-                  ))}
-                </div>
-              )}
-              {insight.action_items?.length > 0 && (
-                <div className="mt-2 text-xs text-text-muted">
-                  <span className="font-semibold">Actions:</span>
-                  {insight.action_items.slice(0, 3).map((a, i) => (
-                    <p key={i} className="ml-2">- {typeof a === 'string' ? a : a.task || JSON.stringify(a)}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </GlassCard>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
+      <CallDetailDrawer
+        insight={selectedInsight}
+        open={!!selectedInsight}
+        onClose={() => setSelectedInsight(null)}
+      />
+    </>
   )
 }
 

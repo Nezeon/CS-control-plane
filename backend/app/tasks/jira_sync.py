@@ -356,32 +356,50 @@ def _embed_tickets(db: Session, ticket_ids: list):
         logger.info(f"[JiraSync] Embedded {embedded} tickets into ChromaDB")
 
 
-# Aliases that map to canonical customer names in the DB
+# Aliases that map to canonical customer names in the DB (lowercased, must match exactly)
 _CUSTOMER_ALIASES = {
+    # Mubadala Capital
     "mubcap": "mubadala capital",
     "mubadala cap": "mubadala capital",
     "muc": "mubadala capital",
-    "ujjivanbank": "ujjivan bank",
-    "soharbank": "sohar bank",
-    "alraedahfinance": "alraedah finance",
-    "alraedah finance": "alraedah finance",
-    "gph_makka": "gph",
-    "gph/ksgaa": "gph",
-    "ksgaa(saudi)": "ksgaa",
+    # Al Raedah Finance
+    "alraedahfinance": "al raedah finance",
+    "alraedah finance": "al raedah finance",
+    "alraedah": "al raedah finance",
+    # GPH (maps to Phase 1 by default)
+    "gph_makka": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
+    "gph/ksgaa": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
+    "gph": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
+    # KSGAA
+    "ksgaa(saudi)": "king salman global academy of arabic language (ksgaa)",
+    "ksgaa": "king salman global academy of arabic language (ksgaa)",
+    # Goosehead
     "goosehead/dms": "goosehead insurance",
     "goosehead/internal": "goosehead insurance",
-    "jes/deg": "jes",
-    "kazi/deg/connexPay/goosehead insurance": "kazi",
-    "visionbank/internal lab": "visionbank",
-    "meet marigold poc": "meet marigold",
-    "[apache]": "apache (internal)",
-    "[rtr]": "apache (internal)",
-    "[internal]": "apache (internal)",
-    "[dms]": "dms",
+    # JES (Jeraisy Electronic Services)
+    "jes/deg": "jeraisy electronic services",
+    "jes": "jeraisy electronic services",
+    # Vision Bank
+    "visionbank/internal lab": "vision bank",
+    "visionbank": "vision bank",
+    # Bracket-style aliases from Jira summaries
+    "[dms]": "direct marketing solutions (dms)",
     "[libra solutions]": "libra solutions",
     "[ooredoo]": "ooredoo",
-    "[tencent]": "tencent",
-    "[meet marigold poc]": "meet marigold",
+    "[tencent]": "tencent america",
+    # Abbreviation aliases for formal names
+    "pdo": "petroleum development oman (pdo)",
+    "difc": "dubai international financial centre (difc)",
+    "bnpb": "badan nasional penanggulangan bencana (bnpb)",
+    "modon": "saudi authority for industrial cities and technology zones (modon)",
+    "mof": "ministry of finance (mof)",
+    "oia": "oman investment authority (oia)",
+    "eskanbank": "eskan bank b.s.c",
+    "eskan bank": "eskan bank b.s.c",
+    "dms": "direct marketing solutions (dms)",
+    "itmonkey": "it monkey, south africa",
+    "it monkey": "it monkey, south africa",
+    "connexpay": "connexpay",
 }
 
 
@@ -418,26 +436,30 @@ def _resolve_customer_from_summary(db: Session, summary: str):
     m = re.match(r'^([^|\-\[]+?)\s*[|\-]', s_lower)
     prefix = m.group(1).strip() if m else None
 
-    if prefix:
+    # Use prefix if found, otherwise use the full summary as candidate
+    candidate = prefix if prefix else s_lower.strip()
+
+    if candidate:
         # Check alias map first
-        canonical = _CUSTOMER_ALIASES.get(prefix)
+        canonical = _CUSTOMER_ALIASES.get(candidate)
         if canonical and canonical in name_map:
             c = name_map[canonical]
             return c.id, c.name
 
         # Check direct name match
-        if prefix in name_map:
-            c = name_map[prefix]
+        if candidate in name_map:
+            c = name_map[candidate]
             return c.id, c.name
 
-        # Check if prefix contains a known customer name
+        # Check if candidate contains a known customer name
         for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-            if name_lower in prefix and len(name_lower) >= 3:
+            if name_lower in candidate and len(name_lower) >= 3:
                 return cust.id, cust.name
 
-    # Step 3: Check if any customer name appears near the start (within first 40 chars)
+    # Step 3: Bidirectional containment check (first 40 chars of summary)
+    check = s_lower[:40]
     for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-        if len(name_lower) >= 3 and name_lower in s_lower[:40]:
+        if len(name_lower) >= 3 and (name_lower in check or (len(check) >= 3 and check in name_lower)):
             return cust.id, cust.name
 
     return None, None

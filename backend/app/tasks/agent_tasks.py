@@ -115,18 +115,38 @@ def _is_celery_available() -> bool:
         return False
 
 
+# Aliases for Fathom meeting titles → canonical customer names (lowercased)
+_FATHOM_CUSTOMER_ALIASES = {
+    "mubcap": "mubadala capital",
+    "dms": "direct marketing solutions (dms)",
+    "pdo": "petroleum development oman (pdo)",
+    "difc": "dubai international financial centre (difc)",
+    "bnpb": "badan nasional penanggulangan bencana (bnpb)",
+    "modon": "saudi authority for industrial cities and technology zones (modon)",
+    "ksgaa": "king salman global academy of arabic language (ksgaa)",
+    "gph": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
+    "mof": "ministry of finance (mof)",
+    "oia": "oman investment authority (oia)",
+    "eskanbank": "eskan bank b.s.c",
+    "eskan bank": "eskan bank b.s.c",
+    "visionbank": "vision bank",
+    "itmonkey": "it monkey, south africa",
+    "it monkey": "it monkey, south africa",
+    "jes": "jeraisy electronic services",
+    "connexpay": "connexpay",
+    "alraedah": "al raedah finance",
+    "alraedahfinance": "al raedah finance",
+}
+
+
 def _resolve_customer(db, title: str, participants: list[str] | None = None):
     """
-    Match a Fathom meeting title to an existing customer, or auto-create one.
+    Match a Fathom meeting title to an existing customer, or auto-create as prospect.
 
-    Title formats from Fathom:
-      "Ujjivan Bank || HivePro Threat Exposure Management || Demo"
-      "hivepro -demo 2 - jeddah airpots"
-      "Genpact || HivePro TEM || Product Demo"
-      "Itmonkey-Hivepro | Cadence Call"
-      "DMS-HivePro | Regular Cadence Call"
+    Tries exact match, containment, then alias lookup against existing customers.
+    If no match, auto-creates a new customer with tier='prospect'.
 
-    Returns (customer_id: UUID, customer_name: str) or (None, None).
+    Returns (customer_id: UUID, customer_name: str). Always returns a valid pair.
     """
     from app.models.customer import Customer
 
@@ -196,19 +216,22 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
             if cname_lower in seg_lower or seg_lower in cname_lower:
                 return cid, cname
 
-    # No match found — auto-create from the best candidate (first segment)
+    # Check alias map before auto-creating
+    for seg in candidate_segments:
+        alias_target = _FATHOM_CUSTOMER_ALIASES.get(seg.lower())
+        if alias_target and alias_target in customer_map:
+            return customer_map[alias_target]
+
+    # No match — auto-create as prospect so we keep all call data
     best_name = candidate_segments[0].strip()
-    # Strip trailing event suffixes that slipped through
     best_name = re.sub(
         r'\s+(poc|kickoff|demo|intro|call|cadence|w/)\s*.*$',
         '', best_name, flags=re.IGNORECASE,
     ).strip()
     if len(best_name) < 2:
         best_name = candidate_segments[0].strip()
-    # Title-case for consistency
     best_name = best_name.title()
 
-    # Double-check it wasn't just created in this session
     existing = db.query(Customer).filter(
         Customer.name.ilike(best_name)
     ).first()
@@ -218,11 +241,11 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
     new_customer = Customer(
         id=uuid.uuid4(),
         name=best_name,
-        tier="standard",
+        tier="prospect",
     )
     db.add(new_customer)
-    db.flush()  # get the ID without full commit
-    logger.info(f"Auto-created customer '{best_name}' from Fathom meeting title: {title}")
+    db.flush()
+    logger.info(f"Auto-created prospect '{best_name}' from Fathom meeting: {title}")
     return new_customer.id, best_name
 
 
@@ -389,8 +412,6 @@ def _build_fathom_prompt(transcript: str, customer: dict, payload: dict) -> str:
         "## Output Format",
         "Respond with ONLY a JSON object (no markdown, no extra text). Use this exact schema:",
         '{"summary": "2-3 paragraph executive summary of the call",',
-        ' "sentiment": "positive|neutral|negative|mixed",',
-        ' "sentiment_score": 0.75,',
         ' "key_topics": ["topic1", "topic2"],',
         ' "action_items": [{"task": "description", "owner": "person name", "deadline": "date or null"}],',
         ' "decisions": ["decision1", "decision2"],',
@@ -465,166 +486,218 @@ async def run_fathom_sync(days: int = 7) -> dict:
     except FathomAPIError as e:
         return {"status": "error", "error": str(e)}
 
-    db = get_sync_session()
+    # Use a short-lived session for the initial check to avoid Neon idle timeout
+    init_db = get_sync_session()
     try:
         existing_ids = {
             row[0] for row in
-            db.query(CallInsight.fathom_recording_id)
+            init_db.query(CallInsight.fathom_recording_id)
             .filter(CallInsight.fathom_recording_id.isnot(None))
             .all()
         }
+    finally:
+        init_db.close()
 
-        imported = 0
-        skipped = 0
-        internal_skipped = 0
-        for meeting in meetings:
-            recording_id = str(meeting.get("recording_id", ""))
-            if recording_id in existing_ids or not meeting.get("transcript"):
-                skipped += 1
-                continue
+    imported = 0
+    skipped = 0
+    internal_skipped = 0
+    from app.services import claude_service
+    from app.services.sentiment_analyzer import analyze_sentiment
 
-            meeting_title = meeting.get("title", "Untitled")
-            meeting_participants = fathom_service.extract_participants(meeting)
+    errors = 0
+    for meeting in meetings:
+        recording_id = str(meeting.get("recording_id", ""))
+        if recording_id in existing_ids or not meeting.get("transcript"):
+            skipped += 1
+            continue
 
-            # Skip very short transcripts (<3000 chars ≈ <3 min) — likely internal quick calls
-            raw_transcript = fathom_service.build_flat_transcript(
-                meeting.get("transcript", [])
-            )
-            if len(raw_transcript) < 3000:
-                internal_skipped += 1
-                logger.info(f"Fathom sync: skipped short meeting ({len(raw_transcript)} chars): {meeting_title}")
-                skipped += 1
-                continue
+        meeting_title = meeting.get("title", "Untitled")
+        meeting_participants = fathom_service.extract_participants(meeting)
 
-            # Filter: skip internal meetings (before any Claude call)
-            if not _is_customer_meeting(db, meeting_title, meeting_participants):
-                internal_skipped += 1
-                logger.info(f"Fathom sync: skipped internal meeting: {meeting_title}")
-                skipped += 1
-                continue
+        # Skip very short transcripts (<3000 chars ≈ <3 min)
+        raw_transcript = fathom_service.build_flat_transcript(
+            meeting.get("transcript", [])
+        )
+        if len(raw_transcript) < 3000:
+            internal_skipped += 1
+            logger.info(f"Fathom sync: skipped short meeting ({len(raw_transcript)} chars): {meeting_title}")
+            skipped += 1
+            continue
 
-            transcript_text = raw_transcript  # already built above for length check
-            participants = meeting_participants  # already extracted above
-            duration = fathom_service.estimate_duration_minutes(meeting)
-
-            summary_data = meeting.get("default_summary", {})
-            fathom_summary = (
-                summary_data.get("markdown_formatted") if summary_data else None
-            )
-
-            event_payload = {
-                "recording_id": recording_id,
-                "title": meeting.get("title", "Untitled"),
-                "transcript": transcript_text,
-                "participants": participants,
-                "duration_minutes": duration,
-                "fathom_summary": fathom_summary,
-                "fathom_action_items": meeting.get("action_items", []),
-                "call_date": (
-                    meeting.get("recording_start_time")
-                    or meeting.get("created_at")
-                ),
-            }
-
-            # Resolve customer from meeting title (meeting_title set above)
-            customer_id, customer_name = _resolve_customer(
-                db, meeting_title, participants
-            )
-
-            # Direct Claude call for call analysis (no agent class needed)
-            prompt = _build_fathom_prompt(
-                transcript_text,
-                {"name": customer_name} if customer_name else {},
-                event_payload,
-            )
-            from app.services import claude_service
-            response = claude_service.generate_sync(
-                system_prompt="You are an expert call intelligence analyst for a Customer Success team.",
-                user_message=prompt,
-                max_tokens=3000,
-                temperature=0.3,
-            )
-            # generate_sync returns {"content": str, ...} or {"error": str, ...}
-            if "error" in response:
-                logger.warning(f"Fathom sync: Claude error for {recording_id}: {response.get('detail')}")
-                skipped += 1
-                continue
-
-            result = {}
+        # Wrap each meeting in try/except so transient errors don't kill the whole sync
+        try:
+            # Filter: skip internal meetings (fresh session to avoid Neon timeout)
+            db = get_sync_session()
             try:
-                raw_content = response.get("content", "")
-                result = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
-            except (json.JSONDecodeError, TypeError):
-                # Try parse_json_response which handles markdown fences
-                result = claude_service.parse_json_response(response.get("content", ""))
+                is_customer = _is_customer_meeting(db, meeting_title, meeting_participants)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Fathom sync: DB error checking meeting {recording_id}: {e}")
+            errors += 1
+            continue
 
-            if not isinstance(result, dict) or result.get("error"):
-                logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {str(result)[:200]}")
-                skipped += 1
-                continue
+        if not is_customer:
+            internal_skipped += 1
+            logger.info(f"Fathom sync: skipped internal meeting: {meeting_title}")
+            skipped += 1
+            continue
 
-            wrapped_result = {"success": True, "output": result}
+        transcript_text = raw_transcript
+        participants = meeting_participants
+        duration = fathom_service.estimate_duration_minutes(meeting)
 
-            # Save CallInsight to DB
-            _save_call_insight(db, customer_id, event_payload, result)
+        summary_data = meeting.get("default_summary", {})
+        fathom_summary = (
+            summary_data.get("markdown_formatted") if summary_data else None
+        )
 
-            # RAG embed
-            try:
-                from app.services.rag_service import rag_service
-                topics = result.get("key_topics", [])
-                embed_text = f"{result.get('summary', '')} {' '.join(topics) if isinstance(topics, list) else ''}"
-                if embed_text.strip():
-                    latest = db.query(CallInsight).filter_by(
-                        fathom_recording_id=recording_id
-                    ).order_by(CallInsight.processed_at.desc()).first()
-                    iid = str(latest.id) if latest else str(uuid.uuid4())
-                    rag_service.embed_insight(iid, embed_text, {
-                        "customer_id": str(customer_id) if customer_id else "",
-                        "sentiment": result.get("sentiment", ""),
-                        "call_date": event_payload.get("call_date", ""),
-                        "recording_id": recording_id,
-                    })
-            except Exception:
-                pass
-
-            # Ingest into meeting_knowledge ChromaDB
-            _ingest_to_knowledge_base(event_payload, wrapped_result, customer_name or "")
-
-            db.commit()  # commit customer auto-creates + insights per meeting
-            imported += 1
-            logger.info(f"Fathom sync: imported recording {recording_id} (customer={customer_name or 'unknown'})")
-
-            # Notify Slack with the call summary
-            try:
-                from app.services.slack_service import slack_service
-                if slack_service.configured:
-                    slack_service.send_call_insight_notification(
-                        title=meeting_title,
-                        customer_name=customer_name or "",
-                        summary=result.get("summary", ""),
-                        sentiment=result.get("sentiment", ""),
-                        sentiment_score=result.get("sentiment_score"),
-                        action_items=result.get("action_items", []),
-                        risks=result.get("risks", []),
-                        key_topics=result.get("key_topics", []),
-                        participants=event_payload.get("participants", []),
-                        call_date=event_payload.get("call_date"),
-                    )
-            except Exception as e:
-                logger.warning(f"Fathom sync: Slack notification failed (non-critical): {e}")
-
-        # Run pattern detection after sync completes
-        patterns_found = _detect_call_patterns(db)
-
-        return {
-            "status": "ok",
-            "imported": imported,
-            "skipped": skipped,
-            "total": len(meetings),
-            "patterns_detected": len(patterns_found),
+        event_payload = {
+            "recording_id": recording_id,
+            "title": meeting.get("title", "Untitled"),
+            "transcript": transcript_text,
+            "participants": participants,
+            "duration_minutes": duration,
+            "fathom_summary": fathom_summary,
+            "fathom_action_items": meeting.get("action_items", []),
+            "call_date": (
+                meeting.get("recording_start_time")
+                or meeting.get("created_at")
+            ),
         }
+
+        # Resolve customer (fresh session)
+        try:
+            db = get_sync_session()
+            try:
+                customer_id, customer_name = _resolve_customer(
+                    db, meeting_title, participants
+                )
+                db.commit()  # commit any auto-created prospect
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Fathom sync: DB error resolving customer for {recording_id}: {e}")
+            errors += 1
+            continue
+
+        # Claude API call (no DB needed — this takes 10-30s)
+        prompt = _build_fathom_prompt(
+            transcript_text,
+            {"name": customer_name} if customer_name else {},
+            event_payload,
+        )
+        response = claude_service.generate_sync(
+            system_prompt="You are an expert call intelligence analyst for a Customer Success team.",
+            user_message=prompt,
+            max_tokens=3000,
+            temperature=0.3,
+        )
+        if "error" in response:
+            logger.warning(f"Fathom sync: Claude error for {recording_id}: {response.get('detail')}")
+            skipped += 1
+            continue
+
+        result = {}
+        try:
+            raw_content = response.get("content", "")
+            result = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+        except (json.JSONDecodeError, TypeError):
+            result = claude_service.parse_json_response(response.get("content", ""))
+
+        if not isinstance(result, dict) or result.get("error"):
+            logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {str(result)[:200]}")
+            skipped += 1
+            continue
+
+        # VADER sentiment analysis (no DB needed)
+        try:
+            sentiment_input = event_payload.get("transcript") or result.get("summary", "")
+            sentiment_result = analyze_sentiment(sentiment_input)
+            result["sentiment"] = sentiment_result["sentiment"]
+            result["sentiment_score"] = sentiment_result["sentiment_score"]
+        except Exception as e:
+            logger.warning(f"VADER sentiment failed for {recording_id}, defaulting to neutral: {e}")
+            result["sentiment"] = "neutral"
+            result["sentiment_score"] = 0.5
+
+        wrapped_result = {"success": True, "output": result}
+
+        # Save to DB (fresh session to avoid Neon timeout)
+        try:
+            db = get_sync_session()
+            try:
+                _save_call_insight(db, customer_id, event_payload, result)
+
+                # RAG embed
+                try:
+                    from app.services.rag_service import rag_service
+                    topics = result.get("key_topics", [])
+                    embed_text = f"{result.get('summary', '')} {' '.join(topics) if isinstance(topics, list) else ''}"
+                    if embed_text.strip():
+                        latest = db.query(CallInsight).filter_by(
+                            fathom_recording_id=recording_id
+                        ).order_by(CallInsight.processed_at.desc()).first()
+                        iid = str(latest.id) if latest else str(uuid.uuid4())
+                        rag_service.embed_insight(iid, embed_text, {
+                            "customer_id": str(customer_id) if customer_id else "",
+                            "sentiment": result.get("sentiment", ""),
+                            "call_date": event_payload.get("call_date", ""),
+                            "recording_id": recording_id,
+                        })
+                except Exception:
+                    pass
+
+                db.commit()
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Fathom sync: DB error saving insight for {recording_id}: {e}")
+            errors += 1
+            continue
+
+        # Ingest into meeting_knowledge ChromaDB (no DB needed)
+        _ingest_to_knowledge_base(event_payload, wrapped_result, customer_name or "")
+
+        # Track in existing_ids to avoid re-import if duplicated in API response
+        existing_ids.add(recording_id)
+        imported += 1
+        logger.info(f"Fathom sync: imported recording {recording_id} (customer={customer_name or 'unknown'})")
+
+        # Notify Slack (no DB needed)
+        try:
+            from app.services.slack_service import slack_service
+            if slack_service.configured:
+                slack_service.send_call_insight_notification(
+                    title=meeting_title,
+                    customer_name=customer_name or "",
+                    summary=result.get("summary", ""),
+                    sentiment=result.get("sentiment", ""),
+                    sentiment_score=result.get("sentiment_score"),
+                    action_items=result.get("action_items", []),
+                    risks=result.get("risks", []),
+                    key_topics=result.get("key_topics", []),
+                    participants=event_payload.get("participants", []),
+                    call_date=event_payload.get("call_date"),
+                )
+        except Exception as e:
+            logger.warning(f"Fathom sync: Slack notification failed (non-critical): {e}")
+
+    # Run pattern detection after sync completes
+    db = get_sync_session()
+    try:
+        patterns_found = _detect_call_patterns(db)
     finally:
         db.close()
+
+    return {
+        "status": "ok",
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "total": len(meetings),
+        "patterns_detected": len(patterns_found),
+    }
 
 
 @celery_app.task(name="sync_fathom_meetings", bind=True)

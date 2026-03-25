@@ -75,7 +75,7 @@ async def fathom_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/sync", response_model=FathomSyncResponse)
 async def trigger_fathom_sync(
-    days: int = Query(14, ge=1, le=90, description="Days back to sync"),
+    days: int = Query(14, ge=1, le=730, description="Days back to sync (up to 2 years)"),
     current_user: User = Depends(require_role("admin", "cs_manager")),
 ):
     """

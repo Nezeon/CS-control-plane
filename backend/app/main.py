@@ -177,46 +177,55 @@ async def lifespan(app: FastAPI):
 
 
 def _backfill_rag_embeddings():
-    """Re-embed call insights and tickets from PostgreSQL into ChromaDB RAG collections."""
+    """Re-embed call insights and tickets from PostgreSQL into ChromaDB RAG collections.
+
+    Uses separate DB sessions for insights and tickets to avoid Neon SSL
+    timeout — the embedding step is slow (~10s per item) and would keep
+    the connection idle long enough for Neon to drop it.
+    """
     from app.database import get_sync_session
     from app.services import rag_service
 
+    # Phase 1: Fetch insights, close DB, then embed (slow ChromaDB work)
     db = get_sync_session()
     try:
-        # Backfill call_insight_embeddings
         from app.models.call_insight import CallInsight
-        insights = db.query(CallInsight).all()
-        insight_count = 0
-        for ins in insights:
+        insight_data = []
+        for ins in db.query(CallInsight).all():
             text = f"{ins.summary or ''} {' '.join(ins.key_topics) if ins.key_topics else ''}"
-            if not text.strip():
-                continue
-            rag_service.embed_insight(str(ins.id), text, {
-                "customer_id": str(ins.customer_id) if ins.customer_id else "",
-                "sentiment": ins.sentiment or "",
-                "recording_id": ins.fathom_recording_id or "",
-            })
-            insight_count += 1
-
-        # Backfill ticket_embeddings
-        from app.models.ticket import Ticket
-        tickets = db.query(Ticket).all()
-        ticket_count = 0
-        for t in tickets:
-            text = f"{t.summary or ''} {t.description or ''}"[:2000]
-            if not text.strip():
-                continue
-            rag_service.embed_ticket(str(t.id), text, {
-                "jira_id": t.jira_id or "",
-                "customer_id": str(t.customer_id) if t.customer_id else "",
-                "severity": t.severity or "",
-                "status": t.status or "",
-            })
-            ticket_count += 1
-
-        logger.info(f"RAG backfill: {insight_count} insights, {ticket_count} tickets embedded")
+            if text.strip():
+                insight_data.append((str(ins.id), text, {
+                    "customer_id": str(ins.customer_id) if ins.customer_id else "",
+                    "sentiment": ins.sentiment or "",
+                    "recording_id": ins.fathom_recording_id or "",
+                }))
     finally:
         db.close()
+
+    for iid, text, meta in insight_data:
+        rag_service.embed_insight(iid, text, meta)
+
+    # Phase 2: Fresh session for tickets (previous one would be dead by now)
+    db = get_sync_session()
+    try:
+        from app.models.ticket import Ticket
+        ticket_data = []
+        for t in db.query(Ticket).all():
+            text = f"{t.summary or ''} {t.description or ''}"[:2000]
+            if text.strip():
+                ticket_data.append((str(t.id), text, {
+                    "jira_id": t.jira_id or "",
+                    "customer_id": str(t.customer_id) if t.customer_id else "",
+                    "severity": t.severity or "",
+                    "status": t.status or "",
+                }))
+    finally:
+        db.close()
+
+    for tid, text, meta in ticket_data:
+        rag_service.embed_ticket(tid, text, meta)
+
+    logger.info(f"RAG backfill: {len(insight_data)} insights, {len(ticket_data)} tickets embedded")
 
 
 async def _run_jira_sync():

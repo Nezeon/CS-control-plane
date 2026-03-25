@@ -96,19 +96,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Pool pre-warm failed (non-fatal): {e}")
 
-    # -- ChromaDB backfill: re-populate from PostgreSQL (needed for ephemeral mode) --
-    try:
-        from app.services.meeting_knowledge_service import meeting_knowledge_service
-        stats = meeting_knowledge_service.backfill_from_db()
-        logger.info(f"ChromaDB meeting knowledge backfill: {stats}")
-    except Exception as e:
-        logger.warning(f"ChromaDB meeting backfill failed (non-fatal): {e}")
-
-    try:
-        _backfill_rag_embeddings()
-    except Exception as e:
-        logger.warning(f"RAG embeddings backfill failed (non-fatal): {e}")
-
     # -- Scheduled syncs via APScheduler (fixed daily times) --
     from datetime import datetime, timedelta, timezone
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -162,6 +149,24 @@ async def lifespan(app: FastAPI):
         logger.info(f"Health check scheduled: every 3 days at 08:30 {settings.SYNC_TIMEZONE}")
     except Exception as e:
         logger.warning(f"Health check setup failed (non-fatal): {e}")
+
+    # ChromaDB backfill: schedule as background job so server starts accepting requests immediately
+    # (needed for ephemeral mode on Railway where ChromaDB is in-memory)
+    def _run_backfills():
+        try:
+            from app.services.meeting_knowledge_service import meeting_knowledge_service
+            stats = meeting_knowledge_service.backfill_from_db()
+            logger.info(f"ChromaDB meeting knowledge backfill: {stats}")
+        except Exception as e:
+            logger.warning(f"ChromaDB meeting backfill failed (non-fatal): {e}")
+        try:
+            _backfill_rag_embeddings()
+        except Exception as e:
+            logger.warning(f"RAG embeddings backfill failed (non-fatal): {e}")
+
+    scheduler.add_job(_run_backfills, "date",
+                      run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
+                      id="backfill_startup")
 
     scheduler.start()
 

@@ -20,6 +20,17 @@ SEVERITY_COLORS = {
     "low": "#2563EB",       # blue-600
 }
 
+# Human-readable alert type names for Slack cards
+ALERT_TYPE_LABELS = {
+    "action_item_overload": "Too Many Action Items",
+    "call_sentiment_pattern": "Negative Call Sentiment",
+    "recurring_topic_pattern": "Recurring Problem Topic",
+    "health_drop_15": "Health Score Drop",
+    "critical_tickets_stale": "Stale Critical Tickets",
+    "renewal_at_risk": "Renewal At Risk",
+    "negative_sentiment_streak": "Negative Sentiment Streak",
+}
+
 
 def _text_to_section_blocks(text: str, label: str | None = None) -> list[dict]:
     """Convert a long text into one or more Slack section blocks.
@@ -147,7 +158,7 @@ class SlackService:
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Severity:*\n{severity.upper()}"},
                     {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name}"},
-                    {"type": "mrkdwn", "text": f"*Type:*\n{alert.alert_type}"},
+                    {"type": "mrkdwn", "text": f"*Type:*\n{ALERT_TYPE_LABELS.get(alert.alert_type, (alert.alert_type or '').replace('_', ' ').title())}"},
                     {"type": "mrkdwn", "text": f"*Status:*\n{alert.status}"},
                 ],
             },
@@ -158,6 +169,14 @@ class SlackService:
 
         if alert.suggested_action:
             blocks.extend(_text_to_section_blocks(alert.suggested_action, label="Suggested Action"))
+
+        # Deep-link to customer profile on live dashboard
+        if alert.customer_id and settings.DASHBOARD_BASE_URL:
+            dashboard_url = f"{settings.DASHBOARD_BASE_URL}/dashboard/customer/{alert.customer_id}"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"<{dashboard_url}|View customer in dashboard>"},
+            })
 
         blocks.append({"type": "divider"})
 
@@ -179,12 +198,27 @@ class SlackService:
         action_items: list,
         risks: list,
         key_topics: list,
+        participants: list | None = None,
+        call_date: str | None = None,
     ) -> bool:
         """Post a meeting intelligence summary to the CS alerts channel after processing."""
         if not self.configured:
             return False
 
-        channel = settings.SLACK_CHAT_CHANNEL or settings.SLACK_CH_CALL_INTEL
+        channel = settings.SLACK_CH_CALL_INTEL or settings.SLACK_CHAT_CHANNEL
+
+        # Format call date
+        date_str = ""
+        if call_date:
+            try:
+                from datetime import datetime
+                if isinstance(call_date, str):
+                    dt = datetime.fromisoformat(call_date.replace("Z", "+00:00"))
+                else:
+                    dt = call_date
+                date_str = dt.strftime("%b %d, %Y at %I:%M %p")
+            except Exception:
+                date_str = str(call_date)
 
         # Sentiment emoji
         sent_emoji = {
@@ -209,6 +243,16 @@ class SlackService:
                 ],
             },
         ]
+
+        # Date and participants row
+        meta_fields = []
+        if date_str:
+            meta_fields.append({"type": "mrkdwn", "text": f"*Date:*\n{date_str}"})
+        if participants:
+            names = ", ".join(str(p) for p in participants[:8])
+            meta_fields.append({"type": "mrkdwn", "text": f"*Attendees:*\n{names}"})
+        if meta_fields:
+            blocks.append({"type": "section", "fields": meta_fields})
 
         if summary:
             blocks.extend(_text_to_section_blocks(summary, label="Summary"))
@@ -281,6 +325,7 @@ class SlackService:
         dashboard_url: str | None = None,
         jira_id: str | None = None,
         jira_base_url: str | None = None,
+        confidence: float | None = None,
     ) -> dict | bool:
         """Post a standard agent card with Approve/Edit/Dismiss buttons.
 
@@ -291,26 +336,46 @@ class SlackService:
             logger.debug(f"[Slack] Not configured, skipping agent card for {agent_name}")
             return False
 
-        # Health score display
-        health_str = f"{health_score}" if health_score is not None else "N/A"
-        priority_str = priority.upper() if priority else "N/A"
+        # Header: show jira_id instead of raw event_type when available
+        header_text = f"{agent_name} — {jira_id}" if jira_id else f"{agent_name} — {event_type}"
+
+        # Health score with color indicator
+        if health_score is not None:
+            if health_score >= 80:
+                health_str = f":large_green_circle: {health_score}"
+            elif health_score >= 50:
+                health_str = f":large_yellow_circle: {health_score}"
+            else:
+                health_str = f":red_circle: {health_score}"
+        else:
+            health_str = ":white_circle: _Pending_"
+
+        # Priority with severity emoji
+        severity_emoji = {"P0": ":red_circle:", "P1": ":large_orange_circle:", "P2": ":large_yellow_circle:", "P3": ":large_blue_circle:"}
+        priority_upper = priority.upper() if priority else None
+        priority_str = f"{severity_emoji.get(priority_upper, '')} {priority_upper}" if priority_upper else "_N/A_"
+
+        # Fields: Customer, Health, Priority, and optionally Confidence
+        fields = [
+            {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name or 'Unknown'}"},
+            {"type": "mrkdwn", "text": f"*Health:*\n{health_str}"},
+            {"type": "mrkdwn", "text": f"*Priority:*\n{priority_str}"},
+        ]
+        if confidence is not None:
+            fields.append({"type": "mrkdwn", "text": f"*Confidence:*\n{confidence:.0%}"})
 
         blocks = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"{agent_name} — {event_type}",
+                    "text": header_text,
                     "emoji": True,
                 },
             },
             {
                 "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name or 'Unknown'}"},
-                    {"type": "mrkdwn", "text": f"*Health:*\n{health_str}"},
-                    {"type": "mrkdwn", "text": f"*Priority:*\n{priority_str}"},
-                ],
+                "fields": fields,
             },
             {"type": "divider"},
             *_text_to_section_blocks(summary, label="Summary"),
@@ -346,23 +411,22 @@ class SlackService:
         if dashboard_url or (jira_id and jira_base_url):
             link_parts = []
             if jira_id and jira_base_url:
-                link_parts.append(f"*Jira:* <{jira_base_url}/browse/{jira_id}|{jira_id}>")
-            link_text = " | ".join(link_parts) if link_parts else "View in dashboard"
+                link_parts.append(f":link: *Jira:* <{jira_base_url}/browse/{jira_id}|{jira_id}>")
+            if dashboard_url:
+                link_parts.append(f":bar_chart: *Dashboard:* <{dashboard_url}|View in Dashboard>")
+            link_text = "  |  ".join(link_parts) if link_parts else "View in dashboard"
             link_section = {
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": link_text},
             }
-            if dashboard_url:
-                link_section["accessory"] = {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Open Dashboard", "emoji": True},
-                    "url": dashboard_url,
-                    "action_id": "open_dashboard",
-                }
-            # Insert before the actions block (second to last)
+            # Insert before the actions block
             blocks.insert(-1, link_section)
 
-        fallback = f"[{agent_name}] {event_type} — {customer_name}: {summary[:120]}"
+        # Context footer with event type
+        context_elements = [{"type": "mrkdwn", "text": f"Event: `{event_type}` | Draft: `{draft_id[:8]}`"}]
+        blocks.append({"type": "context", "elements": context_elements})
+
+        fallback = f"[{agent_name}] {jira_id or event_type} — {customer_name}: {summary[:120]}"
         return self.send_message(channel, fallback, blocks)
 
     def _send_with_attachments(self, channel: str, text: str, attachments: list) -> bool:

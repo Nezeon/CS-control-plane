@@ -5,7 +5,6 @@ GET  /api/fathom/status    -- Check Fathom API configuration + data freshness
 POST /api/fathom/sync      -- Trigger a Fathom meeting sync
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -90,11 +89,7 @@ async def trigger_fathom_sync(
     start = datetime.now(timezone.utc)
 
     try:
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(run_fathom_sync(days=days))
-        finally:
-            loop.close()
+        result = await run_fathom_sync(days=days)
     except Exception as e:
         logger.error(f"[Fathom] Sync failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)[:200]}")

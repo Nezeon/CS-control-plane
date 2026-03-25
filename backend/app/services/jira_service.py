@@ -12,7 +12,7 @@ Provides:
 
 import logging
 from base64 import b64encode
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
@@ -187,6 +187,18 @@ class JiraService:
         updated_at = self._parse_jira_date(fields.get("updated"))
         resolved_at = self._parse_jira_date(fields.get("resolutiondate"))
 
+        # SLA deadline: created_at + configurable hours per severity
+        sla_deadline = None
+        if created_at:
+            sla_hours_map = {
+                "P1": settings.SLA_HOURS_P1,
+                "P2": settings.SLA_HOURS_P2,
+                "P3": settings.SLA_HOURS_P3,
+                "P4": settings.SLA_HOURS_P4,
+            }
+            sla_hours = sla_hours_map.get(severity, settings.SLA_HOURS_P3)
+            sla_deadline = created_at + timedelta(hours=sla_hours)
+
         # Assignee
         assignee_email = None
         assignee_name = None
@@ -216,6 +228,7 @@ class JiraService:
             "created_at": created_at,
             "updated_at": updated_at,
             "resolved_at": resolved_at,
+            "sla_deadline": sla_deadline,
             # Metadata (underscore-prefixed, not stored directly on Ticket)
             "_project_key": project_key,
             "_assignee_email": assignee_email,

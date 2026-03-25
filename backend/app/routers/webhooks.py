@@ -147,7 +147,7 @@ async def fathom_webhook(
         _resolve_customer, _build_fathom_prompt,
         _save_call_insight, _ingest_to_knowledge_base,
     )
-    from app.services.claude_service import claude_service
+    from app.services import claude_service
 
     sync_db = get_sync_session()
     try:
@@ -160,17 +160,27 @@ async def fathom_webhook(
             {"name": customer_name} if customer_name else {},
             event_payload,
         )
-        response = claude_service.generate_sync(prompt, max_tokens=3000, temperature=0.3)
+        response = claude_service.generate_sync(
+            system_prompt="You are an expert call intelligence analyst for a Customer Success team.",
+            user_message=prompt,
+            max_tokens=3000,
+            temperature=0.3,
+        )
+
+        if "error" in response:
+            logger.warning(f"Fathom webhook: Claude error for {recording_id}: {response.get('detail')}")
+            return {"status": "analysis_error", "recording_id": str(recording_id)}
+
         result = {}
         try:
-            result = json.loads(response) if isinstance(response, str) else response
+            raw_content = response.get("content", "")
+            result = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
         except (json.JSONDecodeError, TypeError):
-            logger.warning(f"Fathom webhook: Claude parse error for {recording_id}")
-            return {"status": "parse_error", "recording_id": str(recording_id)}
+            result = claude_service.parse_json_response(response.get("content", ""))
 
         if not isinstance(result, dict) or result.get("error"):
-            logger.warning(f"Fathom webhook: Claude error for {recording_id}: {result}")
-            return {"status": "analysis_error", "recording_id": str(recording_id)}
+            logger.warning(f"Fathom webhook: Claude parse error for {recording_id}: {str(result)[:200]}")
+            return {"status": "parse_error", "recording_id": str(recording_id)}
 
         # Save CallInsight to DB
         _save_call_insight(sync_db, customer_id, event_payload, result)
@@ -215,6 +225,8 @@ async def fathom_webhook(
                     action_items=result.get("action_items", []),
                     risks=result.get("risks", []),
                     key_topics=result.get("key_topics", []),
+                    participants=event_payload.get("participants", []),
+                    call_date=event_payload.get("call_date"),
                 )
         except Exception as e:
             logger.warning(f"Fathom webhook: Slack notification failed (non-critical): {e}")

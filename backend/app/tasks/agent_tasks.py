@@ -123,6 +123,8 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
       "Ujjivan Bank || HivePro Threat Exposure Management || Demo"
       "hivepro -demo 2 - jeddah airpots"
       "Genpact || HivePro TEM || Product Demo"
+      "Itmonkey-Hivepro | Cadence Call"
+      "DMS-HivePro | Regular Cadence Call"
 
     Returns (customer_id: UUID, customer_name: str) or (None, None).
     """
@@ -131,9 +133,28 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
     if not title:
         return None, None
 
-    # Parse title into segments (split on || or — or -)
-    segments = re.split(r'\s*\|\|\s*|\s*[—–]\s*|\s+-\s+', title)
+    # Parse title into segments (split on ||, |, —, –, or spaced -)
+    segments = re.split(r'\s*\|\|\s*|\s*\|\s*|\s*[—–]\s*|\s+-\s+', title)
     segments = [s.strip() for s in segments if s.strip()]
+
+    # Further split "Name-HivePro" style compounds (hyphen directly joining words)
+    expanded = []
+    for seg in segments:
+        if re.search(r'\bhivepro\b', seg, re.IGNORECASE) and '-' in seg:
+            parts = [p.strip() for p in seg.split('-') if p.strip()]
+            expanded.extend(parts)
+        else:
+            expanded.append(seg)
+    segments = expanded
+
+    # Extract customer name from "Hive Pro ... W/CustomerName" pattern
+    # e.g. "Hive Pro Demo W/ Geisinger" -> adds "Geisinger"
+    for seg in list(segments):
+        match = re.search(r'\bw/\s*(.+)$', seg, re.IGNORECASE)
+        if match and re.match(r'^hive\s*pro\b', seg, re.IGNORECASE):
+            customer_part = match.group(1).strip()
+            if len(customer_part) >= 3:
+                segments.append(customer_part)
 
     # Filter out HivePro product / generic words
     candidate_segments = []
@@ -142,10 +163,14 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
         if seg_lower in _IGNORE_SEGMENTS:
             continue
         # Skip segments that are purely HivePro product names
-        if re.match(r'^hivepro\b', seg, re.IGNORECASE):
+        if re.match(r'^hive\s*pro\b', seg, re.IGNORECASE):
             continue
-        # Skip if segment is only ignore-words combined (e.g. "internal team meeting")
-        if any(seg_lower == ign for ign in _IGNORE_SEGMENTS):
+        # Skip event-type suffixes (cadence call, poc kickoff, etc.)
+        if seg_lower in {
+            "cadence call", "regular cadence call", "weekly cadence call",
+            "poc kickoff", "kickoff call", "intro call", "intro/demo",
+            "product demo", "platform demo", "hands-on demo",
+        }:
             continue
         # Skip very short or numeric-only segments (e.g. "demo 2")
         cleaned = re.sub(r'\d+', '', seg).strip()
@@ -171,10 +196,17 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
             if cname_lower in seg_lower or seg_lower in cname_lower:
                 return cid, cname
 
-    # No match found — auto-create a new customer from the best candidate
-    best_name = candidate_segments[0]  # First non-HivePro segment is usually the customer
-    # Title-case it for consistency
-    best_name = best_name.strip().title()
+    # No match found — auto-create from the best candidate (first segment)
+    best_name = candidate_segments[0].strip()
+    # Strip trailing event suffixes that slipped through
+    best_name = re.sub(
+        r'\s+(poc|kickoff|demo|intro|call|cadence|w/)\s*.*$',
+        '', best_name, flags=re.IGNORECASE,
+    ).strip()
+    if len(best_name) < 2:
+        best_name = candidate_segments[0].strip()
+    # Title-case for consistency
+    best_name = best_name.title()
 
     # Double-check it wasn't just created in this session
     existing = db.query(Customer).filter(
@@ -505,18 +537,29 @@ async def run_fathom_sync(days: int = 7) -> dict:
                 {"name": customer_name} if customer_name else {},
                 event_payload,
             )
-            from app.services.claude_service import claude_service
-            response = claude_service.generate_sync(prompt, max_tokens=3000, temperature=0.3)
-            result = {}
-            try:
-                result = json.loads(response) if isinstance(response, str) else response
-            except (json.JSONDecodeError, TypeError):
-                logger.warning(f"Fathom sync: Claude parse error for {recording_id}")
+            from app.services import claude_service
+            response = claude_service.generate_sync(
+                system_prompt="You are an expert call intelligence analyst for a Customer Success team.",
+                user_message=prompt,
+                max_tokens=3000,
+                temperature=0.3,
+            )
+            # generate_sync returns {"content": str, ...} or {"error": str, ...}
+            if "error" in response:
+                logger.warning(f"Fathom sync: Claude error for {recording_id}: {response.get('detail')}")
                 skipped += 1
                 continue
 
+            result = {}
+            try:
+                raw_content = response.get("content", "")
+                result = json.loads(raw_content) if isinstance(raw_content, str) else raw_content
+            except (json.JSONDecodeError, TypeError):
+                # Try parse_json_response which handles markdown fences
+                result = claude_service.parse_json_response(response.get("content", ""))
+
             if not isinstance(result, dict) or result.get("error"):
-                logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {result}")
+                logger.warning(f"Fathom sync: Claude parse error for {recording_id}: {str(result)[:200]}")
                 skipped += 1
                 continue
 
@@ -564,6 +607,8 @@ async def run_fathom_sync(days: int = 7) -> dict:
                         action_items=result.get("action_items", []),
                         risks=result.get("risks", []),
                         key_topics=result.get("key_topics", []),
+                        participants=event_payload.get("participants", []),
+                        call_date=event_payload.get("call_date"),
                     )
             except Exception as e:
                 logger.warning(f"Fathom sync: Slack notification failed (non-critical): {e}")
@@ -621,6 +666,7 @@ def _detect_call_patterns(db) -> list[dict]:
             GROUP BY ci.customer_id, c.name
             HAVING COUNT(*) >= 2
         """)).fetchall()
+        logger.info(f"Pattern 1 (negative sentiment): {len(rows)} customers with 2+ negative calls")
 
         for row in rows:
             rd = dict(row._mapping)
@@ -631,7 +677,30 @@ def _detect_call_patterns(db) -> list[dict]:
                 status="open",
             ).first()
             if existing:
+                logger.info(f"Pattern 1: skipped {rd['name']} — open alert already exists")
                 continue
+
+            # Fetch actual call details for a richer description
+            detail_rows = db.execute(text("""
+                SELECT ci.call_date, ci.sentiment, ci.sentiment_score,
+                       ci.fathom_recording_id
+                FROM call_insights ci
+                WHERE ci.customer_id = CAST(:cid AS uuid)
+                  AND ci.processed_at > NOW() - INTERVAL '14 days'
+                  AND ci.sentiment IN ('negative', 'mixed')
+                ORDER BY ci.call_date DESC LIMIT 5
+            """), {"cid": str(rd["customer_id"])}).fetchall()
+
+            call_lines = []
+            for dr in detail_rows:
+                d = dict(dr._mapping)
+                date_str = d["call_date"].strftime("%b %d") if d.get("call_date") else "Unknown"
+                score = f", {d['sentiment_score']:.2f}" if d.get("sentiment_score") is not None else ""
+                call_lines.append(f"  • {date_str} — {d['sentiment']}{score}")
+
+            description = f"{rd['neg_count']} calls with negative/mixed sentiment in the last 14 days"
+            if call_lines:
+                description += ":\n" + "\n".join(call_lines)
 
             alert = Alert(
                 id=uuid.uuid4(),
@@ -639,7 +708,7 @@ def _detect_call_patterns(db) -> list[dict]:
                 alert_type="call_sentiment_pattern",
                 severity="high",
                 title=f"Repeated negative call sentiment — {rd['name']}",
-                description=f"{rd['neg_count']} calls with negative/mixed sentiment in the last 14 days",
+                description=description,
                 suggested_action=f"Review recent call recordings for {rd['name']} and schedule a check-in",
                 status="open",
             )
@@ -685,7 +754,16 @@ def _detect_call_patterns(db) -> list[dict]:
                 if t:
                     topic_counts.setdefault(t, []).append(cname)
 
-        problem_keywords = {"issue", "bug", "problem", "outage", "escalation", "blocker", "error", "failure", "delay"}
+        problem_keywords = {
+            # Original terms
+            "issue", "bug", "problem", "outage", "escalation", "blocker",
+            "error", "failure", "delay",
+            # Expanded: terms Claude actually uses in topic descriptions
+            "concern", "risk", "challenge", "complaint", "frustration",
+            "gap", "misconfiguration", "vulnerability", "breach", "incident",
+            "downtime", "regression", "degradation", "timeout", "latency",
+            "blocker", "limitation", "workaround", "patch", "hotfix",
+        }
         # Track customer_ids for each topic to create per-customer alerts
         topic_customer_ids: dict[str, set] = {}
         for row in rows:
@@ -701,6 +779,14 @@ def _detect_call_patterns(db) -> list[dict]:
                 t = str(topic).lower().strip()
                 if t and cid:
                     topic_customer_ids.setdefault(t, set()).add(cid)
+
+        topics_3plus = {t: c for t, c in topic_counts.items() if len(c) >= 3}
+        topics_matched = {t: c for t, c in topics_3plus.items() if any(kw in t for kw in problem_keywords)}
+        logger.info(
+            f"Pattern 2 (recurring topics): {len(rows)} calls with topics, "
+            f"{len(topic_counts)} unique topics, {len(topics_3plus)} with 3+ occurrences, "
+            f"{len(topics_matched)} matched problem keywords"
+        )
 
         for topic, customers_list in topic_counts.items():
             if len(customers_list) < 3:
@@ -763,6 +849,7 @@ def _detect_call_patterns(db) -> list[dict]:
             GROUP BY ci.customer_id, c.name
             HAVING SUM(jsonb_array_length(COALESCE(ci.action_items, '[]'::jsonb))) >= 5
         """)).fetchall()
+        logger.info(f"Pattern 3 (action overload): {len(rows)} customers with 5+ action items")
 
         for row in rows:
             rd = dict(row._mapping)
@@ -772,7 +859,45 @@ def _detect_call_patterns(db) -> list[dict]:
                 status="open",
             ).first()
             if existing:
+                logger.info(f"Pattern 3: skipped {rd['name']} — open alert already exists")
                 continue
+
+            # Fetch per-call breakdown + top action items
+            detail_rows = db.execute(text("""
+                SELECT ci.call_date,
+                       jsonb_array_length(COALESCE(ci.action_items, '[]'::jsonb)) AS item_count,
+                       ci.action_items
+                FROM call_insights ci
+                WHERE ci.customer_id = CAST(:cid AS uuid)
+                  AND ci.processed_at > NOW() - INTERVAL '14 days'
+                  AND ci.fathom_recording_id IS NOT NULL
+                ORDER BY ci.call_date DESC LIMIT 5
+            """), {"cid": str(rd["customer_id"])}).fetchall()
+
+            call_lines = []
+            top_items = []
+            for dr in detail_rows:
+                d = dict(dr._mapping)
+                date_str = d["call_date"].strftime("%b %d") if d.get("call_date") else "Unknown"
+                call_lines.append(f"  • {date_str} — {d['item_count']} action items")
+                # Collect top action item tasks
+                items = d.get("action_items") or []
+                if isinstance(items, str):
+                    try:
+                        items = json.loads(items)
+                    except Exception:
+                        items = []
+                for item in items[:3]:
+                    task = item.get("task", str(item)) if isinstance(item, dict) else str(item)
+                    if task and len(top_items) < 5:
+                        top_items.append(task)
+
+            num_calls = len(detail_rows)
+            description = f"{rd['total_actions']} action items across {num_calls} recent call{'s' if num_calls != 1 else ''}"
+            if call_lines:
+                description += ":\n" + "\n".join(call_lines)
+            if top_items:
+                description += "\n\nTop items: " + "; ".join(top_items[:5])
 
             alert = Alert(
                 id=uuid.uuid4(),
@@ -780,7 +905,7 @@ def _detect_call_patterns(db) -> list[dict]:
                 alert_type="action_item_overload",
                 severity="medium",
                 title=f"Action item overload — {rd['name']}",
-                description=f"{rd['total_actions']} action items from calls in the last 14 days",
+                description=description,
                 suggested_action=f"Review and prioritize action items for {rd['name']} — risk of items falling through cracks",
                 status="open",
             )
@@ -801,55 +926,175 @@ def _detect_call_patterns(db) -> list[dict]:
 
     if patterns:
         db.commit()
-        logger.info(f"Pattern detection: found {len(patterns)} patterns — {patterns}")
+        logger.info(f"Pattern detection: created {len(patterns)} NEW alerts — {patterns}")
     else:
-        logger.info("Pattern detection: no new patterns found")
+        logger.info("Pattern detection: no NEW patterns (existing open alerts may have suppressed duplicates — check logs above)")
 
     return patterns
 
 
 @celery_app.task(name="run_health_check_all", bind=True)
 def run_health_check_all(self) -> dict:
-    """Run health check for all customers."""
+    """Run daily health check for all customers.
+
+    For each customer: runs 5 deterministic health checks + Claude narrative,
+    saves score, creates drafts for at-risk customers, sends threshold alerts,
+    runs alert rules engine, and posts daily digest to Slack.
+    """
+    from collections import Counter
+
     from app.agents.agent_factory import AgentFactory
     from app.agents.memory_agent import CustomerMemoryAgent
+    from app.config import settings
     from app.database import get_sync_session
     from app.models.customer import Customer
 
     db = get_sync_session()
     try:
         customers = db.query(Customer).all()
+        if not customers:
+            logger.info("[HealthCheck] No customers found — skipping")
+            return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
+
         memory_agent = CustomerMemoryAgent()
         results = []
+        all_flags: list[str] = []
+
         for customer in customers:
-            event = {
-                "event_type": "daily_health_check",
-                "source": "celery_cron",
-                "customer_id": customer.id,
-                "payload": {},
-            }
-            # Direct routing to health_monitor
-            customer_memory = memory_agent.build_memory(db, customer.id)
-            specialist = AgentFactory.create("health_monitor")
-            result = specialist.run(db, event, customer_memory)
+            try:
+                event = {
+                    "event_type": "daily_health_check",
+                    "source": "cron",
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "payload": {},
+                }
 
-            # Save score if successful
-            if result.get("success"):
-                agent = AgentFactory.create("health_monitor")
-                if hasattr(agent, "save_score"):
-                    agent.save_score(db, customer.id, result)
+                customer_memory = memory_agent.build_memory(db, customer.id)
+                specialist = AgentFactory.create("health_monitor")
+                result = specialist.run(db, event, customer_memory)
 
-            results.append({
-                "customer_id": str(customer.id),
-                "customer_name": customer.name,
-                "success": result.get("success", False),
-            })
+                output = result.get("output", {})
+                if not isinstance(output, dict):
+                    output = {}
 
+                success = result.get("success", False)
+                risk_level = output.get("risk_level", "unknown")
+                score = output.get("score", output.get("health_score"))
+                risk_flags = output.get("risk_flags", [])
+
+                # Save health score to DB
+                if success and hasattr(specialist, "save_score"):
+                    specialist.save_score(db, customer.id, result)
+
+                # Threshold alert to #cs-executive-urgent for high_risk/critical
+                if success and risk_level in ("high_risk", "critical"):
+                    try:
+                        from app.services.slack_service import slack_service
+                        if slack_service.configured:
+                            flags_str = ", ".join(risk_flags) or "None"
+                            slack_service.send_message(
+                                channel=settings.SLACK_CH_EXEC_URGENT,
+                                text=(
+                                    f":rotating_light: *Health Alert — {customer.name}*\n"
+                                    f"Score: {score}/100 | Risk: {risk_level}\n"
+                                    f"Flags: {flags_str}\n"
+                                    f"Summary: {output.get('summary', 'N/A')[:300]}"
+                                ),
+                            )
+                    except Exception as e:
+                        logger.warning(f"[HealthCheck] Urgent alert failed for {customer.name}: {e}")
+
+                all_flags.extend(risk_flags)
+                results.append({
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "success": success,
+                    "score": score,
+                    "risk_level": risk_level,
+                    "risk_flags": risk_flags,
+                })
+            except Exception as e:
+                logger.warning(f"[HealthCheck] Failed for {customer.name}: {e}")
+                results.append({
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.name,
+                    "success": False,
+                    "score": None,
+                    "risk_level": "unknown",
+                    "risk_flags": [],
+                })
+
+        # Cross-customer pattern detection: 5+ customers with same flag → executive urgent
+        flag_counts = Counter(all_flags)
+        threshold_alerts = []
+        for flag, count in flag_counts.items():
+            if count >= 5:
+                threshold_alerts.append({"type": "issue_cluster", "issue": flag, "affected_count": count})
+                try:
+                    from app.services.slack_service import slack_service
+                    if slack_service.configured:
+                        slack_service.send_message(
+                            channel=settings.SLACK_CH_EXEC_URGENT,
+                            text=(
+                                f":warning: *Cross-Customer Pattern Detected*\n"
+                                f"Issue: `{flag}` affecting {count} customers\n"
+                                f"This exceeds the 5-customer threshold — requires executive attention."
+                            ),
+                        )
+                except Exception:
+                    pass
+
+        # Run alert rules engine (health_drop_15, stale tickets, renewal risk, sentiment)
+        try:
+            from app.services.alert_rules_engine import alert_rules_engine
+            alert_stats = alert_rules_engine.evaluate_all(db)
+            logger.info(f"[HealthCheck] Alert rules: {alert_stats.get('alerts_created', 0)} alerts created")
+        except Exception as e:
+            logger.warning(f"[HealthCheck] Alert rules failed (non-fatal): {e}")
+
+        # Post daily digest to #cs-health-alerts
         succeeded = sum(1 for r in results if r["success"])
+        at_risk = [r for r in results if r.get("risk_level") in ("watch", "high_risk", "critical")]
+        try:
+            from app.services.slack_service import slack_service
+            if slack_service.configured:
+                digest = (
+                    f":chart_with_upwards_trend: *Health Check Complete*\n"
+                    f"Customers scored: {succeeded}/{len(results)}\n"
+                    f"At-risk: {len(at_risk)}"
+                )
+                if at_risk:
+                    digest += "\n\n*At-Risk Customers:*\n"
+                    for r in sorted(at_risk, key=lambda x: x.get("score") or 999):
+                        digest += (
+                            f"- *{r['customer_name']}* — "
+                            f"Score: {r.get('score', '?')}/100, "
+                            f"Risk: {r.get('risk_level', '?')}\n"
+                        )
+                if threshold_alerts:
+                    digest += "\n*Threshold Alerts:*\n"
+                    for ta in threshold_alerts:
+                        digest += f"- `{ta['issue']}` affecting {ta['affected_count']} customers\n"
+
+                slack_service.send_message(
+                    channel=settings.SLACK_CH_HEALTH_ALERTS,
+                    text=digest,
+                )
+        except Exception as e:
+            logger.warning(f"[HealthCheck] Digest post failed (non-fatal): {e}")
+
+        logger.info(
+            f"[HealthCheck] Done: {succeeded}/{len(results)} succeeded, "
+            f"{len(at_risk)} at-risk, {len(threshold_alerts)} threshold alerts"
+        )
+
         return {
             "total": len(results),
             "succeeded": succeeded,
             "failed": len(results) - succeeded,
+            "at_risk": len(at_risk),
+            "threshold_alerts": threshold_alerts,
             "results": results,
         }
     finally:

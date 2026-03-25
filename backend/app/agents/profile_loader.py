@@ -137,10 +137,10 @@ class ProfileLoader:
         """Get the pipeline config for a specific tier."""
         pipelines = (self._pipeline_config or {}).get("pipelines", {})
         tier_map = {
-            1: "tier_1_supervisor",
-            2: "tier_2_lane_lead",
-            3: "tier_3_specialist",
-            4: "tier_4_foundation",
+            1: "orchestrator",
+            2: "specialist",
+            3: "specialist",
+            4: "foundation",
         }
         key = tier_map.get(tier)
         return pipelines.get(key) if key else None

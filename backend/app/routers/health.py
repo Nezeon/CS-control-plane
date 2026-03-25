@@ -1,5 +1,8 @@
+import logging
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger("routers.health")
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import cast, Date, func, select
@@ -121,25 +124,23 @@ async def get_at_risk(
 async def run_health_check(
     current_user: User = Depends(get_current_user),
 ):
-    """Run health check for all customers. Dispatches via Celery if available."""
+    """Run health check for all customers. Always fires in a background thread."""
+    import threading
+    from app.tasks.agent_tasks import run_health_check_all
+
     task_id = str(uuid_mod.uuid4())
-    try:
-        from app.tasks.agent_tasks import _is_celery_available, run_health_check_all
 
-        if _is_celery_available():
-            result = run_health_check_all.apply_async(task_id=task_id)
-            return RunCheckResponse(
-                task_id=result.id,
-                message="Health check dispatched via Celery for all customers",
-                status="processing",
-            )
-    except Exception:
-        pass
+    def _run_health_check_bg():
+        try:
+            run_health_check_all.apply().get()
+        except Exception as e:
+            logger.error(f"Background health check failed: {e}")
 
-    # Fallback: return 202 with mock task_id (Celery unavailable)
+    threading.Thread(target=_run_health_check_bg, daemon=True).start()
+
     return RunCheckResponse(
         task_id=task_id,
-        message="Health check initiated for all customers (Celery unavailable - run manually)",
+        message="Health check running in background",
         status="processing",
     )
 

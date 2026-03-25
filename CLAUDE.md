@@ -72,7 +72,7 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 | 6 | **Ticket Triage** | Run / Support | Classifies Jira UCSC tickets: category, severity (P0-P3), diagnostics, duplicates, email draft. |
 | 7 | **Troubleshooting** | Run / Support | Analyzes support bundles, finds root cause with confidence score. If < 70% → routes to Escalation. |
 | 8 | **Escalation Writer** | Run / Support | Compiles escalation doc: customer context, technical summary, evidence, repro steps, timeline. |
-| 9 | **Health Monitor** | Value | Daily health checks on all customers: scan freshness, connectors, license, job failures, SLA. |
+| 9 | **Health Monitor** | Value | Daily health checks on all customers: ticket severity, call sentiment, renewal proximity, health trends, open alerts. |
 | 10 | **QBR / Value Narrative** | Value | Quarterly business reviews: sentiment bucketing (Happy/Neutral/Unhappy), root cause analysis, renewal recs. |
 
 **Lane structure:**

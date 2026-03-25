@@ -34,9 +34,5 @@ celery_app.conf.update(
             "schedule": 3600.0 * 6,  # Every 6 hours
             "args": [7],  # Sync last 7 days
         },
-        "daily-health-check": {
-            "task": "run_health_check_all",
-            "schedule": 3600.0 * 24,  # Daily
-        },
     },
 )

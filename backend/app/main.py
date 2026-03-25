@@ -150,8 +150,8 @@ async def lifespan(app: FastAPI):
 
     # Health Monitor: every 3 days at 8:30 AM (after Jira sync at 8:00 AM)
     try:
-        import pytz
-        tz = pytz.timezone(settings.SYNC_TIMEZONE)
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(settings.SYNC_TIMEZONE)
         now_local = datetime.now(tz)
         first_run = now_local.replace(hour=8, minute=30, second=0, microsecond=0)
         if first_run <= now_local:
@@ -174,7 +174,7 @@ async def lifespan(app: FastAPI):
 def _backfill_rag_embeddings():
     """Re-embed call insights and tickets from PostgreSQL into ChromaDB RAG collections."""
     from app.database import get_sync_session
-    from app.services.rag_service import rag_service
+    from app.services import rag_service
 
     db = get_sync_session()
     try:

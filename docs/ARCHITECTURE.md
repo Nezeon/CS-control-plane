@@ -771,20 +771,20 @@ Every agent reads this before executing and writes results back after completing
 
 **Checklist:**
 
-- [ ] Ticket severity load checker (open P0/P1 age)
-- [ ] Call sentiment trend checker (Fathom)
-- [ ] Renewal proximity checker
-- [ ] Historical health trend checker (score drop detection)
-- [ ] Open alert load checker
-- [ ] Health score calculator (weighted formula)
-- [ ] Risk flag detector
-- [ ] Cross-customer pattern detection (5+ same issue = urgent)
-- [ ] Proactive Jira ticket drafter
-- [ ] Customer Memory update (health_score, risk_flags)
-- [ ] Daily cron trigger (8 AM)
-- [ ] Slack card to #cs-health-alerts
-- [ ] Threshold alerts to #cs-executive-urgent
-- [ ] Dashboard deep-link to At-Risk Dashboard
+- [x] Ticket severity load checker (open P0/P1 age)
+- [x] Call sentiment trend checker (Fathom)
+- [x] Renewal proximity checker
+- [x] Historical health trend checker (score drop detection)
+- [x] Open alert load checker
+- [x] Health score calculator (weighted formula)
+- [x] Risk flag detector
+- [x] Cross-customer pattern detection (5+ same issue = urgent)
+- [x] Proactive Jira ticket drafter
+- [x] Customer Memory update (health_score, risk_flags)
+- [x] Daily cron trigger (8 AM)
+- [x] Slack card to #cs-health-alerts
+- [x] Threshold alerts to #cs-executive-urgent
+- [x] Dashboard deep-link to At-Risk Dashboard
 
 ---
 

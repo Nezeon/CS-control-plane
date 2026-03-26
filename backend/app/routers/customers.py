@@ -107,6 +107,7 @@ async def list_customers(
         .outerjoin(latest_health, Customer.id == latest_health.c.customer_id)
         .outerjoin(open_tickets, Customer.id == open_tickets.c.customer_id)
         .outerjoin(last_call, Customer.id == last_call.c.customer_id)
+        .where(Customer.is_active == True)
     )
 
     # Count query (before pagination)
@@ -114,6 +115,7 @@ async def list_customers(
         select(func.count())
         .select_from(Customer)
         .outerjoin(latest_health, Customer.id == latest_health.c.customer_id)
+        .where(Customer.is_active == True)
     )
 
     # Filters

@@ -42,6 +42,7 @@ ALERT_RULES = [
             JOIN latest l ON l.customer_id = c.id
             JOIN week_ago w ON w.customer_id = c.id
             WHERE (w.score - l.score) > 15
+              AND c.is_active = true
         """,
         "detail_template": "Health dropped from {old_score} to {new_score} ({drop_amount} point decline in 7 days)",
         "action_template": "Schedule an urgent check-in call with {name} to identify root causes",
@@ -60,6 +61,7 @@ ALERT_RULES = [
             WHERE t.severity IN ('P0', 'critical')
               AND t.status NOT IN ('resolved', 'closed')
               AND t.created_at < NOW() - INTERVAL '7 days'
+              AND c.is_active = true
         """,
         "detail_template": "P0 ticket \"{summary}\" open for {days_open} days",
         "action_template": "Escalate {name}'s P0 ticket immediately — aging beyond threshold",
@@ -78,6 +80,7 @@ ALERT_RULES = [
             WHERE t.severity = 'P1'
               AND t.status NOT IN ('resolved', 'closed')
               AND t.created_at < NOW() - INTERVAL '10 days'
+              AND c.is_active = true
         """,
         "detail_template": "P1 ticket \"{summary}\" open for {days_open} days",
         "action_template": "Escalate {name}'s P1 ticket — aging beyond threshold",
@@ -96,6 +99,7 @@ ALERT_RULES = [
             ) h ON true
             WHERE c.renewal_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '60 days'
               AND h.risk_level IN ('high_risk', 'critical')
+              AND c.is_active = true
         """,
         "detail_template": "Renewal on {renewal_date} with health score {score} ({risk_level})",
         "action_template": "Initiate executive sponsor engagement for {name} before renewal",
@@ -112,6 +116,7 @@ ALERT_RULES = [
                 FROM call_insights ci
                 JOIN customers c ON ci.customer_id = c.id
                 WHERE ci.sentiment IS NOT NULL
+                  AND c.is_active = true
             )
             SELECT customer_id, name, COUNT(*) AS streak
             FROM ranked

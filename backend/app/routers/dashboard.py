@@ -51,35 +51,44 @@ async def get_dashboard_stats(
     now = datetime.now(timezone.utc)
     seven_days_ago = now - timedelta(days=7)
 
-    # Total customers
-    total_result = await db.execute(select(func.count()).select_from(Customer))
+    # Total customers (active only)
+    total_result = await db.execute(
+        select(func.count()).select_from(Customer).where(Customer.is_active == True)
+    )
     total_customers = total_result.scalar() or 0
 
     # Latest health per customer
     latest = _latest_health_subquery()
 
-    # At-risk count (current)
+    # At-risk count (current, active customers only)
     risk_result = await db.execute(
         select(func.count())
         .select_from(latest)
+        .join(Customer, Customer.id == latest.c.customer_id)
         .where(latest.c.risk_level.in_(["high_risk", "critical"]))
+        .where(Customer.is_active == True)
     )
     at_risk_count = risk_result.scalar() or 0
 
-    # Open P0/P1 tickets (current)
+    # Open P0/P1 tickets (current, active customers only)
     open_result = await db.execute(
         select(func.count())
         .select_from(Ticket)
+        .join(Customer, Ticket.customer_id == Customer.id)
         .where(
             Ticket.status.notin_(["resolved", "closed"]),
             Ticket.severity.in_(["P0", "P1"]),
+            Customer.is_active == True,
         )
     )
     open_tickets = open_result.scalar() or 0
 
-    # Avg health score (current)
+    # Avg health score (current, active customers only)
     avg_result = await db.execute(
-        select(func.avg(latest.c.score)).select_from(latest)
+        select(func.avg(latest.c.score))
+        .select_from(latest)
+        .join(Customer, Customer.id == latest.c.customer_id)
+        .where(Customer.is_active == True)
     )
     avg_raw = avg_result.scalar()
     avg_health_score = round(float(avg_raw), 1) if avg_raw is not None else None
@@ -89,41 +98,49 @@ async def get_dashboard_stats(
         select(func.count())
         .select_from(Customer)
         .where(Customer.created_at <= seven_days_ago)
+        .where(Customer.is_active == True)
     )
     old_customers = old_cust_result.scalar() or 0
     customers_change = total_customers - old_customers
 
-    # Open P0/P1 tickets 7 days ago
+    # Open P0/P1 tickets 7 days ago (active customers only)
     old_tickets_result = await db.execute(
         select(func.count())
         .select_from(Ticket)
+        .join(Customer, Ticket.customer_id == Customer.id)
         .where(
             Ticket.created_at <= seven_days_ago,
             Ticket.status.notin_(["resolved", "closed"]),
             Ticket.severity.in_(["P0", "P1"]),
+            Customer.is_active == True,
         )
     )
     old_open_tickets = old_tickets_result.scalar() or 0
     tickets_change = open_tickets - old_open_tickets
 
-    # Health 7 days ago
+    # Health 7 days ago (active customers only)
     old_health_result = await db.execute(
         select(func.avg(HealthScore.score))
+        .join(Customer, Customer.id == HealthScore.customer_id)
         .where(
             cast(HealthScore.calculated_at, Date)
-            == cast(seven_days_ago, Date)
+            == cast(seven_days_ago, Date),
+            Customer.is_active == True,
         )
     )
     old_avg = old_health_result.scalar()
     health_change = round(float(avg_raw) - float(old_avg), 1) if avg_raw and old_avg else 0.0
 
-    # Risk 7 days ago
+    # Risk 7 days ago (active customers only)
     old_risk_result = await db.execute(
         select(func.count())
+        .select_from(HealthScore)
+        .join(Customer, Customer.id == HealthScore.customer_id)
         .where(
             HealthScore.risk_level.in_(["high_risk", "critical"]),
             cast(HealthScore.calculated_at, Date)
             == cast(seven_days_ago, Date),
+            Customer.is_active == True,
         )
     )
     old_risk = old_risk_result.scalar() or 0
@@ -284,6 +301,7 @@ async def get_quick_health(
         )
         .outerjoin(latest, Customer.id == latest.c.customer_id)
         .outerjoin(open_tickets, Customer.id == open_tickets.c.customer_id)
+        .where(Customer.is_active == True)
         .order_by(
             case(
                 (latest.c.risk_level == "critical", 0),

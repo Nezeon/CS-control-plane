@@ -20,6 +20,7 @@ class Customer(Base):
     primary_contact_email = sa.Column(sa.String(255), nullable=True)
     cs_owner_id = sa.Column(sa.Uuid, sa.ForeignKey("users.id"), nullable=True)
     jira_project_key = sa.Column(sa.String(20), nullable=True)  # e.g. "CS", "ACME"
+    is_active = sa.Column(sa.Boolean, server_default=sa.text("true"), nullable=False)
     deployment_mode = sa.Column(sa.String(50), server_default="OVA")
     product_version = sa.Column(sa.String(50), nullable=True)
     integrations = sa.Column(JSONB, server_default=sa.text("'[]'::jsonb"))
@@ -45,4 +46,5 @@ class Customer(Base):
         sa.Index("idx_customers_cs_owner", "cs_owner_id"),
         sa.Index("idx_customers_tier", "tier"),
         sa.Index("idx_customers_renewal", "renewal_date"),
+        sa.Index("idx_customers_is_active", "is_active"),
     )

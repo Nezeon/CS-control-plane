@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     DEMO_MODE: bool = True
 
     # Jira (Atlassian Cloud)
-    JIRA_API_URL: str = "https://hivepro.atlassian.net"
+    JIRA_API_URL: str = "https://hivepro-kronos.atlassian.net"
     JIRA_EMAIL: str = ""
     JIRA_API_TOKEN: str = ""
     JIRA_WEBHOOK_SECRET: str = ""
@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     SLACK_CH_PRESALES: str = "#cs-presales-funnel"
     SLACK_CH_EXEC_DIGEST: str = "#cs-executive-digest"
     SLACK_CH_EXEC_URGENT: str = "#cs-executive-urgent"
+
+    # HubSpot (future integration)
+    HUBSPOT_WEBHOOK_SECRET: str = ""
 
     # Dashboard base URL for deep-links in Slack cards
     DASHBOARD_BASE_URL: str = "https://cs-control-plane-ggtt6b4vn-nezeons-projects.vercel.app"

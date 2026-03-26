@@ -22,14 +22,22 @@ SEVERITY_COLORS = {
 
 # Human-readable alert type names for Slack cards
 ALERT_TYPE_LABELS = {
-    "action_item_overload": "Too Many Action Items",
     "call_sentiment_pattern": "Negative Call Sentiment",
-    "recurring_topic_pattern": "Recurring Problem Topic",
     "health_drop_15": "Health Score Drop",
     "critical_tickets_stale": "Stale Critical Tickets",
     "renewal_at_risk": "Renewal At Risk",
     "negative_sentiment_streak": "Negative Sentiment Streak",
 }
+
+
+def _build_jira_url(base_url: str, jira_id: str) -> str:
+    """Build a Jira issue URL with project-scoped JQL view."""
+    project_key = jira_id.split("-")[0] if "-" in jira_id else jira_id
+    return (
+        f"{base_url}/jira/software/c/projects/{project_key}/issues"
+        f"?jql=project%20%3D%20{project_key}%20ORDER%20BY%20created%20DESC"
+        f"&selectedIssue={jira_id}"
+    )
 
 
 def _text_to_section_blocks(text: str, label: str | None = None) -> list[dict]:
@@ -411,7 +419,8 @@ class SlackService:
         if dashboard_url or (jira_id and jira_base_url):
             link_parts = []
             if jira_id and jira_base_url:
-                link_parts.append(f":link: *Jira:* <{jira_base_url}/browse/{jira_id}|{jira_id}>")
+                jira_url = _build_jira_url(jira_base_url, jira_id)
+                link_parts.append(f":link: *Jira:* <{jira_url}|{jira_id}>")
             if dashboard_url:
                 link_parts.append(f":bar_chart: *Dashboard:* <{dashboard_url}|View in Dashboard>")
             link_text = "  |  ".join(link_parts) if link_parts else "View in dashboard"

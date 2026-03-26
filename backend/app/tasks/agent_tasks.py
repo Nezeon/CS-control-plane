@@ -719,8 +719,6 @@ def _detect_call_patterns(db) -> list[dict]:
 
     Patterns checked:
       1. Repeated negative sentiment (same customer, 2+ in 14 days)
-      2. Recurring problem topics across 3+ meetings
-      3. Action item overload (5+ items from recent calls for one customer)
     """
     from sqlalchemy import text
     from app.models.alert import Alert
@@ -736,6 +734,7 @@ def _detect_call_patterns(db) -> list[dict]:
             WHERE ci.processed_at > NOW() - INTERVAL '14 days'
               AND ci.sentiment IN ('negative', 'mixed')
               AND ci.fathom_recording_id IS NOT NULL
+              AND c.is_active = true
             GROUP BY ci.customer_id, c.name
             HAVING COUNT(*) >= 2
         """)).fetchall()
@@ -801,202 +800,6 @@ def _detect_call_patterns(db) -> list[dict]:
     except Exception as e:
         logger.warning(f"Pattern detection (negative sentiment) failed: {e}")
 
-    # ── Pattern 2: Recurring topics across multiple meetings ────────
-    try:
-        rows = db.execute(text("""
-            SELECT ci.key_topics, ci.customer_id, c.name
-            FROM call_insights ci
-            LEFT JOIN customers c ON ci.customer_id = c.id
-            WHERE ci.processed_at > NOW() - INTERVAL '14 days'
-              AND ci.key_topics IS NOT NULL
-              AND ci.fathom_recording_id IS NOT NULL
-        """)).fetchall()
-
-        topic_counts: dict[str, list[str]] = {}  # topic -> list of customer names
-        for row in rows:
-            rd = dict(row._mapping)
-            topics = rd.get("key_topics", [])
-            if isinstance(topics, str):
-                try:
-                    topics = json.loads(topics)
-                except Exception:
-                    topics = []
-            cname = rd.get("name", "Unknown")
-            for topic in (topics or []):
-                t = str(topic).lower().strip()
-                if t:
-                    topic_counts.setdefault(t, []).append(cname)
-
-        problem_keywords = {
-            # Original terms
-            "issue", "bug", "problem", "outage", "escalation", "blocker",
-            "error", "failure", "delay",
-            # Expanded: terms Claude actually uses in topic descriptions
-            "concern", "risk", "challenge", "complaint", "frustration",
-            "gap", "misconfiguration", "vulnerability", "breach", "incident",
-            "downtime", "regression", "degradation", "timeout", "latency",
-            "blocker", "limitation", "workaround", "patch", "hotfix",
-        }
-        # Track customer_ids for each topic to create per-customer alerts
-        topic_customer_ids: dict[str, set] = {}
-        for row in rows:
-            rd = dict(row._mapping)
-            topics = rd.get("key_topics", [])
-            if isinstance(topics, str):
-                try:
-                    topics = json.loads(topics)
-                except Exception:
-                    topics = []
-            cid = rd.get("customer_id")
-            for topic in (topics or []):
-                t = str(topic).lower().strip()
-                if t and cid:
-                    topic_customer_ids.setdefault(t, set()).add(cid)
-
-        topics_3plus = {t: c for t, c in topic_counts.items() if len(c) >= 3}
-        topics_matched = {t: c for t, c in topics_3plus.items() if any(kw in t for kw in problem_keywords)}
-        logger.info(
-            f"Pattern 2 (recurring topics): {len(rows)} calls with topics, "
-            f"{len(topic_counts)} unique topics, {len(topics_3plus)} with 3+ occurrences, "
-            f"{len(topics_matched)} matched problem keywords"
-        )
-
-        for topic, customers_list in topic_counts.items():
-            if len(customers_list) < 3:
-                continue
-            # Only alert for problem-related topics
-            if not any(kw in topic for kw in problem_keywords):
-                continue
-
-            unique_customers = list(set(customers_list))
-            customer_ids_for_topic = topic_customer_ids.get(topic, set())
-
-            # Create one alert per affected customer (customer_id is NOT NULL)
-            alert_created = False
-            for cid in customer_ids_for_topic:
-                existing = db.query(Alert).filter_by(
-                    customer_id=cid,
-                    alert_type="recurring_topic_pattern",
-                    status="open",
-                ).filter(Alert.description.ilike(f"%{topic}%")).first()
-                if existing:
-                    continue
-
-                alert = Alert(
-                    id=uuid.uuid4(),
-                    customer_id=cid,
-                    alert_type="recurring_topic_pattern",
-                    severity="medium",
-                    title=f"Recurring problem topic across calls: {topic}",
-                    description=f"Topic '{topic}' appeared in {len(customers_list)} calls across customers: {', '.join(unique_customers[:5])}",
-                    suggested_action=f"Investigate root cause of '{topic}' — affecting multiple customers",
-                    status="open",
-                )
-                db.add(alert)
-                alert_created = True
-
-                try:
-                    from app.services.slack_service import slack_service
-                    if slack_service.configured:
-                        db.flush()
-                        db.refresh(alert)
-                        slack_service.send_alert(alert)
-                        alert.slack_notified = True
-                except Exception:
-                    pass
-
-            if alert_created:
-                patterns.append({"type": "recurring_topic", "topic": topic, "count": len(customers_list)})
-    except Exception as e:
-        logger.warning(f"Pattern detection (recurring topics) failed: {e}")
-
-    # ── Pattern 3: Action item overload ─────────────────────────────
-    try:
-        rows = db.execute(text("""
-            SELECT ci.customer_id, c.name,
-                   SUM(jsonb_array_length(COALESCE(ci.action_items, '[]'::jsonb))) AS total_actions
-            FROM call_insights ci
-            JOIN customers c ON ci.customer_id = c.id
-            WHERE ci.processed_at > NOW() - INTERVAL '14 days'
-              AND ci.fathom_recording_id IS NOT NULL
-            GROUP BY ci.customer_id, c.name
-            HAVING SUM(jsonb_array_length(COALESCE(ci.action_items, '[]'::jsonb))) >= 5
-        """)).fetchall()
-        logger.info(f"Pattern 3 (action overload): {len(rows)} customers with 5+ action items")
-
-        for row in rows:
-            rd = dict(row._mapping)
-            existing = db.query(Alert).filter_by(
-                customer_id=rd["customer_id"],
-                alert_type="action_item_overload",
-                status="open",
-            ).first()
-            if existing:
-                logger.info(f"Pattern 3: skipped {rd['name']} — open alert already exists")
-                continue
-
-            # Fetch per-call breakdown + top action items
-            detail_rows = db.execute(text("""
-                SELECT ci.call_date,
-                       jsonb_array_length(COALESCE(ci.action_items, '[]'::jsonb)) AS item_count,
-                       ci.action_items
-                FROM call_insights ci
-                WHERE ci.customer_id = CAST(:cid AS uuid)
-                  AND ci.processed_at > NOW() - INTERVAL '14 days'
-                  AND ci.fathom_recording_id IS NOT NULL
-                ORDER BY ci.call_date DESC LIMIT 5
-            """), {"cid": str(rd["customer_id"])}).fetchall()
-
-            call_lines = []
-            top_items = []
-            for dr in detail_rows:
-                d = dict(dr._mapping)
-                date_str = d["call_date"].strftime("%b %d") if d.get("call_date") else "Unknown"
-                call_lines.append(f"  • {date_str} — {d['item_count']} action items")
-                # Collect top action item tasks
-                items = d.get("action_items") or []
-                if isinstance(items, str):
-                    try:
-                        items = json.loads(items)
-                    except Exception:
-                        items = []
-                for item in items[:3]:
-                    task = item.get("task", str(item)) if isinstance(item, dict) else str(item)
-                    if task and len(top_items) < 5:
-                        top_items.append(task)
-
-            num_calls = len(detail_rows)
-            description = f"{rd['total_actions']} action items across {num_calls} recent call{'s' if num_calls != 1 else ''}"
-            if call_lines:
-                description += ":\n" + "\n".join(call_lines)
-            if top_items:
-                description += "\n\nTop items: " + "; ".join(top_items[:5])
-
-            alert = Alert(
-                id=uuid.uuid4(),
-                customer_id=rd["customer_id"],
-                alert_type="action_item_overload",
-                severity="medium",
-                title=f"Action item overload — {rd['name']}",
-                description=description,
-                suggested_action=f"Review and prioritize action items for {rd['name']} — risk of items falling through cracks",
-                status="open",
-            )
-            db.add(alert)
-            patterns.append({"type": "action_overload", "customer": rd["name"], "count": rd["total_actions"]})
-
-            try:
-                from app.services.slack_service import slack_service
-                if slack_service.configured:
-                    db.flush()
-                    db.refresh(alert)
-                    slack_service.send_alert(alert)
-                    alert.slack_notified = True
-            except Exception:
-                pass
-    except Exception as e:
-        logger.warning(f"Pattern detection (action overload) failed: {e}")
-
     if patterns:
         db.commit()
         logger.info(f"Pattern detection: created {len(patterns)} NEW alerts — {patterns}")
@@ -1022,81 +825,100 @@ def run_health_check_all(self) -> dict:
     from app.database import get_sync_session
     from app.models.customer import Customer
 
-    db = get_sync_session()
+    # Load customer list with a short-lived session to avoid Neon idle timeout
+    init_db = get_sync_session()
     try:
-        customers = db.query(Customer).all()
-        if not customers:
-            logger.info("[HealthCheck] No customers found — skipping")
-            return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
+        customers_data = [
+            (str(c.id), c.name)
+            for c in init_db.query(Customer).filter(Customer.is_active == True).all()
+        ]
+    finally:
+        init_db.close()
 
-        memory_agent = CustomerMemoryAgent()
-        results = []
-        all_flags: list[str] = []
+    if not customers_data:
+        logger.info("[HealthCheck] No active customers found — skipping")
+        return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
 
-        for customer in customers:
-            try:
-                event = {
-                    "event_type": "daily_health_check",
-                    "source": "cron",
-                    "customer_id": str(customer.id),
-                    "customer_name": customer.name,
-                    "payload": {},
-                }
+    memory_agent = CustomerMemoryAgent()
+    results = []
+    all_flags: list[str] = []
 
-                customer_memory = memory_agent.build_memory(db, customer.id)
-                specialist = AgentFactory.create("health_monitor")
-                result = specialist.run(db, event, customer_memory)
+    for i, (cust_id, cust_name) in enumerate(customers_data):
+        # Fresh DB session per customer to prevent Neon timeout
+        db = get_sync_session()
+        try:
+            event = {
+                "event_type": "daily_health_check",
+                "source": "cron",
+                "customer_id": cust_id,
+                "customer_name": cust_name,
+                "payload": {},
+            }
 
-                output = result.get("output", {})
-                if not isinstance(output, dict):
-                    output = {}
+            customer_memory = memory_agent.build_memory(db, cust_id)
+            specialist = AgentFactory.create("health_monitor")
+            result = specialist.run(db, event, customer_memory)
 
-                success = result.get("success", False)
-                risk_level = output.get("risk_level", "unknown")
-                score = output.get("score", output.get("health_score"))
-                risk_flags = output.get("risk_flags", [])
+            output = result.get("output", {})
+            if not isinstance(output, dict):
+                output = {}
 
-                # Save health score to DB
-                if success and hasattr(specialist, "save_score"):
-                    specialist.save_score(db, customer.id, result)
+            success = result.get("success", False)
+            risk_level = output.get("risk_level", "unknown")
+            score = output.get("score", output.get("health_score"))
+            risk_flags = output.get("risk_flags", [])
 
-                # Threshold alert to #cs-executive-urgent for high_risk/critical
-                if success and risk_level in ("high_risk", "critical"):
-                    try:
-                        from app.services.slack_service import slack_service
-                        if slack_service.configured:
-                            flags_str = ", ".join(risk_flags) or "None"
-                            slack_service.send_message(
-                                channel=settings.SLACK_CH_EXEC_URGENT,
-                                text=(
-                                    f":rotating_light: *Health Alert — {customer.name}*\n"
-                                    f"Score: {score}/100 | Risk: {risk_level}\n"
-                                    f"Flags: {flags_str}\n"
-                                    f"Summary: {output.get('summary', 'N/A')[:300]}"
-                                ),
-                            )
-                    except Exception as e:
-                        logger.warning(f"[HealthCheck] Urgent alert failed for {customer.name}: {e}")
+            # Save health score to DB
+            if success and hasattr(specialist, "save_score"):
+                specialist.save_score(db, cust_id, result)
 
-                all_flags.extend(risk_flags)
-                results.append({
-                    "customer_id": str(customer.id),
-                    "customer_name": customer.name,
-                    "success": success,
-                    "score": score,
-                    "risk_level": risk_level,
-                    "risk_flags": risk_flags,
-                })
-            except Exception as e:
-                logger.warning(f"[HealthCheck] Failed for {customer.name}: {e}")
-                results.append({
-                    "customer_id": str(customer.id),
-                    "customer_name": customer.name,
-                    "success": False,
-                    "score": None,
-                    "risk_level": "unknown",
-                    "risk_flags": [],
-                })
+            db.commit()
+
+            # Threshold alert to #cs-executive-urgent for high_risk/critical
+            if success and risk_level in ("high_risk", "critical"):
+                try:
+                    from app.services.slack_service import slack_service
+                    if slack_service.configured:
+                        flags_str = ", ".join(risk_flags) or "None"
+                        # Truncate summary at last sentence within 500 chars
+                        raw_summary = output.get("summary", "N/A")
+                        if len(raw_summary) > 500:
+                            cut = raw_summary[:500].rfind(".")
+                            raw_summary = raw_summary[: cut + 1] if cut > 100 else raw_summary[:500] + "…"
+                        slack_service.send_message(
+                            channel=settings.SLACK_CH_EXEC_URGENT,
+                            text=(
+                                f":rotating_light: *Health Alert — {cust_name}*\n"
+                                f"Score: {score}/100 | Risk: {risk_level}\n"
+                                f"Flags: {flags_str}\n"
+                                f"Summary: {raw_summary}"
+                            ),
+                        )
+                except Exception as e:
+                    logger.warning(f"[HealthCheck] Urgent alert failed for {cust_name}: {e}")
+
+            all_flags.extend(risk_flags)
+            results.append({
+                "customer_id": cust_id,
+                "customer_name": cust_name,
+                "success": success,
+                "score": score,
+                "risk_level": risk_level,
+                "risk_flags": risk_flags,
+            })
+            logger.info(f"[HealthCheck] {i+1}/{len(customers_data)} {cust_name}: score={score}, risk={risk_level}")
+        except Exception as e:
+            logger.warning(f"[HealthCheck] Failed for {cust_name}: {e}")
+            results.append({
+                "customer_id": cust_id,
+                "customer_name": cust_name,
+                "success": False,
+                "score": None,
+                "risk_level": "unknown",
+                "risk_flags": [],
+            })
+        finally:
+            db.close()
 
         # Cross-customer pattern detection: 5+ customers with same flag → executive urgent
         flag_counts = Counter(all_flags)
@@ -1118,57 +940,58 @@ def run_health_check_all(self) -> dict:
                 except Exception:
                     pass
 
-        # Run alert rules engine (health_drop_15, stale tickets, renewal risk, sentiment)
-        try:
-            from app.services.alert_rules_engine import alert_rules_engine
-            alert_stats = alert_rules_engine.evaluate_all(db)
-            logger.info(f"[HealthCheck] Alert rules: {alert_stats.get('alerts_created', 0)} alerts created")
-        except Exception as e:
-            logger.warning(f"[HealthCheck] Alert rules failed (non-fatal): {e}")
-
-        # Post daily digest to #cs-health-alerts
-        succeeded = sum(1 for r in results if r["success"])
-        at_risk = [r for r in results if r.get("risk_level") in ("watch", "high_risk", "critical")]
-        try:
-            from app.services.slack_service import slack_service
-            if slack_service.configured:
-                digest = (
-                    f":chart_with_upwards_trend: *Health Check Complete*\n"
-                    f"Customers scored: {succeeded}/{len(results)}\n"
-                    f"At-risk: {len(at_risk)}"
-                )
-                if at_risk:
-                    digest += "\n\n*At-Risk Customers:*\n"
-                    for r in sorted(at_risk, key=lambda x: x.get("score") or 999):
-                        digest += (
-                            f"- *{r['customer_name']}* — "
-                            f"Score: {r.get('score', '?')}/100, "
-                            f"Risk: {r.get('risk_level', '?')}\n"
-                        )
-                if threshold_alerts:
-                    digest += "\n*Threshold Alerts:*\n"
-                    for ta in threshold_alerts:
-                        digest += f"- `{ta['issue']}` affecting {ta['affected_count']} customers\n"
-
-                slack_service.send_message(
-                    channel=settings.SLACK_CH_HEALTH_ALERTS,
-                    text=digest,
-                )
-        except Exception as e:
-            logger.warning(f"[HealthCheck] Digest post failed (non-fatal): {e}")
-
-        logger.info(
-            f"[HealthCheck] Done: {succeeded}/{len(results)} succeeded, "
-            f"{len(at_risk)} at-risk, {len(threshold_alerts)} threshold alerts"
-        )
-
-        return {
-            "total": len(results),
-            "succeeded": succeeded,
-            "failed": len(results) - succeeded,
-            "at_risk": len(at_risk),
-            "threshold_alerts": threshold_alerts,
-            "results": results,
-        }
+    # Run alert rules engine with a fresh session
+    post_db = get_sync_session()
+    try:
+        from app.services.alert_rules_engine import alert_rules_engine
+        alert_stats = alert_rules_engine.evaluate_all(post_db)
+        logger.info(f"[HealthCheck] Alert rules: {alert_stats.get('alerts_created', 0)} alerts created")
+    except Exception as e:
+        logger.warning(f"[HealthCheck] Alert rules failed (non-fatal): {e}")
     finally:
-        db.close()
+        post_db.close()
+
+    # Post daily digest to #cs-health-alerts
+    succeeded = sum(1 for r in results if r["success"])
+    at_risk = [r for r in results if r.get("risk_level") in ("watch", "high_risk", "critical")]
+    try:
+        from app.services.slack_service import slack_service
+        if slack_service.configured:
+            digest = (
+                f":chart_with_upwards_trend: *Health Check Complete*\n"
+                f"Customers scored: {succeeded}/{len(results)}\n"
+                f"At-risk: {len(at_risk)}"
+            )
+            if at_risk:
+                digest += "\n\n*At-Risk Customers:*\n"
+                for r in sorted(at_risk, key=lambda x: x.get("score") or 999):
+                    digest += (
+                        f"- *{r['customer_name']}* — "
+                        f"Score: {r.get('score', '?')}/100, "
+                        f"Risk: {r.get('risk_level', '?')}\n"
+                    )
+            if threshold_alerts:
+                digest += "\n*Threshold Alerts:*\n"
+                for ta in threshold_alerts:
+                    digest += f"- `{ta['issue']}` affecting {ta['affected_count']} customers\n"
+
+            slack_service.send_message(
+                channel=settings.SLACK_CH_HEALTH_ALERTS,
+                text=digest,
+            )
+    except Exception as e:
+        logger.warning(f"[HealthCheck] Digest post failed (non-fatal): {e}")
+
+    logger.info(
+        f"[HealthCheck] Done: {succeeded}/{len(results)} succeeded, "
+        f"{len(at_risk)} at-risk, {len(threshold_alerts)} threshold alerts"
+    )
+
+    return {
+        "total": len(results),
+        "succeeded": succeeded,
+        "failed": len(results) - succeeded,
+        "at_risk": len(at_risk),
+        "threshold_alerts": threshold_alerts,
+        "results": results,
+    }

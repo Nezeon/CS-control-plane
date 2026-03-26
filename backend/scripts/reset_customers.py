@@ -150,7 +150,7 @@ def main():
 
             db.execute(
                 text(
-                    "INSERT INTO customers (id, name, metadata) VALUES (:id, :name, :metadata)"
+                    "INSERT INTO customers (id, name, metadata, is_active) VALUES (:id, :name, :metadata, true)"
                 ),
                 {
                     "id": str(uuid.uuid4()),

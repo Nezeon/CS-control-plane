@@ -80,9 +80,13 @@ def sync_jira_tickets(
         updated_ticket_ids = []
         status_changed_ticket_ids = []
 
-        for issue in issues:
+        # Pre-load customer lookup once (avoids 3000 redundant DB queries)
+        customer_cache = _build_customer_cache(db)
+
+        BATCH_SIZE = 100
+        for i, issue in enumerate(issues):
             try:
-                result = _upsert_ticket(db, issue)
+                result = _upsert_ticket(db, issue, customer_cache=customer_cache)
                 stats[result["action"]] += 1
                 if result["action"] == "created":
                     if trigger_triage:
@@ -95,6 +99,11 @@ def sync_jira_tickets(
             except Exception as e:
                 logger.error(f"[JiraSync] Failed to upsert {issue.get('key')}: {e}")
                 stats["errors"] += 1
+
+            # Batch commit every 100 tickets to prevent Neon timeout
+            if (i + 1) % BATCH_SIZE == 0:
+                db.commit()
+                logger.info(f"[JiraSync] Progress: {i + 1}/{len(issues)} tickets processed")
 
         db.commit()
         logger.info(
@@ -146,7 +155,14 @@ def sync_single_issue(jira_key: str, trigger_triage: bool = True) -> dict:
         db.close()
 
 
-def _upsert_ticket(db: Session, jira_issue: dict) -> dict:
+def _build_customer_cache(db: Session) -> dict:
+    """Pre-load all customers into a lookup dict to avoid per-ticket DB queries."""
+    from app.models.customer import Customer
+    customers = db.query(Customer).all()
+    return {c.name.lower(): c for c in customers}
+
+
+def _upsert_ticket(db: Session, jira_issue: dict, customer_cache: dict | None = None) -> dict:
     """
     Insert or update a Ticket from a Jira issue.
     Returns {action: "created"|"updated"|"skipped", ticket_id: UUID}
@@ -163,7 +179,7 @@ def _upsert_ticket(db: Session, jira_issue: dict) -> dict:
     # Resolve customer: try project key first, then match from ticket summary
     customer_id, customer_name = jira_service.resolve_customer_id(db, mapped["_project_key"])
     if not customer_id:
-        customer_id, customer_name = _resolve_customer_from_summary(db, mapped["summary"])
+        customer_id, customer_name = _resolve_customer_from_summary(db, mapped["summary"], customer_cache=customer_cache)
 
     # Resolve assignee from email
     assigned_to_id = None
@@ -403,12 +419,13 @@ _CUSTOMER_ALIASES = {
 }
 
 
-def _resolve_customer_from_summary(db: Session, summary: str):
+def _resolve_customer_from_summary(db: Session, summary: str, customer_cache: dict | None = None):
     """
     Match customer name from the ticket summary prefix.
-    Handles patterns like 'PDO |', 'Etisalat -', 'MubCap -', '[Apache]', aliases.
+    Handles patterns like 'PDO |', 'Etisalat -', 'MubCap -', '[DMS]', aliases.
     Returns (customer_id, customer_name) or (None, None).
     """
+    import re
     from app.models.customer import Customer
 
     if not summary:
@@ -416,28 +433,58 @@ def _resolve_customer_from_summary(db: Session, summary: str):
 
     s_lower = summary.lower().strip()
 
-    # Build a name→customer lookup (cached per call, small table)
-    customers = db.query(Customer).all()
-    name_map = {c.name.lower(): c for c in customers}
+    # Known non-customer bracket tags — skip these entirely
+    _NON_CUSTOMER_TAGS = {
+        "rtr", "internal lab demo instance", "internal", "poc",
+        "bug", "feature", "enhancement", "task", "hotfix",
+    }
 
-    # Step 1: Try bracket patterns like [Apache], [RTR], [DMS]
+    # Use pre-built cache if available, otherwise query DB
+    if customer_cache is not None:
+        name_map = customer_cache
+    else:
+        customers = db.query(Customer).all()
+        name_map = {c.name.lower(): c for c in customers}
+
+    # Step 1: Try bracket patterns like [Apache], [DMS], [Ooredoo]
     if s_lower.startswith("["):
-        import re
         m = re.match(r'^\[([^\]]+)\]', s_lower)
         if m:
-            bracket = f"[{m.group(1)}]"
-            canonical = _CUSTOMER_ALIASES.get(bracket)
+            bracket_content = m.group(1).strip()
+            # Skip known non-customer tags
+            if bracket_content in _NON_CUSTOMER_TAGS:
+                return None, None
+            # Check alias map
+            bracket_key = f"[{bracket_content}]"
+            canonical = _CUSTOMER_ALIASES.get(bracket_key)
             if canonical and canonical in name_map:
                 c = name_map[canonical]
                 return c.id, c.name
+            # Check alias without brackets
+            canonical = _CUSTOMER_ALIASES.get(bracket_content)
+            if canonical and canonical in name_map:
+                c = name_map[canonical]
+                return c.id, c.name
+            # Check direct name match
+            if bracket_content in name_map:
+                c = name_map[bracket_content]
+                return c.id, c.name
+            # Containment match on bracket content
+            for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
+                if len(name_lower) >= 3 and (name_lower in bracket_content or bracket_content in name_lower):
+                    return cust.id, cust.name
+            # Bracket content didn't match anything — don't fall through
+            return None, None
 
     # Step 2: Extract prefix before first delimiter (| or -)
-    import re
     m = re.match(r'^([^|\-\[]+?)\s*[|\-]', s_lower)
     prefix = m.group(1).strip() if m else None
 
-    # Use prefix if found, otherwise use the full summary as candidate
-    candidate = prefix if prefix else s_lower.strip()
+    candidate = prefix if prefix else None
+
+    # Skip known non-customer prefixes
+    if candidate and candidate in _NON_CUSTOMER_TAGS:
+        return None, None
 
     if candidate:
         # Check alias map first
@@ -451,15 +498,25 @@ def _resolve_customer_from_summary(db: Session, summary: str):
             c = name_map[candidate]
             return c.id, c.name
 
-        # Check if candidate contains a known customer name
+        # Containment: candidate in customer name or vice versa
         for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-            if name_lower in candidate and len(name_lower) >= 3:
+            if len(name_lower) >= 3 and (name_lower in candidate or candidate in name_lower):
                 return cust.id, cust.name
 
-    # Step 3: Bidirectional containment check (first 40 chars of summary)
-    check = s_lower[:40]
+    # Step 3: Try the whole summary as a single candidate (no delimiter found)
+    # Check alias map for the whole lowered summary
+    canonical = _CUSTOMER_ALIASES.get(s_lower)
+    if canonical and canonical in name_map:
+        c = name_map[canonical]
+        return c.id, c.name
+    # Direct match
+    if s_lower in name_map:
+        c = name_map[s_lower]
+        return c.id, c.name
+    # Containment check on first 50 chars
+    check = s_lower[:50]
     for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-        if len(name_lower) >= 3 and (name_lower in check or (len(check) >= 3 and check in name_lower)):
+        if len(name_lower) >= 3 and name_lower in check:
             return cust.id, cust.name
 
     return None, None

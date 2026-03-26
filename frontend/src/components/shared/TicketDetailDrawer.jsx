@@ -6,6 +6,13 @@ import StatusPill from './StatusPill'
 import LoadingSkeleton from './LoadingSkeleton'
 import { formatDate } from '../../utils/formatters'
 
+const JIRA_BASE_URL = import.meta.env.VITE_JIRA_URL || 'https://hivepro-kronos.atlassian.net'
+
+const buildJiraUrl = (jiraId) => {
+  const projectKey = jiraId.split('-')[0]
+  return `${JIRA_BASE_URL}/jira/software/c/projects/${projectKey}/issues?jql=project%20%3D%20${projectKey}%20ORDER%20BY%20created%20DESC&selectedIssue=${jiraId}`
+}
+
 export default function TicketDetailDrawer({ ticketId, open, onClose }) {
   const [ticket, setTicket] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -56,7 +63,7 @@ export default function TicketDetailDrawer({ ticketId, open, onClose }) {
               <h2 className="text-base font-semibold text-text-primary leading-snug">{ticket.summary}</h2>
               {ticket.jira_id && (
                 <a
-                  href={`https://hivepro.atlassian.net/browse/${ticket.jira_id}`}
+                  href={buildJiraUrl(ticket.jira_id)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 mt-1 text-xs text-accent hover:underline"

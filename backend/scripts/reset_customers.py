@@ -129,11 +129,17 @@ def main():
         print("Aborted.")
         sys.exit(0)
 
+    # Validate table names against hardcoded allowlist (defense-in-depth)
+    _ALLOWED_TABLES = frozenset(TABLES_TO_DELETE)
+
     db = get_sync_session()
     try:
         # Step 1: Delete all customer-related data
         print("\n[1/3] Deleting customer-related data...")
         for table in TABLES_TO_DELETE:
+            if table not in _ALLOWED_TABLES:
+                raise ValueError(f"Refusing to delete unknown table: {table}")
+            # table names are from hardcoded TABLES_TO_DELETE constant, not user input
             result = db.execute(text(f"DELETE FROM {table}"))
             count = result.rowcount
             print(f"  {table}: {count} rows deleted")

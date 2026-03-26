@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     JIRA_DEFAULT_PROJECT: str = "CS"
     JIRA_SYNC_JQL: str = ""
     JIRA_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
+    # "project_view" = /jira/software/c/projects/{key}/issues?selectedIssue={id}
+    # "browse" = /browse/{id} (simpler, works on all Jira instances)
+    JIRA_BROWSE_PATTERN: str = "project_view"
 
     # SLA targets (hours from ticket creation to deadline, by severity)
     SLA_HOURS_P1: int = 4    # Critical

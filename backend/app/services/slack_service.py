@@ -31,7 +31,11 @@ ALERT_TYPE_LABELS = {
 
 
 def _build_jira_url(base_url: str, jira_id: str) -> str:
-    """Build a Jira issue URL with project-scoped JQL view."""
+    """Build a Jira issue URL. Pattern controlled by JIRA_BROWSE_PATTERN setting."""
+    from app.config import settings
+    if settings.JIRA_BROWSE_PATTERN == "browse":
+        return f"{base_url}/browse/{jira_id}"
+    # Default: project-scoped view (Jira Software Cloud)
     project_key = jira_id.split("-")[0] if "-" in jira_id else jira_id
     return (
         f"{base_url}/jira/software/c/projects/{project_key}/issues"

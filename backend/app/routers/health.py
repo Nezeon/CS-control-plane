@@ -64,7 +64,7 @@ async def get_health_scores(
             latest.c.calculated_at,
         )
         .join(Customer, Customer.id == latest.c.customer_id)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
         .order_by(latest.c.score.asc())
     )
     rows = result.all()
@@ -101,7 +101,7 @@ async def get_at_risk(
             latest.c.calculated_at,
         )
         .join(Customer, Customer.id == latest.c.customer_id)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
         .where(latest.c.risk_level.in_(AT_RISK_LEVELS))
         .order_by(latest.c.score.asc())
     )
@@ -168,7 +168,7 @@ async def get_health_trends(
         )
         .join(Customer, Customer.id == HealthScore.customer_id)
         .where(HealthScore.calculated_at >= since)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
         .group_by(score_date)
         .order_by(score_date.desc())
     )

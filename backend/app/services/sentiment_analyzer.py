@@ -22,6 +22,7 @@ def _get_analyzer():
         try:
             nltk.data.find("sentiment/vader_lexicon.zip")
         except LookupError:
+            logger.info("VADER lexicon not found locally — downloading (should be pre-installed via Procfile)")
             nltk.download("vader_lexicon", quiet=True)
         from nltk.sentiment.vader import SentimentIntensityAnalyzer
         _analyzer = SentimentIntensityAnalyzer()

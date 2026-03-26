@@ -53,7 +53,7 @@ async def get_dashboard_stats(
 
     # Total customers (active only)
     total_result = await db.execute(
-        select(func.count()).select_from(Customer).where(Customer.is_active == True)
+        select(func.count()).select_from(Customer).where(Customer.is_active.is_(True))
     )
     total_customers = total_result.scalar() or 0
 
@@ -66,7 +66,7 @@ async def get_dashboard_stats(
         .select_from(latest)
         .join(Customer, Customer.id == latest.c.customer_id)
         .where(latest.c.risk_level.in_(["high_risk", "critical"]))
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
     )
     at_risk_count = risk_result.scalar() or 0
 
@@ -78,7 +78,7 @@ async def get_dashboard_stats(
         .where(
             Ticket.status.notin_(["resolved", "closed"]),
             Ticket.severity.in_(["P0", "P1"]),
-            Customer.is_active == True,
+            Customer.is_active.is_(True),
         )
     )
     open_tickets = open_result.scalar() or 0
@@ -88,7 +88,7 @@ async def get_dashboard_stats(
         select(func.avg(latest.c.score))
         .select_from(latest)
         .join(Customer, Customer.id == latest.c.customer_id)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
     )
     avg_raw = avg_result.scalar()
     avg_health_score = round(float(avg_raw), 1) if avg_raw is not None else None
@@ -98,7 +98,7 @@ async def get_dashboard_stats(
         select(func.count())
         .select_from(Customer)
         .where(Customer.created_at <= seven_days_ago)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
     )
     old_customers = old_cust_result.scalar() or 0
     customers_change = total_customers - old_customers
@@ -112,7 +112,7 @@ async def get_dashboard_stats(
             Ticket.created_at <= seven_days_ago,
             Ticket.status.notin_(["resolved", "closed"]),
             Ticket.severity.in_(["P0", "P1"]),
-            Customer.is_active == True,
+            Customer.is_active.is_(True),
         )
     )
     old_open_tickets = old_tickets_result.scalar() or 0
@@ -125,7 +125,7 @@ async def get_dashboard_stats(
         .where(
             cast(HealthScore.calculated_at, Date)
             == cast(seven_days_ago, Date),
-            Customer.is_active == True,
+            Customer.is_active.is_(True),
         )
     )
     old_avg = old_health_result.scalar()
@@ -140,7 +140,7 @@ async def get_dashboard_stats(
             HealthScore.risk_level.in_(["high_risk", "critical"]),
             cast(HealthScore.calculated_at, Date)
             == cast(seven_days_ago, Date),
-            Customer.is_active == True,
+            Customer.is_active.is_(True),
         )
     )
     old_risk = old_risk_result.scalar() or 0
@@ -301,7 +301,7 @@ async def get_quick_health(
         )
         .outerjoin(latest, Customer.id == latest.c.customer_id)
         .outerjoin(open_tickets, Customer.id == open_tickets.c.customer_id)
-        .where(Customer.is_active == True)
+        .where(Customer.is_active.is_(True))
         .order_by(
             case(
                 (latest.c.risk_level == "critical", 0),

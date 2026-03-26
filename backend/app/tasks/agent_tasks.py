@@ -115,28 +115,7 @@ def _is_celery_available() -> bool:
         return False
 
 
-# Aliases for Fathom meeting titles → canonical customer names (lowercased)
-_FATHOM_CUSTOMER_ALIASES = {
-    "mubcap": "mubadala capital",
-    "dms": "direct marketing solutions (dms)",
-    "pdo": "petroleum development oman (pdo)",
-    "difc": "dubai international financial centre (difc)",
-    "bnpb": "badan nasional penanggulangan bencana (bnpb)",
-    "modon": "saudi authority for industrial cities and technology zones (modon)",
-    "ksgaa": "king salman global academy of arabic language (ksgaa)",
-    "gph": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
-    "mof": "ministry of finance (mof)",
-    "oia": "oman investment authority (oia)",
-    "eskanbank": "eskan bank b.s.c",
-    "eskan bank": "eskan bank b.s.c",
-    "visionbank": "vision bank",
-    "itmonkey": "it monkey, south africa",
-    "it monkey": "it monkey, south africa",
-    "jes": "jeraisy electronic services",
-    "connexpay": "connexpay",
-    "alraedah": "al raedah finance",
-    "alraedahfinance": "al raedah finance",
-}
+from app.utils.customer_aliases import CUSTOMER_ALIASES as _FATHOM_CUSTOMER_ALIASES
 
 
 def _resolve_customer(db, title: str, participants: list[str] | None = None):
@@ -566,25 +545,12 @@ async def run_fathom_sync(days: int = 7) -> dict:
             ),
         }
 
-        # Resolve customer (fresh session)
-        try:
-            db = get_sync_session()
-            try:
-                customer_id, customer_name = _resolve_customer(
-                    db, meeting_title, participants
-                )
-                db.commit()  # commit any auto-created prospect
-            finally:
-                db.close()
-        except Exception as e:
-            logger.warning(f"Fathom sync: DB error resolving customer for {recording_id}: {e}")
-            errors += 1
-            continue
-
         # Claude API call (no DB needed — this takes 10-30s)
+        # Resolve customer needs DB but we do it together with save below
+        # to avoid FK isolation issues between separate sessions.
         prompt = _build_fathom_prompt(
             transcript_text,
-            {"name": customer_name} if customer_name else {},
+            {},  # customer name filled after resolve
             event_payload,
         )
         response = claude_service.generate_sync(
@@ -623,10 +589,15 @@ async def run_fathom_sync(days: int = 7) -> dict:
 
         wrapped_result = {"success": True, "output": result}
 
-        # Save to DB (fresh session to avoid Neon timeout)
+        # Resolve customer + save insight in ONE session to avoid FK isolation issues
+        # (auto-created prospect must be visible when _save_call_insight inserts)
         try:
             db = get_sync_session()
             try:
+                customer_id, customer_name = _resolve_customer(
+                    db, meeting_title, participants
+                )
+
                 _save_call_insight(db, customer_id, event_payload, result)
 
                 # RAG embed
@@ -652,7 +623,7 @@ async def run_fathom_sync(days: int = 7) -> dict:
             finally:
                 db.close()
         except Exception as e:
-            logger.warning(f"Fathom sync: DB error saving insight for {recording_id}: {e}")
+            logger.warning(f"Fathom sync: DB error for {recording_id}: {e}")
             errors += 1
             continue
 
@@ -830,7 +801,7 @@ def run_health_check_all(self) -> dict:
     try:
         customers_data = [
             (str(c.id), c.name)
-            for c in init_db.query(Customer).filter(Customer.is_active == True).all()
+            for c in init_db.query(Customer).filter(Customer.is_active.is_(True)).all()
         ]
     finally:
         init_db.close()
@@ -840,6 +811,7 @@ def run_health_check_all(self) -> dict:
         return {"total": 0, "succeeded": 0, "failed": 0, "results": []}
 
     memory_agent = CustomerMemoryAgent()
+    specialist = AgentFactory.create("health_monitor")  # reuse across customers
     results = []
     all_flags: list[str] = []
 
@@ -856,7 +828,6 @@ def run_health_check_all(self) -> dict:
             }
 
             customer_memory = memory_agent.build_memory(db, cust_id)
-            specialist = AgentFactory.create("health_monitor")
             result = specialist.run(db, event, customer_memory)
 
             output = result.get("output", {})

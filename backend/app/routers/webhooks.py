@@ -511,30 +511,22 @@ async def slack_interactions(request: Request):
 # ── HubSpot Webhook (placeholder) ─────────────────────────────────
 
 
-@router.post("/hubspot", status_code=status.HTTP_200_OK)
+@router.post("/hubspot", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 async def hubspot_webhook(request: Request):
     """Receive HubSpot webhook events (deal stage changes).
 
     When a deal reaches "Closed Won", activates the corresponding customer
     (sets is_active=True) or creates a new customer record.
 
-    Not yet implemented — this is a design placeholder for future integration.
+    Not yet implemented — returns 501 until integration is built.
     """
-    if not settings.HUBSPOT_WEBHOOK_SECRET:
-        logger.warning("[HubSpot] Webhook received but HUBSPOT_WEBHOOK_SECRET not configured — ignoring")
-        return {"status": "not_configured", "message": "HubSpot integration not configured"}
-
-    payload = await request.json()
-    logger.info(f"[HubSpot] Received webhook: {payload.get('eventType', 'unknown')}")
-
-    # TODO: Implement HubSpot signature verification using HUBSPOT_WEBHOOK_SECRET
-    # TODO: Extract deal stage, company name, contact info from payload
-    # TODO: If stage == "closedwon":
-    #   - Find or create Customer by name matching
-    #   - Set is_active = True
-    #   - Fire "new_customer" event for SOW & Prerequisite agent
-    # TODO: If stage == "closedlost":
-    #   - Find Customer by name
-    #   - Set is_active = False
-
-    return {"status": "received", "message": "HubSpot integration not yet implemented"}
+    # Not implemented yet — reject all requests with 501 to signal this clearly.
+    # When ready, this endpoint will:
+    # 1. Verify HMAC signature using HUBSPOT_WEBHOOK_SECRET
+    # 2. Extract deal stage, company name, contact info from payload
+    # 3. If stage == "closedwon": find/create Customer, set is_active=True, fire "new_customer" event
+    # 4. If stage == "closedlost": find Customer, set is_active=False
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="HubSpot integration not yet implemented",
+    )

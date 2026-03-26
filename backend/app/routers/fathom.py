@@ -76,6 +76,7 @@ async def fathom_status(current_user: User = Depends(get_current_user)):
 @router.post("/sync", response_model=FathomSyncResponse)
 async def trigger_fathom_sync(
     days: int = Query(14, ge=1, le=730, description="Days back to sync (up to 2 years)"),
+    confirm_backfill: bool = Query(False, description="Required for syncs > 90 days (cost/time warning)"),
     current_user: User = Depends(require_role("admin", "cs_manager")),
 ):
     """
@@ -83,7 +84,18 @@ async def trigger_fathom_sync(
 
     Fetches meetings from Fathom API, processes new ones through the
     Fathom agent, and updates the knowledge base. Skips already-imported recordings.
+
+    For syncs > 90 days, pass confirm_backfill=true to acknowledge the cost/time impact.
     """
+    if days > 90 and not confirm_backfill:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Syncing {days} days may process hundreds of meetings, each requiring a Claude API call. "
+                f"Add ?confirm_backfill=true to proceed."
+            ),
+        )
+
     from app.tasks.agent_tasks import run_fathom_sync
 
     start = datetime.now(timezone.utc)

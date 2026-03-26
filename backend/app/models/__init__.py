@@ -13,6 +13,7 @@ from app.models.chat_conversation import ChatConversation
 from app.models.chat_message import ChatMessage
 from app.models.agent_draft import AgentDraft
 from app.models.audit_log import AuditLog
+from app.models.deal import Deal
 
 __all__ = [
     "User",
@@ -30,4 +31,5 @@ __all__ = [
     "ChatMessage",
     "AgentDraft",
     "AuditLog",
+    "Deal",
 ]

@@ -27,6 +27,9 @@ EVENT_ROUTING = {
     "renewal_approaching": "qbr_value",
     "new_enterprise_customer": "sow_prerequisite",
     "deployment_started": "deployment_intelligence",
+    # HubSpot deal events
+    "deal_stage_changed": "health_monitor",  # temp — route to presales_funnel when built (Day 18)
+    "new_customer": "sow_prerequisite",
     # User chat events
     "user_chat_fathom": "health_monitor",
     "user_chat_health": "health_monitor",
@@ -45,6 +48,8 @@ EVENT_LANE_MAP = {
     "renewal_approaching": ["value"],
     "new_enterprise_customer": ["delivery"],
     "deployment_started": ["delivery"],
+    "deal_stage_changed": ["presales"],
+    "new_customer": ["delivery"],
     "user_chat_fathom": ["value"],
     "user_chat_health": ["value"],
     "user_chat_ticket": ["support"],

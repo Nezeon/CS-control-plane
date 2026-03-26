@@ -508,25 +508,42 @@ async def slack_interactions(request: Request):
     return {"text": response_text}
 
 
-# ── HubSpot Webhook (placeholder) ─────────────────────────────────
+# ── HubSpot Webhook ───────────────────────────────────────────────
 
 
-@router.post("/hubspot", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+@router.post("/hubspot", status_code=status.HTTP_200_OK)
 async def hubspot_webhook(request: Request):
-    """Receive HubSpot webhook events (deal stage changes).
+    """Receive HubSpot webhook events (deal stage changes, deal creation).
 
-    When a deal reaches "Closed Won", activates the corresponding customer
-    (sets is_active=True) or creates a new customer record.
-
-    Not yet implemented — returns 501 until integration is built.
+    HubSpot sends an array of subscription events. Each event has:
+    - subscriptionType: "deal.propertyChange", "deal.creation", etc.
+    - objectId: HubSpot deal ID
+    - propertyName / propertyValue: for property change events
     """
-    # Not implemented yet — reject all requests with 501 to signal this clearly.
-    # When ready, this endpoint will:
-    # 1. Verify HMAC signature using HUBSPOT_WEBHOOK_SECRET
-    # 2. Extract deal stage, company name, contact info from payload
-    # 3. If stage == "closedwon": find/create Customer, set is_active=True, fire "new_customer" event
-    # 4. If stage == "closedlost": find Customer, set is_active=False
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="HubSpot integration not yet implemented",
-    )
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"status": "ignored", "reason": "invalid JSON"}
+
+    # HubSpot sends an array of subscription events
+    events = payload if isinstance(payload, list) else [payload]
+    synced = []
+
+    for event in events:
+        sub_type = event.get("subscriptionType", "")
+        object_id = str(event.get("objectId", ""))
+
+        if not object_id:
+            continue
+
+        if sub_type in ("deal.propertyChange", "deal.creation"):
+            try:
+                from app.tasks.hubspot_sync import sync_single_deal
+                result = sync_single_deal(object_id, trigger_events=True)
+                synced.append({"deal_id": object_id, "action": result.get("action")})
+                logger.info(f"[HubSpotWebhook] Synced deal {object_id}: {result.get('action')}")
+            except Exception as e:
+                logger.error(f"[HubSpotWebhook] Failed to sync deal {object_id}: {e}")
+                synced.append({"deal_id": object_id, "action": "error"})
+
+    return {"status": "processed", "synced": synced}

@@ -75,6 +75,7 @@ TABLES_TO_DELETE = [
     "agent_drafts",
     "action_items",
     "agent_logs",
+    "deals",
     "tickets",
     "call_insights",
     "reports",

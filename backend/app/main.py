@@ -71,6 +71,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Fathom: {'configured' if settings.FATHOM_API_KEY else 'not configured'}")
     logger.info(f"Demo mode: {'ENABLED' if settings.DEMO_MODE else 'disabled'}")
     logger.info(f"Slack chat: {'configured' if settings.SLACK_SIGNING_SECRET else 'not configured'}")
+    logger.info(f"HubSpot: {'configured' if settings.HUBSPOT_ACCESS_TOKEN else 'not configured'}")
 
     # Install rich demo logging when demo mode is enabled
     if settings.DEMO_MODE:
@@ -134,6 +135,20 @@ async def lifespan(app: FastAPI):
             logger.info("Fathom not configured — sync disabled")
     except Exception as e:
         logger.warning(f"Fathom sync setup failed (non-fatal): {e}")
+
+    # HubSpot: daily at 7:00 AM + run once on startup (15s delay)
+    try:
+        if settings.HUBSPOT_ACCESS_TOKEN:
+            scheduler.add_job(_run_hubspot_sync, "cron", hour=7, minute=0, id="hubspot_daily",
+                              misfire_grace_time=3600)
+            scheduler.add_job(_run_hubspot_sync, "date",
+                              run_date=datetime.now(timezone.utc) + timedelta(seconds=15),
+                              id="hubspot_startup")
+            logger.info(f"HubSpot sync scheduled: daily at 07:00 {settings.SYNC_TIMEZONE} + on startup")
+        else:
+            logger.info("HubSpot not configured — sync disabled")
+    except Exception as e:
+        logger.warning(f"HubSpot sync setup failed (non-fatal): {e}")
 
     # Health Monitor: every 3 days at 8:30 AM (after Jira sync at 8:00 AM)
     try:
@@ -296,6 +311,25 @@ async def _run_health_check():
         logger.warning(f"[HealthCheck] Failed: {e}")
 
 
+async def _run_hubspot_sync():
+    """APScheduler job: HubSpot deal sync."""
+    try:
+        from app.tasks.hubspot_sync import sync_hubspot_deals
+
+        logger.info("[HubSpotSync] Starting deal sync")
+        stats = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: sync_hubspot_deals()
+        )
+        created = stats.get("created", 0)
+        updated = stats.get("updated", 0)
+        if created or updated:
+            logger.info(f"[HubSpotSync] {stats}")
+        else:
+            logger.debug(f"[HubSpotSync] No changes: {stats}")
+    except Exception as e:
+        logger.warning(f"[HubSpotSync] Failed: {e}")
+
+
 app = FastAPI(
     title="CS Control Plane API",
     description="AI-powered Customer Success orchestration platform",
@@ -338,6 +372,10 @@ app.include_router(chat.router)
 # Jira integration
 from app.routers import jira
 app.include_router(jira.router)
+
+# HubSpot integration
+from app.routers import hubspot
+app.include_router(hubspot.router)
 
 # Fathom integration
 app.include_router(fathom.router)

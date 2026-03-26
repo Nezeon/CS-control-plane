@@ -41,6 +41,7 @@ class Customer(Base):
     alerts = relationship("Alert", back_populates="customer", cascade="all, delete-orphan")
     action_items = relationship("ActionItem", back_populates="customer")
     reports = relationship("Report", back_populates="customer")
+    deals = relationship("Deal", back_populates="customer")
 
     __table_args__ = (
         sa.Index("idx_customers_cs_owner", "cs_owner_id"),

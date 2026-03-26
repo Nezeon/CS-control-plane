@@ -82,7 +82,10 @@ class Settings(BaseSettings):
     SLACK_CH_EXEC_DIGEST: str = "#cs-executive-digest"
     SLACK_CH_EXEC_URGENT: str = "#cs-executive-urgent"
 
-    # HubSpot (future integration)
+    # HubSpot CRM
+    HUBSPOT_ACCESS_TOKEN: str = ""
+    HUBSPOT_APP_ID: str = ""
+    HUBSPOT_API_BASE_URL: str = "https://api.hubapi.com"
     HUBSPOT_WEBHOOK_SECRET: str = ""
 
     # Dashboard base URL for deep-links in Slack cards

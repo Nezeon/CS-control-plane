@@ -47,16 +47,17 @@ INTENT_AGENT_MAP = {
     },
 }
 
-SYSTEM_PROMPT = """You are an AI Customer Success analyst for HivePro. You have access to REAL customer data provided below.
+SYSTEM_PROMPT = """You are an AI Customer Success analyst for HivePro. You have access to REAL customer data from Jira tickets, Fathom call recordings, and HubSpot deals.
 
 RULES:
-- Give concise, actionable answers based on the data provided
-- Use markdown formatting: **bold** for key metrics, bullet points for lists
-- Always cite specific data points (scores, dates, ticket IDs) from the context
-- If asked about a specific customer, focus your answer on that customer
-- If asked a portfolio-wide question, rank/compare customers using the data
-- Keep answers under 500 words unless the question requires detailed analysis
-- Do NOT say you lack data — you have the full database context below"""
+- ALL data provided below is factual and from real systems. NEVER say "I don't have data" or suggest the user go look elsewhere.
+- Give concise, executive-grade answers. Lead with the answer, then support with data.
+- Name specific companies and cite specific data points (scores, dates, ticket IDs).
+- If asked about a specific customer/deal, focus on that entity and pull from ALL data sources (deals + calls + tickets).
+- If asked a portfolio-wide question (e.g., "most requested feature"), group and rank by THEME across multiple customers — not by individual customer. Show which theme appears across the most customers.
+- When feature/ticket data is provided, identify common themes across different customers' requests (e.g., "scanning improvements" spans 3 customers' tickets).
+- Keep answers under 500 words unless detailed analysis is needed.
+- Always end with a clear recommendation."""
 
 
 class ChatFastPath:
@@ -162,6 +163,12 @@ class ChatFastPath:
         self._append_cross_reference(xref_parts, prefetched, existing_prompt=prompt)
         if xref_parts:
             prompt += "\n" + "\n".join(xref_parts)
+
+        # Append portfolio-wide context (tickets, topics, pipeline)
+        pf_parts = []
+        self._append_portfolio_context(pf_parts, prefetched)
+        if pf_parts:
+            prompt += "\n" + "\n".join(pf_parts)
 
         return prompt
 
@@ -566,6 +573,53 @@ class ChatFastPath:
                 parts.append("- Sample lost deal call insights:")
                 for s in samples[:5]:
                     parts.append(f"  - **{s['company']}** [{s['sentiment']}]: {s['summary_snippet']}")
+
+    def _append_portfolio_context(self, parts: list, prefetched: dict):
+        """Append portfolio-wide data (tickets, call topics, pipeline) for broad questions."""
+        # Feature requests from Jira — show both by-customer AND raw list
+        features = prefetched.get("feature_requests", [])
+        if features:
+            from collections import defaultdict
+            by_customer = defaultdict(list)
+            for f in features:
+                by_customer[f["customer"]].append(f)
+
+            parts.append(f"\n## Feature Requests & Improvements ({len(features)} tickets from Jira)")
+            parts.append(f"From {len(by_customer)} customers. When answering, group by FEATURE THEME across customers.\n")
+
+            # By customer (for context)
+            parts.append("### By Customer:")
+            for customer, reqs in sorted(by_customer.items(), key=lambda x: -len(x[1])):
+                parts.append(f"- **{customer}** ({len(reqs)}): {', '.join(r['summary'][:60] for r in reqs[:3])}")
+
+            # Full list (for theme detection)
+            parts.append("\n### All Requests (group similar themes when answering):")
+            for f in features:
+                parts.append(f"- [{f['type']}] [{f['severity']}] {f['summary'][:100]} ({f['customer']})")
+
+        # Open bugs
+        bugs = prefetched.get("open_bugs", [])
+        if bugs:
+            parts.append(f"\n## Open Bug Tickets ({len(bugs)} critical/high)")
+            for b in bugs[:10]:
+                parts.append(f"- [{b['severity']}] {b['summary'][:100]} ({b['customer']})")
+
+        # Aggregated call topics
+        topics = prefetched.get("aggregated_topics", [])
+        if topics:
+            parts.append(f"\n## Top Discussion Topics Across All Customer Calls")
+            for topic, count in topics[:12]:
+                parts.append(f"- {topic} ({count}x mentioned)")
+
+        # Pipeline summary
+        pipeline = prefetched.get("pipeline_summary", {})
+        if pipeline:
+            total = pipeline.get("total", 0)
+            won = pipeline.get("won", 0)
+            lost = pipeline.get("lost", 0)
+            open_d = pipeline.get("open", 0)
+            win_rate = won / (won + lost) if (won + lost) > 0 else 0
+            parts.append(f"\n## Pipeline Summary: {total} deals | {open_d} open | {won} won | {lost} lost | {win_rate:.1%} win rate")
 
     def _format_history(self, messages: list[dict]) -> str:
         if not messages:

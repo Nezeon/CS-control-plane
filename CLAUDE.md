@@ -174,12 +174,12 @@ hivepro-cs-control-plane/
 │   ├── Procfile                       # Render process config
 │   ├── runtime.txt                    # Python version
 │   ├── alembic.ini
-│   ├── alembic/versions/              # 6 migrations
+│   ├── alembic/versions/              # 7 migrations
 │   ├── chromadb_data/                 # Persistent vector DB (6 collections)
 │   │
 │   ├── config/                        # YAML-driven agent configuration
 │   │   ├── org_structure.yaml         # Lanes, agent assignments, reporting
-│   │   ├── agent_profiles.yaml        # 10 agent definitions, traits, tools
+│   │   ├── agent_profiles.yaml        # 11 agent definitions, traits, tools
 │   │   ├── pipeline.yaml              # Pipeline stage definitions
 │   │   └── workflows.yaml             # Event → agent routing workflows
 │   │
@@ -192,9 +192,10 @@ hivepro-cs-control-plane/
 │       ├── demo_data.py               # Demo scenario data
 │       ├── demo_runner.py             # CLI demo tool
 │       │
-│       ├── models/                    # SQLAlchemy models (17 tables)
+│       ├── models/                    # SQLAlchemy models (18 tables)
 │       │   ├── user.py
 │       │   ├── customer.py            # Includes jira_project_key
+│       │   ├── deal.py                # HubSpot CRM deals
 │       │   ├── health_score.py
 │       │   ├── ticket.py
 │       │   ├── call_insight.py
@@ -226,6 +227,7 @@ hivepro-cs-control-plane/
 │       │   ├── webhooks.py            # Jira, Fathom, Slack webhooks
 │       │   ├── jira.py                # Jira sync endpoints
 │       │   ├── fathom.py              # Fathom sync endpoints
+│       │   ├── hubspot.py             # HubSpot sync + status endpoints
 │       │   ├── executive.py           # Executive summary, trends
 │       │   ├── drafts.py              # Draft approve/dismiss
 │       │   ├── demo.py                # Demo triggers
@@ -246,6 +248,7 @@ hivepro-cs-control-plane/
 │       │   ├── qbr_agent.py           # Agent 10: QBR / Value Narrative
 │       │   ├── sow_agent.py           # Agent 4: SOW & Prerequisite
 │       │   ├── deployment_intel_agent.py # Agent 5: Deployment Intelligence
+│       │   ├── presales_funnel_agent.py # Agent 3: Pre-Sales Funnel (pipeline + win probability)
 │       │   │
 │       │   ├── memory/                # Agent 2: Customer Memory (shared service)
 │       │   │   ├── memory_agent.py    # Customer Memory Manager
@@ -282,13 +285,15 @@ hivepro-cs-control-plane/
 │       │   ├── slack_formatter.py     # Markdown → Block Kit
 │       │   ├── event_service.py       # Event routing
 │       │   ├── draft_service.py       # Draft create/approve/dismiss
+│       │   ├── hubspot_service.py      # HubSpot CRM API client
 │       │   ├── alert_rules_engine.py  # 4 alert rules
 │       │   └── trend_service.py       # Analytics queries
 │       │
 │       ├── tasks/                     # Background tasks
 │       │   ├── celery_app.py          # Celery config (eager mode)
 │       │   ├── agent_tasks.py         # 20+ async tasks
-│       │   └── jira_sync.py           # Jira bulk + incremental sync
+│       │   ├── jira_sync.py           # Jira bulk + incremental sync
+│       │   └── hubspot_sync.py        # HubSpot deal sync + event firing
 │       │
 │       ├── middleware/
 │       │   └── auth.py                # JWT middleware
@@ -423,6 +428,9 @@ Agent produces output → Saved as DRAFT (agent_drafts table)
 | Jira initial sync | On first startup | Full (last 6 months) |
 | Fathom sync | 6:00 AM + 6:00 PM IST | Last 7 days of meetings |
 | Fathom startup sync | 30s after app start | Last 7 days |
+| HubSpot daily sync | 7:00 AM IST | Full (all deals + company resolution) |
+| HubSpot startup sync | 15s after app start | Full (first time only — marker file `.hubspot_initial_sync_done`) |
+| Health check | Every 3 days at 8:30 AM | All customers |
 
 Timezone: `Asia/Kolkata` (configurable via `SYNC_TIMEZONE`)
 
@@ -548,6 +556,12 @@ SLACK_CH_DELIVERY=...
 FATHOM_API_KEY=...
 FATHOM_API_BASE_URL=https://api.fathom.ai/external/v1
 
+# HubSpot CRM
+HUBSPOT_ACCESS_TOKEN=pat-na1-...
+HUBSPOT_APP_ID=...
+HUBSPOT_API_BASE_URL=https://api.hubapi.com
+HUBSPOT_WEBHOOK_SECRET=...
+
 # Scheduling
 SYNC_TIMEZONE=Asia/Kolkata
 
@@ -558,12 +572,13 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 
 ---
 
-## Database Schema (17 Tables)
+## Database Schema (18 Tables)
 
 | Table | Purpose |
 |-------|---------|
 | `users` | User accounts (email, role, is_active) |
 | `customers` | Customer profiles (name, health_score, jira_project_key) |
+| `deals` | HubSpot CRM deals (stage, amount, company, win probability) |
 | `health_scores` | Daily health score history |
 | `tickets` | Support tickets (summary, severity, status, sla_minutes) |
 | `call_insights` | Fathom meeting transcripts + extracted insights |
@@ -588,7 +603,10 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 | **Claude calls** | `self._call_claude()` → `claude_service.generate_sync()` (returns input_tokens/output_tokens) |
 | **Event routing** | `orchestrator.py` has `EVENT_LANE_MAP` and `EVENT_ROUTING` dicts |
 | **Lane routing** | Each lane lead has `SPECIALIST_MAP` and `_fallback_plan()` |
-| **Chat fast path** | Bypasses full agent pipeline; single Haiku call for interactive chat |
+| **Chat fast path** | Bypasses full agent pipeline; single Haiku call for interactive chat. 5 intents: health, fathom, ticket, deal, general. |
+| **Cross-reference** | Universal prefetch enriches ALL intents with deals + calls + meetings from all data sources. Portfolio prefetch adds Jira tickets + call topics for broad questions. |
+| **Deal probability** | Multi-factor model: stage 25% + engagement 25% + intent 20% + sentiment 15% + velocity 15%. Uses call_insights for signals. |
+| **HubSpot sync** | `hubspot_service.py` singleton, Bearer token auth, daily 7 AM cron + startup marker file. 1436 deals synced. |
 | **Chat endpoint** | `POST /api/chat/send` with `{"message": text}` (NOT `{"text": text}`) |
 | **Chat polling** | `poll_for_response()` checks conversation for `pipeline_status != "processing"` |
 | **Model fields** | `HealthScore.calculated_at` (not scored_at), `Ticket.summary` (not title), `Ticket.severity` (not priority) |

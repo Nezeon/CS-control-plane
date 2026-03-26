@@ -26,7 +26,8 @@ CALL_KEYWORDS = [
 
 HEALTH_KEYWORDS = [
     "health", "score", "risk", "churn", "renewal", "at-risk", "trending",
-    "decline", "improve", "deteriorat",
+    "decline", "improve", "deteriorat", "attrition", "unhappy", "retain",
+    "retention", "satisfied",
 ]
 
 TICKET_KEYWORDS = [
@@ -138,6 +139,14 @@ _ENTITY_FILLER = {
     "deal", "deals", "chances", "probability", "getting", "closing",
     "winning", "win", "close", "us", "pipeline", "funnel", "stalled",
     "conversion", "rate", "stage",
+    "feature", "features", "requested", "request", "requests", "most",
+    "maximum", "number", "many", "top", "common", "frequent", "frequently",
+    "concern", "concerns", "improvement", "improvements", "bug", "bugs",
+    "across", "overall", "total", "count", "list", "biggest",
+    "highest", "lowest", "worst", "best", "chance", "likely",
+    "attrition", "churn", "retain", "retention", "happy", "unhappy",
+    "satisfied", "dissatisfied", "result", "reason", "reasons", "main",
+    "primary", "didn", "didnt", "didn't", "dont", "why",
 }
 
 
@@ -644,6 +653,83 @@ class ChatService:
                             logger.info(f"[Chat] Cross-reference for '{xref_entity}': {xref_keys}")
                     except Exception as e:
                         logger.debug(f"[Chat] Cross-reference failed: {e}")
+
+            # ── Portfolio-wide aggregation (when no specific entity) ──
+            # Provides ticket analysis, call topics, and pipeline stats for broad questions
+            if not xref_entity:
+                try:
+                    from sqlalchemy import text as sa_text
+                    from collections import Counter
+
+                    # Feature requests + improvements from Jira (with customer names)
+                    ticket_rows = db.execute(sa_text("""
+                        SELECT t.ticket_type, t.summary, t.severity, c.name as customer_name
+                        FROM tickets t
+                        LEFT JOIN customers c ON c.id = t.customer_id
+                        WHERE t.ticket_type IN ('Improvement', 'New Feature')
+                        ORDER BY t.created_at DESC LIMIT 30
+                    """)).fetchall()
+                    if ticket_rows:
+                        prefetched["feature_requests"] = [
+                            {
+                                "type": r[0],
+                                "summary": r[1],
+                                "severity": r[2],
+                                "customer": r[3] or "Unknown",
+                            }
+                            for r in ticket_rows
+                        ]
+
+                    # Bug tickets (top issues)
+                    bug_rows = db.execute(sa_text("""
+                        SELECT t.summary, t.severity, t.status, c.name as customer_name
+                        FROM tickets t
+                        LEFT JOIN customers c ON c.id = t.customer_id
+                        WHERE t.ticket_type = 'Bug' AND t.status IN ('open', 'in_progress')
+                        ORDER BY CASE t.severity WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END, t.created_at DESC
+                        LIMIT 15
+                    """)).fetchall()
+                    if bug_rows:
+                        prefetched["open_bugs"] = [
+                            {"summary": r[0], "severity": r[1], "status": r[2], "customer": r[3] or "Unknown"}
+                            for r in bug_rows
+                        ]
+
+                    # Aggregated call topics across all customers
+                    topic_rows = db.execute(sa_text("""
+                        SELECT key_topics FROM call_insights
+                        WHERE key_topics IS NOT NULL AND key_topics != '[]'::jsonb
+                        ORDER BY processed_at DESC LIMIT 50
+                    """)).fetchall()
+                    if topic_rows:
+                        all_topics = []
+                        for r in topic_rows:
+                            topics = r[0]
+                            if isinstance(topics, list):
+                                all_topics.extend(t.lower() if isinstance(t, str) else str(t) for t in topics)
+                        topic_freq = Counter(all_topics).most_common(15)
+                        prefetched["aggregated_topics"] = topic_freq
+
+                    # Pipeline summary
+                    pipeline = db.execute(sa_text("""
+                        SELECT
+                            COUNT(*) as total,
+                            SUM(CASE WHEN stage = 'closedwon' THEN 1 ELSE 0 END) as won,
+                            SUM(CASE WHEN stage = 'closedlost' THEN 1 ELSE 0 END) as lost,
+                            SUM(CASE WHEN stage NOT IN ('closedwon', 'closedlost') THEN 1 ELSE 0 END) as open_deals
+                        FROM deals
+                    """)).fetchone()
+                    if pipeline:
+                        prefetched["pipeline_summary"] = {
+                            "total": pipeline[0], "won": pipeline[1],
+                            "lost": pipeline[2], "open": pipeline[3],
+                        }
+
+                    pf_keys = [k for k in ("feature_requests", "open_bugs", "aggregated_topics", "pipeline_summary") if k in prefetched]
+                    if pf_keys:
+                        logger.info(f"[Chat] Portfolio prefetch: {pf_keys}")
+                except Exception as e:
+                    logger.debug(f"[Chat] Portfolio prefetch failed: {e}")
 
             # Deal intent: also prefetch loss analysis for portfolio questions
             if intent == "deal":

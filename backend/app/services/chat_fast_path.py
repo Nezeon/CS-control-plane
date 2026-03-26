@@ -159,7 +159,7 @@ class ChatFastPath:
 
         # Append cross-referenced data from other sources (universal enrichment)
         xref_parts = []
-        self._append_cross_reference(xref_parts, prefetched)
+        self._append_cross_reference(xref_parts, prefetched, existing_prompt=prompt)
         if xref_parts:
             prompt += "\n" + "\n".join(xref_parts)
 
@@ -491,7 +491,7 @@ class ChatFastPath:
             for a in alerts[:5]:
                 parts.append(f"- [{a.get('severity', '?')}] {a.get('title', 'N/A')} ({a.get('type', '?')})")
 
-    def _append_cross_reference(self, parts: list, prefetched: dict):
+    def _append_cross_reference(self, parts: list, prefetched: dict, existing_prompt: str = ""):
         """Append cross-referenced data from other sources to any prompt."""
         # Related deals (for non-deal intents)
         related_deals = prefetched.get("related_deals", [])
@@ -517,9 +517,9 @@ class ChatFastPath:
                     for dec in decisions[:2]:
                         parts.append(f"  - DECISION: {dec if isinstance(dec, str) else str(dec)[:150]}")
 
-        # Meeting chunks (already handled in deal/fathom prompts, but useful for health/ticket/general)
+        # Meeting chunks — skip if already rendered in the intent-specific prompt
         chunks = prefetched.get("meeting_chunks", [])
-        if chunks and "Meeting Intelligence" not in "\n".join(parts):
+        if chunks and "Meeting Intelligence" not in existing_prompt:
             from collections import OrderedDict
             meetings = OrderedDict()
             for chunk in chunks:

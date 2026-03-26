@@ -589,8 +589,9 @@ class ChatService:
             logger.info(f"[Chat] Memory assembled: keys={list(customer_memory.keys())}")
 
             # ── Universal cross-reference: enrich with data from all sources ──
-            # Runs for ALL intents so every answer can use deals + calls + meetings
-            xref_entity = _extract_entity_from_query(message) or customer_name
+            # Only runs when we have an explicit entity (not for generic "hello" queries)
+            explicit_entity = _extract_entity_from_query(message)
+            xref_entity = explicit_entity or (customer_name if intent != "general" else None)
             if xref_entity:
                 xref_search = xref_entity.lower().split()[0] if xref_entity else ""
                 if len(xref_search) >= 3:

@@ -180,7 +180,12 @@ class PreSalesFunnelAgent(BaseAgent):
             company = deal[1]
             if not company:
                 continue
-            search_key = company.lower().split()[0]
+            # Use first word, but prefer longer keys to avoid false matches
+            # (e.g., "Union Bank" -> "union" would match "Credit Union")
+            words = company.lower().split()
+            search_key = words[0]
+            if len(search_key) < 5 and len(words) > 1:
+                search_key = " ".join(words[:2])  # Use first two words for short names
             if len(search_key) < 3 or search_key in companies_seen:
                 continue
             companies_seen.add(search_key)
@@ -291,17 +296,12 @@ class PreSalesFunnelAgent(BaseAgent):
             scores["stage"] = stage_score
             factors.append(f"Stage: {stage} ({int(stage_score * 100)}% base)")
 
-            # ── Factor 2: Meeting Engagement (25%) ──
-            # Search by first meaningful word of company/deal name in call insights
-            # (full names like "Marriott International" won't match "Marriott's team")
-            engagement_score = 0.0
-            meeting_details = []
+            # ── Fetch call insights ONCE for factors 2/3/4 ──
             raw_search = (company or name or "").lower().strip()
-            # Use first word if multi-word (e.g., "Marriott International" -> "marriott")
             search_term = raw_search.split()[0] if raw_search else ""
-            # But skip generic words
             if search_term in ("the", "a", "an", "new", "test"):
-                search_term = raw_search  # fall back to full name
+                search_term = raw_search
+            calls = []
             if search_term and len(search_term) >= 3:
                 calls = db.execute(text("""
                     SELECT summary, sentiment, sentiment_score, participants,
@@ -312,117 +312,92 @@ class PreSalesFunnelAgent(BaseAgent):
                     ORDER BY processed_at DESC LIMIT 5
                 """), {"search": f"%{search_term}%"}).fetchall()
 
-                if calls:
-                    call_count = len(calls)
-                    total_participants = 0
-                    for call in calls:
-                        participants = call[3] or []
-                        if isinstance(participants, list):
-                            total_participants += len(participants)
+            # ── Factor 2: Meeting Engagement (25%) ──
+            engagement_score = 0.0
+            if calls:
+                call_count = len(calls)
+                total_participants = 0
+                for call in calls:
+                    participants = call[3] or []
+                    if isinstance(participants, list):
+                        total_participants += len(participants)
 
-                    # More calls = more engagement
-                    if call_count >= 3:
-                        engagement_score = 0.9
-                    elif call_count >= 2:
-                        engagement_score = 0.7
-                    else:
-                        engagement_score = 0.5
-
-                    # Many participants = decision-makers involved
-                    avg_participants = total_participants / call_count if call_count else 0
-                    if avg_participants >= 5:
-                        engagement_score = min(engagement_score + 0.1, 1.0)
-                        meeting_details.append(f"avg {avg_participants:.0f} participants (decision-makers likely)")
-
-                    factors.append(f"Meetings: {call_count} calls found ({int(engagement_score * 100)}% engagement)")
+                if call_count >= 3:
+                    engagement_score = 0.9
+                elif call_count >= 2:
+                    engagement_score = 0.7
                 else:
-                    factors.append("Meetings: none found (0% engagement)")
+                    engagement_score = 0.5
 
+                avg_participants = total_participants / call_count if call_count else 0
+                if avg_participants >= 5:
+                    engagement_score = min(engagement_score + 0.1, 1.0)
+
+                factors.append(f"Meetings: {call_count} calls, avg {avg_participants:.0f} participants ({int(engagement_score * 100)}% engagement)")
+            else:
+                factors.append("Meetings: none found (0% engagement)")
             scores["engagement"] = engagement_score
 
             # ── Factor 3: Buyer Intent Signals (20%) ──
             intent_score = 0.0
-            if search_term and len(search_term) >= 3:
-                # Reuse calls from above if available
-                intent_signals = []
-                calls_for_intent = db.execute(text("""
-                    SELECT decisions, action_items, key_topics, summary
-                    FROM call_insights
-                    WHERE LOWER(summary) LIKE :search
-                       OR LOWER(CAST(key_topics AS text)) LIKE :search
-                    ORDER BY processed_at DESC LIMIT 5
-                """), {"search": f"%{search_term}%"}).fetchall()
+            intent_signals = []
+            total_decisions = 0
+            total_actions = 0
+            has_requirements = False
 
-                total_decisions = 0
-                total_actions = 0
-                has_requirements = False
+            for call in calls:
+                decisions = call[4] or []
+                actions = call[5] or []
+                summary_text = (call[0] or "").lower()
 
-                for call in calls_for_intent:
-                    decisions = call[0] or []
-                    actions = call[1] or []
-                    topics = call[2] or []
-                    summary = (call[3] or "").lower()
+                if isinstance(decisions, list):
+                    total_decisions += len(decisions)
+                if isinstance(actions, list):
+                    total_actions += len(actions)
 
-                    if isinstance(decisions, list):
-                        total_decisions += len(decisions)
-                    if isinstance(actions, list):
-                        total_actions += len(actions)
+                intent_keywords = ["replacement", "replace", "migrate", "requirement",
+                                   "budget", "timeline", "poc", "trial", "evaluate",
+                                   "shortlist", "decision"]
+                if any(kw in summary_text for kw in intent_keywords):
+                    has_requirements = True
 
-                    # Check for strong intent keywords in summary
-                    intent_keywords = ["replacement", "replace", "migrate", "requirement",
-                                       "budget", "timeline", "poc", "trial", "evaluate",
-                                       "shortlist", "decision"]
-                    if any(kw in summary for kw in intent_keywords):
-                        has_requirements = True
+            if total_decisions > 0:
+                intent_score += 0.3
+                intent_signals.append(f"{total_decisions} decisions recorded")
+            if total_actions > 0:
+                intent_score += 0.3
+                intent_signals.append(f"{total_actions} action items")
+            if has_requirements:
+                intent_score += 0.4
+                intent_signals.append("buyer intent keywords detected")
+            intent_score = min(intent_score, 1.0)
 
-                if total_decisions > 0:
-                    intent_score += 0.3
-                    intent_signals.append(f"{total_decisions} decisions recorded")
-                if total_actions > 0:
-                    intent_score += 0.3
-                    intent_signals.append(f"{total_actions} action items")
-                if has_requirements:
-                    intent_score += 0.4
-                    intent_signals.append("buyer intent keywords detected (requirements/budget/timeline/POC)")
-
-                intent_score = min(intent_score, 1.0)
-                if intent_signals:
-                    factors.append(f"Intent: {', '.join(intent_signals)} ({int(intent_score * 100)}%)")
-                else:
-                    factors.append("Intent: no signals detected (0%)")
-
+            if intent_signals:
+                factors.append(f"Intent: {', '.join(intent_signals)} ({int(intent_score * 100)}%)")
+            elif calls:
+                factors.append("Intent: no strong signals (0%)")
+            else:
+                factors.append("Intent: no call data (0%)")
             scores["intent"] = intent_score
 
             # ── Factor 4: Sentiment (15%) ──
-            sentiment_score = 0.5  # neutral default
-            if search_term and len(search_term) >= 3:
-                sentiments = db.execute(text("""
-                    SELECT sentiment, sentiment_score
-                    FROM call_insights
-                    WHERE (LOWER(summary) LIKE :search
-                       OR LOWER(CAST(key_topics AS text)) LIKE :search)
-                      AND sentiment IS NOT NULL
-                    ORDER BY processed_at DESC LIMIT 5
-                """), {"search": f"%{search_term}%"}).fetchall()
+            sentiment_score = 0.5
+            calls_with_sentiment = [c for c in calls if c[1] is not None]
+            if calls_with_sentiment:
+                pos = sum(1 for c in calls_with_sentiment if c[1] == "positive")
+                neg = sum(1 for c in calls_with_sentiment if c[1] == "negative")
+                total = len(calls_with_sentiment)
 
-                if sentiments:
-                    pos = sum(1 for s in sentiments if s[0] == "positive")
-                    neg = sum(1 for s in sentiments if s[0] == "negative")
-                    total = len(sentiments)
-
-                    if pos > neg:
-                        sentiment_score = 0.7 + (0.3 * pos / total)
-                        factors.append(f"Sentiment: {pos}/{total} positive calls ({int(sentiment_score * 100)}%)")
-                    elif neg > pos:
-                        sentiment_score = 0.3 - (0.2 * neg / total)
-                        sentiment_score = max(sentiment_score, 0.05)
-                        factors.append(f"Sentiment: {neg}/{total} negative calls ({int(sentiment_score * 100)}%)")
-                    else:
-                        sentiment_score = 0.5
-                        factors.append(f"Sentiment: mixed ({total} calls)")
+                if pos > neg:
+                    sentiment_score = 0.7 + (0.3 * pos / total)
+                    factors.append(f"Sentiment: {pos}/{total} positive calls ({int(sentiment_score * 100)}%)")
+                elif neg > pos:
+                    sentiment_score = max(0.3 - (0.2 * neg / total), 0.05)
+                    factors.append(f"Sentiment: {neg}/{total} negative calls ({int(sentiment_score * 100)}%)")
                 else:
-                    factors.append("Sentiment: no call data (neutral 50%)")
-
+                    factors.append(f"Sentiment: mixed ({total} calls)")
+            else:
+                factors.append("Sentiment: no call data (neutral 50%)")
             scores["sentiment"] = sentiment_score
 
             # ── Factor 5: Deal Velocity (15%) ──

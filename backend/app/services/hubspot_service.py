@@ -183,6 +183,9 @@ class HubSpotService:
         if props.get("closedate"):
             close_date = self._parse_hubspot_date(props["closedate"])
 
+        # Only store requested properties (avoid leaking internal HubSpot fields)
+        filtered_props = {k: v for k, v in props.items() if k in DEAL_PROPERTIES}
+
         return {
             "hubspot_deal_id": str(deal.get("id", "")),
             "deal_name": props.get("dealname", "Untitled Deal"),
@@ -191,7 +194,7 @@ class HubSpotService:
             "amount": amount,
             "close_date": close_date.date() if close_date else None,
             "company_name": company_name,
-            "properties": props,
+            "properties": filtered_props,
             "hubspot_created_at": self._parse_hubspot_date(props.get("hs_createdate")),
             "hubspot_updated_at": self._parse_hubspot_date(props.get("hs_lastmodifieddate")),
         }

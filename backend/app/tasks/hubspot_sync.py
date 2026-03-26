@@ -89,8 +89,9 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
                     if "closedwon" in new_stage.lower().replace(" ", ""):
                         closed_won_deals.append(result)
 
-                # New deals that are already Closed Won
-                if result["action"] == "created" and trigger_events:
+                # New deals that are already Closed Won (only if stage didn't change,
+                # otherwise the block above already handled it)
+                elif result["action"] == "created" and trigger_events:
                     stage = mapped.get("stage", "")
                     if "closedwon" in stage.lower().replace(" ", ""):
                         closed_won_deals.append(result)
@@ -189,10 +190,14 @@ def _resolve_customer(company_name: str | None, customer_cache: dict) -> tuple:
         c = customer_cache[name_lower]
         return c.id, c.name
 
-    # Containment match: check if company name contains or is contained by customer name
+    # Containment match: only if the shorter string is >= 5 chars to avoid
+    # false positives (e.g. "Metro" matching "Metro Fiber Networks")
+    MIN_CONTAINMENT_LEN = 5
     for cust_name_lower, cust in customer_cache.items():
-        if name_lower in cust_name_lower or cust_name_lower in name_lower:
-            return cust.id, cust.name
+        shorter = min(len(name_lower), len(cust_name_lower))
+        if shorter >= MIN_CONTAINMENT_LEN:
+            if name_lower in cust_name_lower or cust_name_lower in name_lower:
+                return cust.id, cust.name
 
     return None, None
 

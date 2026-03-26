@@ -312,14 +312,24 @@ async def _run_health_check():
 
 
 async def _run_hubspot_sync():
-    """APScheduler job: HubSpot deal sync."""
-    try:
-        from app.tasks.hubspot_sync import sync_hubspot_deals
+    """APScheduler job: HubSpot deal sync — initial full then skip on restart."""
+    import pathlib
+    from app.tasks.hubspot_sync import sync_hubspot_deals
 
-        logger.info("[HubSpotSync] Starting deal sync")
+    try:
+        sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".hubspot_initial_sync_done"
+
+        if sync_marker.exists():
+            # Already synced — skip startup sync (daily cron at 7 AM handles updates)
+            logger.info("[HubSpotSync] Initial sync already done — skipping startup sync")
+            return
+
+        logger.info("[HubSpotSync] Initial full sync starting")
         stats = await asyncio.get_event_loop().run_in_executor(
             None, lambda: sync_hubspot_deals()
         )
+        sync_marker.write_text("done")
+
         created = stats.get("created", 0)
         updated = stats.get("updated", 0)
         if created or updated:

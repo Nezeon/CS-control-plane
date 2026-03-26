@@ -118,14 +118,13 @@ def _is_celery_available() -> bool:
 from app.utils.customer_aliases import CUSTOMER_ALIASES as _FATHOM_CUSTOMER_ALIASES
 
 
-def _resolve_customer(db, title: str, participants: list[str] | None = None):
+def _resolve_customer(db, title: str, participants: list[str] | None = None, summary: str | None = None):
     """
-    Match a Fathom meeting title to an existing customer, or auto-create as prospect.
+    Match a Fathom meeting to an existing customer.
 
-    Tries exact match, containment, then alias lookup against existing customers.
-    If no match, auto-creates a new customer with tier='prospect'.
-
-    Returns (customer_id: UUID, customer_name: str). Always returns a valid pair.
+    Search order: title segments (exact, containment, alias) -> summary text.
+    Returns (customer_id, customer_name) or (None, None) if no match.
+    Never auto-creates customers — unmatched calls are saved with customer_id=None.
     """
     from app.models.customer import Customer
 
@@ -177,55 +176,41 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None):
             continue
         candidate_segments.append(seg)
 
-    if not candidate_segments:
-        return None, None
-
-    # Load existing customers
+    # Load existing customers for matching
     customers = db.query(Customer.id, Customer.name).all()
     customer_map = {c.name.lower(): (c.id, c.name) for c in customers}
 
-    # Try exact match first, then containment
-    for seg in candidate_segments:
-        seg_lower = seg.lower()
-        # Exact match
-        if seg_lower in customer_map:
-            return customer_map[seg_lower]
-        # Containment: customer name in segment or segment in customer name
+    # Try title segment matching (exact, containment, alias)
+    if candidate_segments:
+        for seg in candidate_segments:
+            seg_lower = seg.lower()
+            # Exact match
+            if seg_lower in customer_map:
+                return customer_map[seg_lower]
+            # Containment: customer name in segment or segment in customer name
+            for cname_lower, (cid, cname) in customer_map.items():
+                if cname_lower in seg_lower or seg_lower in cname_lower:
+                    return cid, cname
+
+        # Check alias map
+        for seg in candidate_segments:
+            alias_target = _FATHOM_CUSTOMER_ALIASES.get(seg.lower())
+            if alias_target and alias_target in customer_map:
+                return customer_map[alias_target]
+
+    # Fallback: search customer names in meeting summary (catches cases where
+    # customer name appears in summary/transcript but not in the title)
+    if summary:
+        summary_lower = summary.lower()
         for cname_lower, (cid, cname) in customer_map.items():
-            if cname_lower in seg_lower or seg_lower in cname_lower:
+            # Only match names >= 5 chars to avoid false positives
+            if len(cname_lower) >= 5 and cname_lower in summary_lower:
+                logger.info(f"Matched customer '{cname}' from summary (not title): {title}")
                 return cid, cname
 
-    # Check alias map before auto-creating
-    for seg in candidate_segments:
-        alias_target = _FATHOM_CUSTOMER_ALIASES.get(seg.lower())
-        if alias_target and alias_target in customer_map:
-            return customer_map[alias_target]
-
-    # No match — auto-create as prospect so we keep all call data
-    best_name = candidate_segments[0].strip()
-    best_name = re.sub(
-        r'\s+(poc|kickoff|demo|intro|call|cadence|w/)\s*.*$',
-        '', best_name, flags=re.IGNORECASE,
-    ).strip()
-    if len(best_name) < 2:
-        best_name = candidate_segments[0].strip()
-    best_name = best_name.title()
-
-    existing = db.query(Customer).filter(
-        Customer.name.ilike(best_name)
-    ).first()
-    if existing:
-        return existing.id, existing.name
-
-    new_customer = Customer(
-        id=uuid.uuid4(),
-        name=best_name,
-        tier="prospect",
-    )
-    db.add(new_customer)
-    db.flush()
-    logger.info(f"Auto-created prospect '{best_name}' from Fathom meeting: {title}")
-    return new_customer.id, best_name
+    # No match — return None instead of auto-creating junk customers
+    logger.debug(f"No customer match for meeting: {title}")
+    return None, None
 
 
 def _ingest_to_knowledge_base(event_payload: dict, result: dict, customer_name: str = ""):
@@ -595,7 +580,8 @@ async def run_fathom_sync(days: int = 7) -> dict:
             db = get_sync_session()
             try:
                 customer_id, customer_name = _resolve_customer(
-                    db, meeting_title, participants
+                    db, meeting_title, participants,
+                    summary=result.get("summary"),
                 )
 
                 _save_call_insight(db, customer_id, event_payload, result)

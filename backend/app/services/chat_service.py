@@ -34,6 +34,12 @@ TICKET_KEYWORDS = [
     "outage", "p1", "p2", "critical",
 ]
 
+DEAL_KEYWORDS = [
+    "deal", "pipeline", "funnel", "conversion", "stalled", "win rate",
+    "close rate", "chances", "probability", "poc", "demo", "prospect",
+    "hubspot", "presales", "pre-sales",
+]
+
 
 def classify_intent(message: str) -> dict:
     """Classify user chat message into agent routing intent."""
@@ -44,6 +50,13 @@ def classify_intent(message: str) -> dict:
             "intent": "fathom",
             "event_type": "user_chat_fathom",
             "lanes": ["value"],
+        }
+
+    if any(kw in lower for kw in DEAL_KEYWORDS):
+        return {
+            "intent": "deal",
+            "event_type": "user_chat_deal",
+            "lanes": ["presales"],
         }
 
     if any(kw in lower for kw in HEALTH_KEYWORDS):
@@ -122,6 +135,9 @@ _ENTITY_FILLER = {
     "happened", "happening", "during", "between", "after", "before",
     "issues", "problems", "deployment", "status", "update", "updates",
     "do", "did", "does", "doing", "can", "could", "would", "should",
+    "deal", "deals", "chances", "probability", "getting", "closing",
+    "winning", "win", "close", "us", "pipeline", "funnel", "stalled",
+    "conversion", "rate", "stage",
 }
 
 
@@ -572,6 +588,72 @@ class ChatService:
                 customer_memory = memory_agent.build_portfolio_memory(db)
             logger.info(f"[Chat] Memory assembled: keys={list(customer_memory.keys())}")
 
+            # ── Universal cross-reference: enrich with data from all sources ──
+            # Runs for ALL intents so every answer can use deals + calls + meetings
+            xref_entity = _extract_entity_from_query(message) or customer_name
+            if xref_entity:
+                xref_search = xref_entity.lower().split()[0] if xref_entity else ""
+                if len(xref_search) >= 3:
+                    try:
+                        from sqlalchemy import text as sa_text
+                        # Related deals (for health/ticket/fathom intents that don't have deal data)
+                        if "related_deals" not in prefetched:
+                            deal_rows = db.execute(sa_text("""
+                                SELECT deal_name, stage, amount, company_name
+                                FROM deals
+                                WHERE LOWER(deal_name) LIKE :s OR LOWER(company_name) LIKE :s
+                                ORDER BY amount DESC NULLS LAST LIMIT 5
+                            """), {"s": f"%{xref_search}%"}).fetchall()
+                            if deal_rows:
+                                prefetched["related_deals"] = [
+                                    {"deal_name": r[0], "stage": r[1], "amount": r[2], "company_name": r[3]}
+                                    for r in deal_rows
+                                ]
+
+                        # Related call insights (for deal/health/ticket intents that don't have call data)
+                        if "related_calls" not in prefetched:
+                            call_rows = db.execute(sa_text("""
+                                SELECT summary, sentiment, key_topics, risks, decisions, action_items
+                                FROM call_insights
+                                WHERE LOWER(summary) LIKE :s
+                                ORDER BY processed_at DESC LIMIT 5
+                            """), {"s": f"%{xref_search}%"}).fetchall()
+                            if call_rows:
+                                prefetched["related_calls"] = [
+                                    {
+                                        "summary": r[0][:300] if r[0] else "",
+                                        "sentiment": r[1],
+                                        "key_topics": r[2] or [],
+                                        "risks": r[3] or [],
+                                        "decisions": r[4] or [],
+                                        "action_items": r[5] or [],
+                                    }
+                                    for r in call_rows
+                                ]
+
+                        # Meeting chunks from ChromaDB (for deal/health/ticket intents)
+                        if "meeting_chunks" not in prefetched:
+                            from app.services.meeting_knowledge_service import meeting_knowledge_service
+                            chunks = meeting_knowledge_service.filter_by_customer(xref_entity, top_k=5)
+                            if chunks:
+                                prefetched["meeting_chunks"] = chunks
+
+                        xref_keys = [k for k in ("related_deals", "related_calls", "meeting_chunks") if k in prefetched]
+                        if xref_keys:
+                            logger.info(f"[Chat] Cross-reference for '{xref_entity}': {xref_keys}")
+                    except Exception as e:
+                        logger.debug(f"[Chat] Cross-reference failed: {e}")
+
+            # Deal intent: also prefetch loss analysis for portfolio questions
+            if intent == "deal":
+                try:
+                    from app.agents.presales_funnel_agent import PreSalesFunnelAgent
+                    agent = PreSalesFunnelAgent()
+                    prefetched["loss_analysis"] = agent._compute_loss_analysis(db)
+                    logger.info(f"[Chat] Loss analysis: {prefetched['loss_analysis'].get('with_call_data', 0)} deals with call data")
+                except Exception as e:
+                    logger.debug(f"[Chat] Loss analysis failed: {e}")
+
             # Fathom intent: search ChromaDB meeting knowledge base (155+ real meetings)
             if intent == "fathom":
                 from app.services.meeting_knowledge_service import meeting_knowledge_service
@@ -605,6 +687,30 @@ class ChatService:
                     logger.info(f"[Chat] Meeting knowledge total: {len(chunks)} chunks (customer + semantic)")
 
                 prefetched["meeting_chunks"] = chunks
+
+            # Deal intent: prefetch pipeline metrics + meeting intelligence
+            if intent == "deal":
+                entity = _extract_entity_from_query(message)
+                try:
+                    from app.agents.presales_funnel_agent import PreSalesFunnelAgent
+                    agent = PreSalesFunnelAgent()
+                    prefetched["funnel_metrics"] = agent._compute_conversion_rates(db)
+                    prefetched["stalled_deals"] = agent._find_stalled_deals(db)
+                    prefetched["deal_probabilities"] = agent._compute_deal_probability(db, deal_name=entity)
+                    logger.info(f"[Chat] Deal prefetch: {prefetched['funnel_metrics'].get('total_deals', 0)} deals, {len(prefetched.get('deal_probabilities', []))} probabilities")
+                except Exception as e:
+                    logger.warning(f"[Chat] Deal prefetch failed: {e}")
+
+                # Also fetch meeting intelligence for the deal's company
+                if entity:
+                    try:
+                        from app.services.meeting_knowledge_service import meeting_knowledge_service
+                        chunks = meeting_knowledge_service.filter_by_customer(entity, top_k=5)
+                        if chunks:
+                            prefetched["meeting_chunks"] = chunks
+                            logger.info(f"[Chat] Deal meeting context: {len(chunks)} chunks for '{entity}'")
+                    except Exception as e:
+                        logger.debug(f"[Chat] Deal meeting fetch failed: {e}")
 
             # Detect Slack channel for per-channel context (reuses conv fetched above)
             slack_channel = (conv.metadata_ or {}).get("slack_channel") if conv else None

@@ -22,6 +22,7 @@ organization:
         - qbr_value                  # Sofia Marquez
         - sow_prerequisite           # Ethan Brooks
         - deployment_intelligence    # Zara Kim
+        - presales_funnel            # Jordan Reeves
       description: "Execute specific CS tasks. Receive assignments from the Orchestrator, do the work, report back."
 
     foundation:
@@ -49,6 +50,11 @@ organization:
         - sow_prerequisite           # Ethan Brooks
         - deployment_intelligence    # Zara Kim
       focus: "Scope of work, deployment tracking"
+
+    presales:
+      specialists:
+        - presales_funnel            # Jordan Reeves
+      focus: "Pipeline analysis, deal velocity, conversion rates"
 
   communication_rules:
     - "Orchestrator routes events directly to the correct specialist"

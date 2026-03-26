@@ -66,6 +66,14 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
             except Exception as e:
                 logger.debug(f"[HubSpotSync] Could not resolve company for deal {deal_id}: {e}")
 
+        # Re-warm DB connection after long company resolution phase (prevents Neon SSL timeout)
+        try:
+            from sqlalchemy import text as sa_text
+            db.execute(sa_text("SELECT 1"))
+            db.commit()
+        except Exception:
+            db.rollback()
+
         # Upsert each deal
         stats = {"created": 0, "updated": 0, "skipped": 0, "errors": 0, "total": len(deals)}
         stage_changed_deals = []
@@ -99,9 +107,17 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
             except Exception as e:
                 logger.error(f"[HubSpotSync] Failed to upsert deal {deal.get('id')}: {e}")
                 stats["errors"] += 1
+                # Rollback broken transaction (Neon SSL timeout recovery)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
 
             if (i + 1) % BATCH_SIZE == 0:
-                db.commit()
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
                 logger.info(f"[HubSpotSync] Progress: {i + 1}/{len(deals)} deals processed")
 
         db.commit()

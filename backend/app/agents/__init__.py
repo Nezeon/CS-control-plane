@@ -14,6 +14,7 @@ from app.agents.escalation_agent import EscalationAgent
 from app.agents.qbr_agent import QBRAgent
 from app.agents.sow_agent import SOWAgent
 from app.agents.deployment_intel_agent import DeploymentIntelAgent
+from app.agents.presales_funnel_agent import PreSalesFunnelAgent
 
 # Foundation
 from app.agents.memory_agent import CustomerMemoryAgent

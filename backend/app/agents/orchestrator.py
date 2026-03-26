@@ -28,12 +28,13 @@ EVENT_ROUTING = {
     "new_enterprise_customer": "sow_prerequisite",
     "deployment_started": "deployment_intelligence",
     # HubSpot deal events
-    "deal_stage_changed": "health_monitor",  # temp — route to presales_funnel when built (Day 18)
+    "deal_stage_changed": "presales_funnel",
     "new_customer": "sow_prerequisite",
     # User chat events
     "user_chat_fathom": "health_monitor",
     "user_chat_health": "health_monitor",
     "user_chat_ticket": "triage_agent",
+    "user_chat_deal": "presales_funnel",
     "user_chat_general": "health_monitor",
 }
 
@@ -53,6 +54,7 @@ EVENT_LANE_MAP = {
     "user_chat_fathom": ["value"],
     "user_chat_health": ["value"],
     "user_chat_ticket": ["support"],
+    "user_chat_deal": ["presales"],
     "user_chat_general": ["value", "support"],
 }
 

@@ -246,7 +246,7 @@ async def get_insight(
 
 @router.post("/sync-fathom", status_code=status.HTTP_202_ACCEPTED)
 async def sync_fathom(
-    days: int = Query(default=7, ge=1, le=90),
+    days: int = Query(default=7, ge=1, le=730),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

@@ -118,8 +118,9 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
 
     # Fallback: search customer names in meeting summary (catches cases where
     # customer name appears in summary/transcript but not in the title)
-    if summary:
-        summary_lower = summary.lower()
+    summary_lower = summary.lower() if summary else None
+
+    if summary_lower:
         for cname_lower, (cid, cname) in customer_map.items():
             # Only match names >= 5 chars to avoid false positives
             if len(cname_lower) >= 5 and cname_lower in summary_lower:
@@ -129,19 +130,26 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
     # Fallback: search HubSpot deal company names in summary.
     # If a deal company is mentioned but no customer record exists,
     # auto-create a prospect customer so insights get linked.
-    if summary:
+    if summary_lower:
         from app.models.deal import Deal
+        from sqlalchemy import func
         deal_companies = (
             db.query(Deal.company_name)
             .filter(Deal.company_name.isnot(None))
             .distinct()
             .all()
         )
-        summary_lower = summary.lower()
         for (company_name,) in deal_companies:
             cn_lower = company_name.lower()
             # Word-boundary match, min 6 chars to avoid false positives
             if len(cn_lower) >= 6 and re.search(r'\b' + re.escape(cn_lower) + r'\b', summary_lower):
+                # Dedup: check if a customer with this name already exists
+                existing = db.query(Customer).filter(
+                    func.lower(Customer.name) == cn_lower
+                ).first()
+                if existing:
+                    logger.info(f"Matched existing customer '{existing.name}' via deal company in summary: {title}")
+                    return existing.id, existing.name
                 # Auto-create a prospect customer from the deal company
                 new_customer = Customer(
                     name=company_name,
@@ -369,7 +377,7 @@ def _save_call_insight(db, customer_id, event_payload: dict, result: dict) -> No
         key_topics=result.get("key_topics", []),
         customer_recap_draft=result.get("customer_recap_draft"),
         raw_transcript=event_payload.get("transcript"),
-        meeting_type=(result.get("meeting_type") or "Other") if (result.get("meeting_type") or "Other") in VALID_MEETING_TYPES else "Other",
+        meeting_type=(result.get("meeting_type") or "Other") if result.get("meeting_type") in VALID_MEETING_TYPES else "Other",
         highlights=result.get("highlights", []),
         conclusion=result.get("conclusion"),
     )
@@ -426,6 +434,17 @@ async def run_fathom_sync(days: int = 7) -> dict:
     from app.services.sentiment_analyzer import analyze_sentiment
 
     errors = 0
+    # Deduplicate meetings by recording_id (Fathom can return same meeting under multiple teams)
+    seen_ids: set[str] = set()
+    unique_meetings = []
+    for m in meetings:
+        rid = str(m.get("recording_id", ""))
+        if rid and rid not in seen_ids:
+            seen_ids.add(rid)
+            unique_meetings.append(m)
+    logger.info(f"Fathom sync: {len(meetings)} raw, {len(unique_meetings)} unique meetings")
+    meetings = unique_meetings
+
     for meeting in meetings:
         recording_id = str(meeting.get("recording_id", ""))
         if recording_id in existing_ids or not meeting.get("transcript"):
@@ -435,14 +454,9 @@ async def run_fathom_sync(days: int = 7) -> dict:
         meeting_title = meeting.get("title", "Untitled")
         meeting_participants = fathom_service.extract_participants(meeting)
 
-        # Skip very short transcripts (<3000 chars ≈ <3 min)
         raw_transcript = fathom_service.build_flat_transcript(
             meeting.get("transcript", [])
         )
-        if len(raw_transcript) < 3000:
-            logger.info(f"Fathom sync: skipped short meeting ({len(raw_transcript)} chars): {meeting_title}")
-            skipped += 1
-            continue
 
         transcript_text = raw_transcript
         participants = meeting_participants
@@ -452,6 +466,12 @@ async def run_fathom_sync(days: int = 7) -> dict:
         fathom_summary = (
             summary_data.get("markdown_formatted") if summary_data else None
         )
+
+        # Skip meetings with no summary at all (empty Fathom recording)
+        if not fathom_summary and not raw_transcript.strip():
+            logger.info(f"Fathom sync: skipped meeting with no summary/transcript: {meeting_title}")
+            skipped += 1
+            continue
 
         event_payload = {
             "recording_id": recording_id,

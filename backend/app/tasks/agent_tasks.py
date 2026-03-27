@@ -584,7 +584,17 @@ async def run_fathom_sync(days: int = 7) -> dict:
                     summary=result.get("summary"),
                 )
 
-                _save_call_insight(db, customer_id, event_payload, result)
+                try:
+                    _save_call_insight(db, customer_id, event_payload, result)
+                except Exception as fk_err:
+                    # FK violation: customer was deleted — retry with customer_id=None
+                    if "ForeignKeyViolation" in str(type(fk_err).__name__) or "foreign key" in str(fk_err).lower():
+                        db.rollback()
+                        logger.info(f"Fathom sync: FK violation for customer {customer_id}, retrying with NULL")
+                        _save_call_insight(db, None, event_payload, result)
+                        customer_id = None
+                    else:
+                        raise
 
                 # RAG embed
                 try:

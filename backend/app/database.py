@@ -41,11 +41,12 @@ _async_url = _strip_sslmode(settings.DATABASE_URL) if settings.DATABASE_URL else
 engine = create_async_engine(
     _async_url,
     echo=False,
-    connect_args=_async_connect_args(),
+    connect_args={**_async_connect_args(), "command_timeout": 30, "server_settings": {"statement_timeout": "30000"}},
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
-    pool_recycle=180,  # Recycle before Neon idles (~5 min)
+    pool_recycle=120,  # Recycle every 2 min (Neon drops idle connections at ~5 min)
+    pool_timeout=30,   # Wait up to 30s for a connection from pool
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -53,11 +54,12 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 sync_engine = create_engine(
     settings.SYNC_DATABASE_URL,
     echo=False,
-    connect_args=_sync_connect_args(),
+    connect_args={**_sync_connect_args(), "connect_timeout": 30},
     pool_size=3,
     max_overflow=5,
     pool_pre_ping=True,
-    pool_recycle=180,  # Recycle connections every 3 min (Neon idles at 5 min)
+    pool_recycle=120,  # Recycle every 2 min (Neon drops idle at ~5 min)
+    pool_timeout=30,
 )
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 

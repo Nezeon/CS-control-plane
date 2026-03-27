@@ -147,7 +147,7 @@ class JiraService:
             start_at += len(issues)
 
             if len(all_issues) >= max_issues:
-                logger.warning(f"[Jira] Hit max_issues cap ({max_issues}), stopping pagination")
+                logger.info(f"[Jira] Hit max_issues cap ({max_issues}), stopping pagination")
                 break
 
         return all_issues

@@ -251,7 +251,9 @@ async def _run_jira_sync():
 
     try:
         project_keys = [settings.JIRA_DEFAULT_PROJECT]
-        sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".jira_initial_sync_done"
+        marker_dir = pathlib.Path(settings.CHROMADB_PATH)
+        marker_dir.mkdir(parents=True, exist_ok=True)
+        sync_marker = marker_dir / ".jira_initial_sync_done"
 
         if not sync_marker.exists():
             # One-time catchup: pull last 6 months
@@ -317,7 +319,9 @@ async def _run_hubspot_sync():
     from app.tasks.hubspot_sync import sync_hubspot_deals
 
     try:
-        sync_marker = pathlib.Path(settings.CHROMADB_PATH) / ".hubspot_initial_sync_done"
+        marker_dir = pathlib.Path(settings.CHROMADB_PATH)
+        marker_dir.mkdir(parents=True, exist_ok=True)
+        sync_marker = marker_dir / ".hubspot_initial_sync_done"
 
         if sync_marker.exists():
             # Already synced — skip startup sync (daily cron at 7 AM handles updates)

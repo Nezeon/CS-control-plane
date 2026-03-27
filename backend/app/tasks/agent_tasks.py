@@ -18,91 +18,6 @@ _IGNORE_SEGMENTS = {
     "weekly standup", "daily standup", "status update", "check in", "checkin",
 }
 
-# Keywords that indicate an internal (non-customer) meeting — skip these
-_INTERNAL_KEYWORDS = {
-    "internal", "standup", "stand-up", "daily standup", "weekly standup",
-    "intern ", "internship", "intern standup",
-    "interview", "candidate", "hiring",
-    "all hands", "townhall", "town hall",
-    "sprint", "retrospective", "retro",
-    "impromptu", "team building", "offsite",
-    "concerns",  # e.g. "Hive Pro Concerns"
-    "ai agents",  # e.g. "AI Agents Projects Discussion"
-    "development review", "code review", "architecture",
-    "agent development", "project discussion", "projects discussion",
-    "team sync", "team call", "planning call", "planning session",
-    "1:1", "one on one", "1-on-1",
-    "biso",  # internal security officer meetings
-    "dinner", "event planning",
-    "roadmap", "ciso dinner",
-    "prep call", "prep ",
-}
-
-# Keywords that indicate a customer-facing meeting — allow these
-# NOTE: Only include terms specific to customer interactions. Avoid
-# generic words like "review", "discussion", "session" which also
-# appear in internal meetings.
-_CUSTOMER_KEYWORDS = {
-    "cadence", "poc", "qbr", "demo", "demonstration",
-    "onboarding", "kickoff", "introduction", "platform",
-    "deployment", "integration", "caasm", "tem",
-    "vpt", "results", "touchpoint", "next steps",
-    "insurance", "bank", "finance",
-}
-
-
-def _is_customer_meeting(db, title: str, participants: list[str] | None = None) -> bool:
-    """
-    Classify whether a Fathom meeting is customer-facing or internal.
-
-    Returns True if the meeting should be imported (customer-facing).
-    Returns False if it's internal (standup, interview, 1:1, etc.).
-    """
-    if not title:
-        return False
-
-    title_lower = title.lower().strip()
-
-    # 1. Quick skip: internal keywords
-    for kw in _INTERNAL_KEYWORDS:
-        if kw in title_lower:
-            return False
-
-    # 2. Quick pass: || delimiter = Fathom standard customer format
-    #    e.g. "Ujjivan Bank || HivePro TEM || Demo"
-    if "||" in title:
-        return True
-
-    # 3. Quick pass: "-hivepro" or "hivepro-" pattern = cadence/customer call
-    #    e.g. "DMS-HivePro | Regular Cadence Call", "KSAA-Hivepro | Weekly Cadence Call"
-    if re.search(r'hivepro\s*[-|]|[-|]\s*hivepro', title_lower):
-        return True
-
-    # 4. Skip "Name & Name" or "Name, Name" patterns (1:1 / informal)
-    #    e.g. "David & Bryan", "Daniel & Bryan", "Charlie & Bryan"
-    if re.match(r'^[\w]+\s*[&,]\s*[\w]+$', title.strip()):
-        return False
-
-    # 5. Check for customer-meeting keywords
-    for kw in _CUSTOMER_KEYWORDS:
-        if kw in title_lower:
-            return True
-
-    # 6. Check if title matches an existing customer name in DB
-    #    BUT require descriptive content beyond just the name — bare name-only
-    #    titles are usually internal prep calls, not structured customer meetings.
-    from app.models.customer import Customer
-    customers = db.query(Customer.name).all()
-    for (cname,) in customers:
-        if cname.lower() in title_lower or title_lower in cname.lower():
-            remaining = title_lower.replace(cname.lower(), "").strip(" -|/&,.")
-            if len(remaining) < 5:
-                continue  # Just a name, no description — ambiguous, skip
-            return True
-
-    # 7. Default: skip unknown meetings (conservative — only import what we're sure about)
-    return False
-
 
 def _is_celery_available() -> bool:
     """Check if Redis/Celery broker is reachable."""
@@ -122,9 +37,12 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
     """
     Match a Fathom meeting to an existing customer.
 
-    Search order: title segments (exact, containment, alias) -> summary text.
+    Search order:
+      1. Title segments → customers table (exact, containment, alias)
+      2. Summary text → customers table
+      3. Summary text → HubSpot deal companies (auto-creates prospect customer)
+
     Returns (customer_id, customer_name) or (None, None) if no match.
-    Never auto-creates customers — unmatched calls are saved with customer_id=None.
     """
     from app.models.customer import Customer
 
@@ -208,7 +126,34 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
                 logger.info(f"Matched customer '{cname}' from summary (not title): {title}")
                 return cid, cname
 
-    # No match — return None instead of auto-creating junk customers
+    # Fallback: search HubSpot deal company names in summary.
+    # If a deal company is mentioned but no customer record exists,
+    # auto-create a prospect customer so insights get linked.
+    if summary:
+        from app.models.deal import Deal
+        deal_companies = (
+            db.query(Deal.company_name)
+            .filter(Deal.company_name.isnot(None))
+            .distinct()
+            .all()
+        )
+        summary_lower = summary.lower()
+        for (company_name,) in deal_companies:
+            cn_lower = company_name.lower()
+            # Word-boundary match, min 6 chars to avoid false positives
+            if len(cn_lower) >= 6 and re.search(r'\b' + re.escape(cn_lower) + r'\b', summary_lower):
+                # Auto-create a prospect customer from the deal company
+                new_customer = Customer(
+                    name=company_name,
+                    tier="prospect",
+                    is_active=True,
+                    metadata_={"source": "fathom_auto_created", "created_from": "deal_company_match"},
+                )
+                db.add(new_customer)
+                db.flush()  # get the ID without committing
+                logger.info(f"Auto-created prospect customer '{company_name}' from deal match in summary: {title}")
+                return new_customer.id, company_name
+
     logger.debug(f"No customer match for meeting: {title}")
     return None, None
 
@@ -355,6 +300,12 @@ def process_event(self, event: dict) -> dict:
         db.close()
 
 
+VALID_MEETING_TYPES = frozenset({
+    "POC", "Demo", "Check-in", "QBR", "Kickoff",
+    "Escalation", "Training", "Support", "Renewal", "Other",
+})
+
+
 def _build_fathom_prompt(transcript: str, customer: dict, payload: dict) -> str:
     """Build prompt for Fathom call transcript analysis."""
     parts = [
@@ -375,7 +326,10 @@ def _build_fathom_prompt(transcript: str, customer: dict, payload: dict) -> str:
         "",
         "## Output Format",
         "Respond with ONLY a JSON object (no markdown, no extra text). Use this exact schema:",
-        '{"summary": "2-3 paragraph executive summary of the call",',
+        '{"meeting_type": "One of: POC, Demo, Check-in, QBR, Kickoff, Escalation, Training, Support, Renewal, Other",',
+        ' "summary": "2-3 paragraph executive summary of the call",',
+        ' "highlights": ["Top 3-5 most important points from the call, each a concise phrase or short sentence"],',
+        ' "conclusion": "1-2 sentence takeaway summarizing the main outcome and immediate next steps",',
         ' "key_topics": ["topic1", "topic2"],',
         ' "action_items": [{"task": "description", "owner": "person name", "deadline": "date or null"}],',
         ' "decisions": ["decision1", "decision2"],',
@@ -415,6 +369,9 @@ def _save_call_insight(db, customer_id, event_payload: dict, result: dict) -> No
         key_topics=result.get("key_topics", []),
         customer_recap_draft=result.get("customer_recap_draft"),
         raw_transcript=event_payload.get("transcript"),
+        meeting_type=(result.get("meeting_type") or "Other") if (result.get("meeting_type") or "Other") in VALID_MEETING_TYPES else "Other",
+        highlights=result.get("highlights", []),
+        conclusion=result.get("conclusion"),
     )
     db.add(insight)
 
@@ -443,6 +400,7 @@ async def run_fathom_sync(days: int = 7) -> dict:
     try:
         meetings = await fathom_service.list_all_meetings(
             created_after=created_after,
+            teams=settings.FATHOM_TEAM_FILTER,
             include_transcript=True,
             include_summary=True,
             include_action_items=True,
@@ -464,7 +422,6 @@ async def run_fathom_sync(days: int = 7) -> dict:
 
     imported = 0
     skipped = 0
-    internal_skipped = 0
     from app.services import claude_service
     from app.services.sentiment_analyzer import analyze_sentiment
 
@@ -483,27 +440,7 @@ async def run_fathom_sync(days: int = 7) -> dict:
             meeting.get("transcript", [])
         )
         if len(raw_transcript) < 3000:
-            internal_skipped += 1
             logger.info(f"Fathom sync: skipped short meeting ({len(raw_transcript)} chars): {meeting_title}")
-            skipped += 1
-            continue
-
-        # Wrap each meeting in try/except so transient errors don't kill the whole sync
-        try:
-            # Filter: skip internal meetings (fresh session to avoid Neon timeout)
-            db = get_sync_session()
-            try:
-                is_customer = _is_customer_meeting(db, meeting_title, meeting_participants)
-            finally:
-                db.close()
-        except Exception as e:
-            logger.warning(f"Fathom sync: DB error checking meeting {recording_id}: {e}")
-            errors += 1
-            continue
-
-        if not is_customer:
-            internal_skipped += 1
-            logger.info(f"Fathom sync: skipped internal meeting: {meeting_title}")
             skipped += 1
             continue
 
@@ -646,6 +583,9 @@ async def run_fathom_sync(days: int = 7) -> dict:
                     key_topics=result.get("key_topics", []),
                     participants=event_payload.get("participants", []),
                     call_date=event_payload.get("call_date"),
+                    meeting_type=result.get("meeting_type"),
+                    highlights=result.get("highlights", []),
+                    conclusion=result.get("conclusion"),
                 )
         except Exception as e:
             logger.warning(f"Fathom sync: Slack notification failed (non-critical): {e}")

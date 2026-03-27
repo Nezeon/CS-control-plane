@@ -212,6 +212,9 @@ class SlackService:
         key_topics: list,
         participants: list | None = None,
         call_date: str | None = None,
+        meeting_type: str | None = None,
+        highlights: list | None = None,
+        conclusion: str | None = None,
     ) -> bool:
         """Post a meeting intelligence summary to the CS alerts channel after processing."""
         if not self.configured:
@@ -238,47 +241,66 @@ class SlackService:
         }.get((sentiment or "").lower(), "⚪")
         score_str = f" ({sentiment_score:.2f})" if sentiment_score is not None else ""
 
+        # Meeting type emoji
+        type_emoji = {
+            "POC": "🧪", "Demo": "🎬", "Check-in": "📋", "QBR": "📊",
+            "Kickoff": "🚀", "Escalation": "🚨", "Training": "🎓",
+            "Support": "🛠️", "Renewal": "🔄", "Other": "📞",
+        }.get(meeting_type or "Other", "📞")
+
+        # ── Header ──
         blocks = [
             {
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"📞 New Call Processed: {title[:120]}",
+                    "text": f"📞 Call Intelligence: {title[:120]}",
                     "emoji": True,
                 },
             },
-            {
-                "type": "section",
-                "fields": [
-                    {"type": "mrkdwn", "text": f"*Customer:*\n{customer_name or 'Unknown'}"},
-                    {"type": "mrkdwn", "text": f"*Sentiment:*\n{sent_emoji} {sentiment or 'N/A'}{score_str}"},
-                ],
-            },
         ]
 
-        # Date and participants row
+        # ── Meeting type + sentiment + customer ──
+        blocks.append({
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"{type_emoji} *Type:* {meeting_type or 'Other'}  ·  {sent_emoji} {sentiment or 'N/A'}{score_str}"},
+                {"type": "mrkdwn", "text": f"👤 *Customer:* {customer_name or 'Unknown'}"},
+            ],
+        })
+
+        # ── Date + attendees ──
         meta_fields = []
         if date_str:
-            meta_fields.append({"type": "mrkdwn", "text": f"*Date:*\n{date_str}"})
+            meta_fields.append({"type": "mrkdwn", "text": f"📅 {date_str}"})
         if participants:
             names = ", ".join(str(p) for p in participants[:8])
-            meta_fields.append({"type": "mrkdwn", "text": f"*Attendees:*\n{names}"})
+            meta_fields.append({"type": "mrkdwn", "text": f"👥 {names}"})
         if meta_fields:
             blocks.append({"type": "section", "fields": meta_fields})
 
-        if summary:
-            blocks.extend(_text_to_section_blocks(summary, label="Summary"))
+        blocks.append({"type": "divider"})
 
-        # Key topics
-        if key_topics:
-            topics_str = ", ".join(str(t) for t in key_topics[:8])
+        # ── Key Highlights (primary content) — falls back to summary ──
+        if highlights:
+            highlight_lines = "\n".join(f"• {str(h)[:200]}" for h in highlights[:5])
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Key Topics:* {topics_str}"},
+                "text": {"type": "mrkdwn", "text": f"*📌 Key Highlights*\n{highlight_lines}"},
+            })
+        elif summary:
+            blocks.extend(_text_to_section_blocks(summary, label="📌 Summary"))
+
+        # ── Conclusion ──
+        if conclusion:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*🎯 Conclusion*\n{conclusion[:2000]}"},
             })
 
-        # Action items (top 5)
+        # ── Action items (top 5) ──
         if action_items:
+            blocks.append({"type": "divider"})
             items_lines = []
             for a in action_items[:5]:
                 if isinstance(a, dict):
@@ -289,11 +311,12 @@ class SlackService:
                     items_lines.append(f"• {a}")
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Action Items:*\n" + "\n".join(items_lines)},
+                "text": {"type": "mrkdwn", "text": f"*📋 Action Items*\n" + "\n".join(items_lines)},
             })
 
-        # Risks
+        # ── Risk signals (only if present) ──
         if risks:
+            blocks.append({"type": "divider"})
             risk_lines = []
             for r in risks[:3]:
                 if isinstance(r, dict):
@@ -302,12 +325,22 @@ class SlackService:
                     risk_lines.append(f"🔴 {r}")
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Risk Signals:*\n" + "\n".join(risk_lines)},
+                "text": {"type": "mrkdwn", "text": f"*⚠️ Risk Signals*\n" + "\n".join(risk_lines)},
             })
 
         blocks.append({"type": "divider"})
 
-        fallback = f"📞 Call processed: {title} ({customer_name or 'Unknown'}) — {sentiment or 'N/A'}"
+        # ── Topics (de-emphasized context block) ──
+        if key_topics:
+            topics_str = ", ".join(str(t) for t in key_topics[:8])
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f"🏷️ {topics_str}"},
+                ],
+            })
+
+        fallback = f"📞 {meeting_type or 'Call'}: {title} ({customer_name or 'Unknown'}) — {sent_emoji} {sentiment or 'N/A'}"
         return bool(self.send_message(channel, fallback, blocks))
 
     def notify_alert_update(self, alert, new_status: str) -> bool:

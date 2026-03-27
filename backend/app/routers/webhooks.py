@@ -239,6 +239,9 @@ async def fathom_webhook(
                     key_topics=result.get("key_topics", []),
                     participants=event_payload.get("participants", []),
                     call_date=event_payload.get("call_date"),
+                    meeting_type=result.get("meeting_type"),
+                    highlights=result.get("highlights", []),
+                    conclusion=result.get("conclusion"),
                 )
         except Exception as e:
             logger.warning(f"Fathom webhook: Slack notification failed (non-critical): {e}")

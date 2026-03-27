@@ -22,6 +22,9 @@ class InsightListItem(BaseModel):
     sentiment_score: float | None = None
     key_topics: list[str] = []
     customer_recap_draft: str | None = None
+    meeting_type: str | None = None
+    highlights: list[str] = []
+    conclusion: str | None = None
     processed_at: datetime | None = None
 
 
@@ -42,6 +45,9 @@ class InsightDetail(BaseModel):
     sentiment_score: float | None = None
     key_topics: list[str] = []
     customer_recap_draft: str | None = None
+    meeting_type: str | None = None
+    highlights: list[str] = []
+    conclusion: str | None = None
     raw_transcript: str | None = None
     processed_at: datetime | None = None
 

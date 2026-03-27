@@ -24,6 +24,9 @@ class CallInsight(Base):
     key_topics = sa.Column(JSONB, server_default=sa.text("'[]'::jsonb"))
     customer_recap_draft = sa.Column(sa.Text, nullable=True)
     raw_transcript = sa.Column(sa.Text, nullable=True)
+    meeting_type = sa.Column(sa.String(30), nullable=True, server_default=sa.text("'Other'"))
+    highlights = sa.Column(JSONB, server_default=sa.text("'[]'::jsonb"))
+    conclusion = sa.Column(sa.Text, nullable=True)
     processed_at = sa.Column(sa.DateTime(timezone=True), server_default=sa.func.now())
 
     # Relationships

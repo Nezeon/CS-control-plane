@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
     FATHOM_WEBHOOK_SECRET: str = ""  # Optional: verify webhook signatures
+    FATHOM_TEAM_FILTER: list[str] = ["Customer Success", "Sales"]
     FATHOM_SYNC_INTERVAL_SECONDS: int = 86400  # Daily default; set to 60 in .env for testing
 
     # Sync schedule timezone (APScheduler cron jobs)

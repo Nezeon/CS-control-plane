@@ -154,7 +154,7 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
                 new_customer = Customer(
                     name=company_name,
                     tier="prospect",
-                    is_active=True,
+                    is_active=False,
                     metadata_={"source": "fathom_auto_created", "created_from": "deal_company_match"},
                 )
                 db.add(new_customer)
@@ -536,6 +536,13 @@ async def run_fathom_sync(days: int = 7) -> dict:
         try:
             db = get_sync_session()
             try:
+                # Race guard: re-check DB in case webhook processed this concurrently
+                if db.query(CallInsight.id).filter_by(fathom_recording_id=recording_id).first():
+                    logger.info(f"Fathom sync: recording {recording_id} already in DB (concurrent webhook) — skipping")
+                    existing_ids.add(recording_id)
+                    skipped += 1
+                    continue
+
                 customer_id, customer_name = _resolve_customer(
                     db, meeting_title, participants,
                     summary=result.get("summary"),
@@ -746,6 +753,8 @@ def run_health_check_all(self) -> dict:
     """
     from collections import Counter
 
+    from sqlalchemy import or_ as sa_or
+
     from app.agents.agent_factory import AgentFactory
     from app.agents.memory_agent import CustomerMemoryAgent
     from app.config import settings
@@ -757,7 +766,10 @@ def run_health_check_all(self) -> dict:
     try:
         customers_data = [
             (str(c.id), c.name)
-            for c in init_db.query(Customer).filter(Customer.is_active.is_(True)).all()
+            for c in init_db.query(Customer).filter(
+                Customer.is_active.is_(True),
+                sa_or(Customer.tier != "prospect", Customer.tier.is_(None)),
+            ).all()
         ]
     finally:
         init_db.close()

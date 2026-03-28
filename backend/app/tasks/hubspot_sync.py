@@ -135,6 +135,11 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
         if closed_won_deals and trigger_events:
             _fire_deal_events(db, closed_won_deals, "new_customer")
 
+        # Activate prospect customers whose deals just reached Closed Won
+        if closed_won_deals:
+            _activate_closed_won_customers(db, closed_won_deals)
+            db.commit()
+
         return stats
 
     finally:
@@ -176,6 +181,18 @@ def sync_single_deal(deal_id: str, trigger_events: bool = True) -> dict:
 
         if trigger_events and result.get("stage_changed"):
             _fire_deal_events(db, [result], "deal_stage_changed")
+            # Activate prospect if deal reached Closed Won
+            new_stage = result.get("new_stage", "")
+            if "closedwon" in new_stage.lower().replace(" ", ""):
+                _activate_closed_won_customers(db, [result])
+                db.commit()
+
+        # Also activate if this is a newly created deal already at Closed Won
+        if result["action"] == "created":
+            stage = result.get("new_stage", "")
+            if "closedwon" in stage.lower().replace(" ", ""):
+                _activate_closed_won_customers(db, [result])
+                db.commit()
 
         logger.info(f"[HubSpotSync] Single sync: deal {deal_id} -> {result['action']}")
         return result
@@ -293,6 +310,32 @@ def _upsert_deal(db: Session, mapped: dict, customer_cache: dict | None = None) 
             "customer_id": str(deal.customer_id) if deal.customer_id else None,
             "company_name": deal.company_name,
         }
+
+
+def _activate_closed_won_customers(db: Session, closed_won_deals: list):
+    """Promote prospect customers to active when their deal is Closed Won."""
+    from app.models.customer import Customer
+
+    activated = 0
+    for result in closed_won_deals:
+        customer_id = result.get("customer_id")
+        if not customer_id:
+            continue
+        customer = db.query(Customer).filter(
+            Customer.id == uuid.UUID(customer_id),
+            Customer.tier == "prospect",
+        ).first()
+        if customer:
+            customer.is_active = True
+            customer.tier = None
+            activated += 1
+            logger.info(
+                f"[HubSpotSync] Activated prospect '{customer.name}' "
+                f"(deal: {result.get('deal_name', '?')})"
+            )
+    if activated:
+        db.flush()  # caller owns the commit
+        logger.info(f"[HubSpotSync] Activated {activated} prospect customers from Closed Won deals")
 
 
 def _fire_deal_events(db: Session, deal_results: list, event_type: str):

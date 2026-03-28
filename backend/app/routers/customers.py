@@ -519,6 +519,15 @@ async def create_customer(
     body: CustomerCreate,
     db: AsyncSession = Depends(get_db),
 ):
+    # Prospects are auto-created from Fathom meetings and activated via HubSpot Closed Won
+    if body.tier and body.tier.lower() == "prospect":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create a customer with tier='prospect'. "
+                   "Prospects are auto-created from Fathom meetings and "
+                   "activated when a HubSpot deal reaches Closed Won.",
+        )
+
     customer = Customer(
         name=body.name,
         industry=body.industry,

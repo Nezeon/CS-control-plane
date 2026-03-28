@@ -1,3 +1,51 @@
+## UI Design System Rules (read BEFORE any frontend work)
+
+> Always read `design-system/MASTER.md` before writing any frontend code.
+> For page-specific work, also read `design-system/pages/[page-name].md` if it exists.
+
+### Tech Stack (existing — do not change)
+- Framework: React + JavaScript/JSX (Vite) — NOT TypeScript
+- Styling: Tailwind CSS + shadcn/ui components
+- Animations: Framer Motion
+- Icons: lucide-react ONLY (no emojis as icons, no other icon libraries)
+- Charts: recharts
+- Theme: Dark mode primary via CSS variables on [data-theme="dark"]
+
+### HivePro Brand Tokens
+Primary teal:       #18C7B6
+Primary dark:       #129589
+Bg default (dark):  #121212
+Bg paper (dark):    #181818
+Bg card (dark):     #1C1C1C
+Bg sidebar (dark):  #1B1B1B
+Text primary:       #FFFFFF
+Text secondary:     #A7A7A7
+Border:             #333333
+Error:              #FA8072
+Chip active (dark): teal text on #181818 bg
+
+### Component Rules
+- Button border-radius: 30px, text-transform: none, font-weight: 400
+- Card/Paper border-radius: 8px
+- AppBar height: 45px
+- Font: Roboto, sans-serif
+- Body: 14px / 400 weight
+- Spacing scale: 8px base (8, 16, 24, 32, 40, 48)
+- All clickables: cursor-pointer + transition 150-300ms
+- Responsive: 375px, 768px, 1024px, 1440px
+
+### Anti-Patterns — NEVER do these
+- No purple gradients
+- No emojis as icons (lucide-react only)
+- No hardcoded color hex values in JSX — use CSS variables or Tailwind tokens
+- No lorem ipsum
+- No TypeScript syntax (.tsx, type annotations) — this is a JSX project
+- No reinstalling or reinitialising Vite/Tailwind/React
+
+### Aesthetic
+- Style: HUD / Dark Command Center — precise, data-dense, authoritative
+- Animations: Subtle — staggered card entrance, smooth sidebar collapse, no excessive glow
+
 # CLAUDE.md — CS Control Plane Development Context
 
 > This file is the single source of truth for Claude Code when working on this project.

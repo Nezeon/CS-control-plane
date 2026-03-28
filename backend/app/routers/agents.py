@@ -24,7 +24,7 @@ from app.schemas.agent import (
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
-# Static registry of all 13 agents (4-tier hierarchy)
+# Static registry of all 10 agents
 AGENT_REGISTRY = [
     # Tier 1: Supervisor
     {
@@ -116,6 +116,18 @@ AGENT_REGISTRY = [
         "lane": "delivery",
         "role": "Deployment Analyst",
         "description": "Monitors deployment health and patterns",
+        "manages": [],
+    },
+    # Tier 3: Specialists — Pre-Sales
+    {
+        "name": "presales_funnel",
+        "agent_key": "presales_funnel",
+        "display_name": "Pre-Sales Funnel Analyst",
+        "human_name": "Rachel Simmons",
+        "tier": 3,
+        "lane": "presales",
+        "role": "Pipeline Analyst",
+        "description": "Analyzes HubSpot pipeline: conversion rates, stalled deals, blocker patterns",
         "manages": [],
     },
     # Tier 4: Foundation

@@ -109,6 +109,19 @@ async def fathom_webhook(
 
     logger.info(f"Fathom webhook received: recording_id={recording_id}, title={title}")
 
+    # Dedup: skip if this recording was already processed (webhook retry or sync beat us)
+    if recording_id:
+        from app.database import get_sync_session
+        from app.models.call_insight import CallInsight
+        chk_db = get_sync_session()
+        try:
+            already = chk_db.query(CallInsight.id).filter_by(fathom_recording_id=str(recording_id)).first()
+        finally:
+            chk_db.close()
+        if already:
+            logger.info(f"Fathom webhook: recording {recording_id} already in DB — skipping")
+            return {"status": "already_processed", "recording_id": str(recording_id)}
+
     # Build transcript text from the structured array
     transcript_items = payload.get("transcript", [])
     transcript_text = fathom_service.build_flat_transcript(transcript_items)

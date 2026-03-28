@@ -8,7 +8,8 @@ import autoprefixer from 'autoprefixer'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(async () => {
-  const plugins = [react()]
+  const plugins = [react()],
+    alias = { '@': path.join(__dirname, 'src') }
 
   if (process.env.ANALYZE) {
     const { visualizer } = await import('rollup-plugin-visualizer')
@@ -17,6 +18,7 @@ export default defineConfig(async () => {
 
   return {
   plugins,
+  resolve: { alias },
   build: {
     rollupOptions: {
       output: {

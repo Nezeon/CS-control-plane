@@ -70,7 +70,7 @@ export function getStatusColor(status) {
 }
 
 const statusHexMap = {
-  active: '#7C5CFC',
+  active: '#18C7B6',
   processing: '#3B9EFF',
   idle: '#5C5C72',
   healthy: '#00E5A0',
@@ -100,7 +100,7 @@ export function getSeverityColor(severity) {
 }
 
 const laneColorMap = {
-  control: '#7C5CFC',
+  control: '#18C7B6',
   value: '#00E5A0',
   support: '#FFB547',
   delivery: '#3B9EFF',
@@ -121,7 +121,7 @@ export function getRiskColor(riskLevel) {
 }
 
 const eventTypeColorMap = {
-  jira_ticket_created: '#7C5CFC',
+  jira_ticket_created: '#18C7B6',
   fathom_call_processed: '#3B9EFF',
   zoom_call_completed: '#3B9EFF',
   daily_health_check: '#00E5A0',
@@ -131,5 +131,5 @@ const eventTypeColorMap = {
 }
 
 export function getEventTypeColor(eventType) {
-  return eventTypeColorMap[eventType] || '#7C5CFC'
+  return eventTypeColorMap[eventType] || '#18C7B6'
 }

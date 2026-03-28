@@ -1,5 +1,5 @@
 const COLORS = {
-  accent: { bg: 'bg-[#7C5CFC]/10', text: 'text-[#7C5CFC]' },
+  accent: { bg: 'bg-[#18C7B6]/10', text: 'text-[#18C7B6]' },
   teal:   { bg: 'bg-[#00E5C4]/10',  text: 'text-[#00E5C4]' },
   sky:    { bg: 'bg-[#3B9EFF]/10',  text: 'text-[#3B9EFF]' },
 }

@@ -374,21 +374,55 @@ class ChatFastPath:
             if customer.get("name"):
                 parts.append(f"## Customer: {customer['name']}")
                 parts.append(f"- Tier: {customer.get('tier', '?')}, Industry: {customer.get('industry', '?')}")
+                parts.append(f"- Contract Start: {customer.get('contract_start', 'N/A')}")
+                parts.append(f"- Renewal Date: {customer.get('renewal_date', 'N/A')}")
+                parts.append(f"- Primary Contact: {customer.get('primary_contact', 'N/A')}")
+                parts.append(f"- Deployment: {customer.get('deployment_mode', 'N/A')}")
 
         # Health overview
         health = memory.get("health", {})
         if health.get("current_score"):
             parts.append(f"\n## Health: {health['current_score']}/100 ({health.get('risk_level', '?')})")
+            risk_flags = health.get("risk_flags", [])
+            if risk_flags:
+                parts.append(f"- Risk Flags: {', '.join(risk_flags)}")
+            trend = health.get("trend", [])
+            if trend:
+                parts.append("- Trend (last 30 days):")
+                for t in trend[-5:]:
+                    parts.append(f"  - {t.get('date', '?')}: {t.get('score', '?')}/100")
 
         self._append_tickets_summary(parts, memory)
         self._append_alerts_summary(parts, memory)
 
-        # Call insights summary
+        # Call insights — full detail for executive-grade answers
         calls = memory.get("calls", {})
         if calls.get("items"):
-            parts.append(f"\n## Recent Calls ({calls.get('total_recent', 0)})")
-            for c in calls["items"][:3]:
-                parts.append(f"- [{c.get('sentiment', '?')}] {c.get('summary', 'N/A')[:100]}")
+            parts.append(f"\n## Call Intelligence ({calls.get('total_recent', 0)} recent calls)")
+            for c in calls["items"][:5]:
+                parts.append(f"\n### Call — {c.get('call_date', 'N/A')} [{c.get('sentiment', '?')}]")
+                parts.append(f"- **Summary**: {c.get('summary', 'N/A')[:400]}")
+                topics = c.get("key_topics", [])
+                if topics:
+                    parts.append(f"- **Topics**: {', '.join(topics[:8]) if isinstance(topics, list) else str(topics)[:200]}")
+                decisions = c.get("decisions", [])
+                if decisions:
+                    parts.append("- **Decisions**:")
+                    for d in (decisions[:5] if isinstance(decisions, list) else []):
+                        parts.append(f"  - {d if isinstance(d, str) else str(d)[:150]}")
+                risks = c.get("risks", [])
+                if risks:
+                    parts.append("- **Risks**:")
+                    for r in (risks[:5] if isinstance(risks, list) else []):
+                        parts.append(f"  - {r if isinstance(r, str) else str(r)[:150]}")
+
+        # Action items
+        action_items = memory.get("action_items", [])
+        if action_items:
+            parts.append(f"\n## Pending Action Items ({len(action_items)})")
+            for ai in action_items[:8]:
+                deadline = ai.get("deadline", "no deadline")
+                parts.append(f"- {ai.get('title', 'N/A')} (source: {ai.get('source_type', '?')}, due: {deadline})")
 
         return "\n".join(parts)
 
@@ -512,17 +546,28 @@ class ChatFastPath:
         related_calls = prefetched.get("related_calls", [])
         if related_calls:
             parts.append(f"\n## Related Call Insights ({len(related_calls)} calls)")
-            for c in related_calls[:5]:
+            for c in related_calls[:6]:
                 sentiment = c.get("sentiment", "?")
-                parts.append(f"- [{sentiment}] {c.get('summary', 'N/A')[:200]}")
+                call_date = c.get("call_date", "")
+                mtype = c.get("meeting_type", "")
+                header = f"- **{mtype}** ({call_date})" if mtype else f"- Call ({call_date})"
+                parts.append(f"{header} [{sentiment}]")
+                parts.append(f"  - Summary: {c.get('summary', 'N/A')[:300]}")
+                topics = c.get("key_topics", [])
+                if topics and isinstance(topics, list):
+                    parts.append(f"  - Topics: {', '.join(str(t) for t in topics[:6])}")
                 risks = c.get("risks", [])
                 if risks and isinstance(risks, list):
                     for risk in risks[:3]:
                         parts.append(f"  - RISK: {risk if isinstance(risk, str) else str(risk)[:150]}")
                 decisions = c.get("decisions", [])
                 if decisions and isinstance(decisions, list):
-                    for dec in decisions[:2]:
+                    for dec in decisions[:3]:
                         parts.append(f"  - DECISION: {dec if isinstance(dec, str) else str(dec)[:150]}")
+                action_items = c.get("action_items", [])
+                if action_items and isinstance(action_items, list):
+                    for ai in action_items[:3]:
+                        parts.append(f"  - ACTION: {ai if isinstance(ai, str) else str(ai)[:150]}")
 
         # Meeting chunks — skip if already rendered in the intent-specific prompt
         chunks = prefetched.get("meeting_chunks", [])

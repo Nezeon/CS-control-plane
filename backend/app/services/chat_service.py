@@ -147,6 +147,8 @@ _ENTITY_FILLER = {
     "attrition", "churn", "retain", "retention", "happy", "unhappy",
     "satisfied", "dissatisfied", "result", "reason", "reasons", "main",
     "primary", "didn", "didnt", "didn't", "dont", "why",
+    "everything", "info", "information", "details", "detail", "overview",
+    "account", "profile", "history", "complete", "full", "entire",
 }
 
 
@@ -598,45 +600,65 @@ class ChatService:
             logger.info(f"[Chat] Memory assembled: keys={list(customer_memory.keys())}")
 
             # ── Universal cross-reference: enrich with data from all sources ──
-            # Only runs when we have an explicit entity (not for generic "hello" queries)
+            # Runs when we have a resolved customer OR an explicit entity in the query
             explicit_entity = _extract_entity_from_query(message)
-            xref_entity = explicit_entity or (customer_name if intent != "general" else None)
+            xref_entity = explicit_entity or customer_name
             if xref_entity:
                 xref_search = xref_entity.lower().split()[0] if xref_entity else ""
                 if len(xref_search) >= 3:
                     try:
                         from sqlalchemy import text as sa_text
-                        # Related deals (for health/ticket/fathom intents that don't have deal data)
+                        # Related deals — prefer customer_id match, fall back to text search
                         if "related_deals" not in prefetched:
-                            deal_rows = db.execute(sa_text("""
-                                SELECT deal_name, stage, amount, company_name
-                                FROM deals
-                                WHERE LOWER(deal_name) LIKE :s OR LOWER(company_name) LIKE :s
-                                ORDER BY amount DESC NULLS LAST LIMIT 5
-                            """), {"s": f"%{xref_search}%"}).fetchall()
+                            if resolved_customer_id:
+                                deal_rows = db.execute(sa_text("""
+                                    SELECT deal_name, stage, amount, company_name
+                                    FROM deals
+                                    WHERE customer_id = CAST(:cid AS uuid)
+                                    ORDER BY amount DESC NULLS LAST LIMIT 5
+                                """), {"cid": str(resolved_customer_id)}).fetchall()
+                            else:
+                                deal_rows = db.execute(sa_text("""
+                                    SELECT deal_name, stage, amount, company_name
+                                    FROM deals
+                                    WHERE LOWER(deal_name) LIKE :s OR LOWER(company_name) LIKE :s
+                                    ORDER BY amount DESC NULLS LAST LIMIT 5
+                                """), {"s": f"%{xref_search}%"}).fetchall()
                             if deal_rows:
                                 prefetched["related_deals"] = [
                                     {"deal_name": r[0], "stage": r[1], "amount": r[2], "company_name": r[3]}
                                     for r in deal_rows
                                 ]
 
-                        # Related call insights (for deal/health/ticket intents that don't have call data)
+                        # Related call insights — prefer customer_id match, fall back to text search
                         if "related_calls" not in prefetched:
-                            call_rows = db.execute(sa_text("""
-                                SELECT summary, sentiment, key_topics, risks, decisions, action_items
-                                FROM call_insights
-                                WHERE LOWER(summary) LIKE :s
-                                ORDER BY processed_at DESC LIMIT 5
-                            """), {"s": f"%{xref_search}%"}).fetchall()
+                            if resolved_customer_id:
+                                call_rows = db.execute(sa_text("""
+                                    SELECT summary, sentiment, key_topics, risks, decisions, action_items,
+                                           call_date, meeting_type
+                                    FROM call_insights
+                                    WHERE customer_id = CAST(:cid AS uuid)
+                                    ORDER BY processed_at DESC LIMIT 8
+                                """), {"cid": str(resolved_customer_id)}).fetchall()
+                            else:
+                                call_rows = db.execute(sa_text("""
+                                    SELECT summary, sentiment, key_topics, risks, decisions, action_items,
+                                           call_date, meeting_type
+                                    FROM call_insights
+                                    WHERE LOWER(summary) LIKE :s
+                                    ORDER BY processed_at DESC LIMIT 5
+                                """), {"s": f"%{xref_search}%"}).fetchall()
                             if call_rows:
                                 prefetched["related_calls"] = [
                                     {
-                                        "summary": r[0][:300] if r[0] else "",
+                                        "summary": r[0][:400] if r[0] else "",
                                         "sentiment": r[1],
                                         "key_topics": r[2] or [],
                                         "risks": r[3] or [],
                                         "decisions": r[4] or [],
                                         "action_items": r[5] or [],
+                                        "call_date": str(r[6]) if r[6] else None,
+                                        "meeting_type": r[7] or "",
                                     }
                                     for r in call_rows
                                 ]

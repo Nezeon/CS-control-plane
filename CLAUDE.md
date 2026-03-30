@@ -1,3 +1,74 @@
+## Auto-Invoke Rules — MCP Tools & Skills
+
+> **These are MANDATORY.** When a task matches a trigger below, invoke the corresponding tool/skill BEFORE writing any code or response. Do not wait for the user to type the slash command — auto-invoke it.
+
+### MCP Tools
+
+**Context7 — Library Documentation (ALWAYS use)**
+When writing or modifying code that uses **any** external library (FastAPI, SQLAlchemy, Alembic, httpx, slack-sdk, APScheduler, Pydantic, React, Tailwind, Zustand, Framer Motion, recharts, chromadb, etc.):
+- **MUST** use the `context7` MCP tool to fetch current documentation before writing API calls, decorators, or config patterns
+- This prevents hallucinated APIs and catches breaking changes between library versions
+- **Skip when:** Pure business logic, string manipulation, or code that doesn't touch external library APIs
+
+**FastAPI-MCP — Live API Access (when backend is running)**
+When the backend server is running on `localhost:8000`, the `hivepro-api` MCP server exposes all 23 API routers as callable tools:
+- **USE for:** Debugging data, verifying endpoint responses, inspecting system state
+- **Skip when:** Backend server is not running
+
+### Skills — Auto-Invoke Triggers
+
+**`/develop`** — Auto-invoke when the user asks to:
+- Build a new feature, add a new agent, create a new endpoint, add a new page
+- Modify existing features, add phases, change workflows
+- Any task described as "implement", "add", "create", "build", "wire up"
+
+**`/debug`** — Auto-invoke when the user reports:
+- Something is broken, failing, returning errors, or behaving unexpectedly
+- "Why is X not working?", "X returns 500", "This crashes when..."
+- Any error trace, stack trace, or unexpected behavior
+
+**`/code-review`** — Auto-invoke when the user asks to:
+- Review a PR, review recent changes, review code quality
+- "Review this", "Check this code", "Is this PR safe?"
+
+**`/post-review-fix`** — Auto-invoke when the user:
+- Shares code review feedback and asks to fix it
+- Pastes review comments/findings to address
+
+**`/write-docs`** — Auto-invoke when the user asks to:
+- Write documentation, update docs, add docstrings, create a README
+- Explain how something works (for documentation purposes, not casual questions)
+
+**`/ui-ux-pro-max`** — Auto-invoke when the user asks to:
+- Design or build UI components, pages, dashboards, layouts
+- Choose colors, typography, spacing, animations
+- Review UI/UX quality of existing components
+
+**`/gitnexus-exploring`** — Auto-invoke when the user asks:
+- "How does X work?", "What calls this?", "Show me the auth flow"
+- Architecture questions, execution flow tracing, codebase exploration
+
+**`/gitnexus-debugging`** — Auto-invoke when debugging AND GitNexus tools would help trace the call graph. Use alongside `/debug` — debug handles the fix, gitnexus-debugging traces the graph.
+
+**`/gitnexus-impact-analysis`** — Auto-invoke BEFORE any non-trivial code edit. This is already a CLAUDE.md rule — run `gitnexus_impact` before modifying any symbol.
+
+**`/gitnexus-refactoring`** — Auto-invoke when the user asks to:
+- Rename, extract, split, move, or restructure code
+- "Rename this function", "Extract this into a module", "Move this to a new file"
+
+**`/gitnexus-cli`** — Auto-invoke when the user asks to:
+- Reindex the codebase, check index status, generate a wiki
+- "Reanalyze the codebase", "Index this repo"
+
+### Skill Combinations (common patterns)
+- **New feature:** `/develop` (primary) + `/gitnexus-impact-analysis` (before editing)
+- **Bug fix:** `/debug` + `/gitnexus-debugging` (trace the graph)
+- **UI work:** `/ui-ux-pro-max` (design) + `/develop` (implementation)
+- **Refactor:** `/gitnexus-refactoring` (safety) + `/gitnexus-impact-analysis` (blast radius)
+- **Post-review:** `/post-review-fix` (fixes) + `/code-review` (verify after)
+
+---
+
 ## UI Design System Rules (read BEFORE any frontend work)
 
 > Always read `design-system/MASTER.md` before writing any frontend code.

@@ -25,6 +25,7 @@ AGENT_DISPLAY_NAMES = {
     "sow_agent": "SOW & Prerequisite (Ethan Brooks)",
     "deployment_intelligence": "Deployment Intel (Zara Kim)",
     "cso_orchestrator": "CS Orchestrator (Naveen Kapoor)",
+    "presales_funnel": "Pre-Sales Funnel Analyst (Jordan Reeves)",
 }
 
 # Agent ID → draft_type mapping
@@ -36,6 +37,7 @@ AGENT_DRAFT_TYPE = {
     "qbr_value": "qbr",
     "sow_agent": "sow",
     "deployment_intelligence": "deployment",
+    "presales_funnel": "presales",
 }
 
 # Draft type → dashboard tab for deep-links
@@ -48,6 +50,7 @@ DRAFT_DASHBOARD_TAB = {
     "qbr": "qbr",
     "sow": "overview",
     "deployment": "overview",
+    "presales": "deals",
 }
 
 
@@ -101,25 +104,34 @@ def create_draft(
     if not jira_id and isinstance(draft_content, dict):
         jira_id = (draft_content.get("output") or {}).get("jira_id")
 
-    # Post Slack card
+    # Post Slack card — use custom card for presales, generic for others
     try:
         from app.services.slack_service import slack_service
 
-        resp = slack_service.send_agent_card(
-            channel=channel,
-            agent_name=agent_name,
-            event_type=event_type or draft_type,
-            customer_name=customer_name,
-            health_score=health_score,
-            priority=priority,
-            summary=summary,
-            action_required=action_required,
-            draft_id=str(draft.id),
-            dashboard_url=dashboard_url,
-            jira_id=jira_id,
-            jira_base_url=settings.JIRA_API_URL if jira_id else None,
-            confidence=confidence,
-        )
+        if draft_type == "presales":
+            resp = slack_service.send_presales_card(
+                channel=channel,
+                draft_content=draft_content,
+                draft_id=str(draft.id),
+                dashboard_url=dashboard_url,
+                event_type=event_type or draft_type,
+            )
+        else:
+            resp = slack_service.send_agent_card(
+                channel=channel,
+                agent_name=agent_name,
+                event_type=event_type or draft_type,
+                customer_name=customer_name,
+                health_score=health_score,
+                priority=priority,
+                summary=summary,
+                action_required=action_required,
+                draft_id=str(draft.id),
+                dashboard_url=dashboard_url,
+                jira_id=jira_id,
+                jira_base_url=settings.JIRA_API_URL if jira_id else None,
+                confidence=confidence,
+            )
         if isinstance(resp, dict) and resp.get("ts"):
             draft.slack_message_ts = resp["ts"]
             db.commit()
@@ -355,5 +367,6 @@ def _extract_action(content: dict, draft_type: str) -> str:
         "qbr": "Review QBR document before sharing with customer.",
         "sow": "Review SOW document and checklist before sharing.",
         "deployment": "Review deployment validation results.",
+        "presales": "Review pipeline analysis, stalled deals, and win probabilities.",
     }
     return action_hints.get(draft_type, "Review and approve agent output.")

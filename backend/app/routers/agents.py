@@ -372,6 +372,7 @@ async def trigger_agent(
         "qbr_value": "renewal_approaching",
         "sow_prerequisite": "new_enterprise_customer",
         "deployment_intelligence": "deployment_started",
+        "presales_funnel": "deal_stage_changed",
     }
     event_type = agent_to_event.get(agent_name, f"manual_{agent_name}")
 
@@ -449,6 +450,17 @@ async def trigger_agent(
                         agent_inst.save_result(sync_db, ticket_id, agent_result)
                 elif agent_inst and routed_agent == "qbr_value" and hasattr(agent_inst, "save_report"):
                     agent_inst.save_report(sync_db, body.customer_id, agent_result)
+
+            # Draft-first flow: create draft + Slack card for non-chat events
+            if routed_agent and agent_result.get("success") and not event_type.startswith("user_chat_"):
+                try:
+                    from app.services.event_service import event_service as ev_svc
+                    ev_svc._create_draft_for_output(
+                        sync_db, routed_agent, event_record.id, body.customer_id,
+                        event_type, agent_result, event_dict_sync.get("payload", {}),
+                    )
+                except Exception as draft_err:
+                    logger.warning(f"Draft creation failed (non-critical): {draft_err}")
 
             # Update event record status via async session
             event_record.status = "completed" if agent_result.get("success") else "failed"

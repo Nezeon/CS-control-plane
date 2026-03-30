@@ -30,6 +30,22 @@ ALERT_TYPE_LABELS = {
 }
 
 
+def _friendly_stage(stage: str) -> str:
+    """Convert HubSpot stage IDs to human-readable names."""
+    STAGE_NAMES = {
+        "appointmentscheduled": "Discovery",
+        "presentationscheduled": "Demo 1",
+        "decisionmakerboughtin": "Demo 2",
+        "1166515347": "Pre-POC",
+        "219679027": "POC",
+        "1157536395": "Negotiation",
+        "contractsent": "Contract Sent",
+        "closedwon": "Closed Won",
+        "closedlost": "Closed Lost",
+    }
+    return STAGE_NAMES.get(stage, stage.replace("_", " ").title())
+
+
 def _build_jira_url(base_url: str, jira_id: str) -> str:
     """Build a Jira issue URL. Pattern controlled by JIRA_BROWSE_PATTERN setting."""
     from app.config import settings
@@ -355,6 +371,193 @@ class SlackService:
         text = f"{status_emoji} Alert *{alert.title}* ({customer_name}) → *{new_status}*"
 
         return self.send_message(channel, text)
+
+    def send_presales_card(
+        self,
+        channel: str,
+        draft_content: dict,
+        draft_id: str,
+        dashboard_url: str | None = None,
+        event_type: str = "deal_stage_changed",
+    ) -> dict | bool:
+        """Post a rich Pre-Sales Funnel card with metrics, stalled deals, and probabilities.
+
+        Custom Block Kit layout that surfaces pipeline data beautifully instead
+        of cramming everything into a generic summary block.
+        """
+        if not self.configured:
+            logger.debug("[Slack] Not configured, skipping presales card")
+            return False
+
+        metrics = draft_content.get("funnel_metrics", {})
+        stalled = draft_content.get("stalled_deals", [])
+        probabilities = draft_content.get("deal_probabilities", [])
+        blockers = draft_content.get("top_blockers", [])
+        summary = draft_content.get("summary", "Pipeline analysis complete.")
+        recommendations = draft_content.get("recommendations", [])
+
+        # ── Header ──
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": ":bar_chart: Pre-Sales Pipeline Intelligence",
+                    "emoji": True,
+                },
+            },
+        ]
+
+        # ── Funnel Metrics Row ──
+        total = metrics.get("total_deals", 0)
+        open_deals = metrics.get("open_deals", 0)
+        won = metrics.get("closed_won", 0)
+        lost = metrics.get("closed_lost", 0)
+        win_rate = metrics.get("overall_win_rate", 0)
+
+        win_emoji = ":large_green_circle:" if win_rate >= 0.5 else ":large_yellow_circle:" if win_rate >= 0.3 else ":red_circle:"
+
+        blocks.append({
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Total Deals:*\n{total}"},
+                {"type": "mrkdwn", "text": f"*Open:*\n{open_deals}"},
+                {"type": "mrkdwn", "text": f"*Won / Lost:*\n:white_check_mark: {won}  :x: {lost}"},
+                {"type": "mrkdwn", "text": f"*Win Rate:*\n{win_emoji} {win_rate:.0%}"},
+            ],
+        })
+
+        # ── Conversion Funnel ──
+        d2d = metrics.get("discovery_to_demo", 0)
+        d2p = metrics.get("demo_to_poc", 0)
+        p2c = metrics.get("poc_to_close", 0)
+
+        funnel_text = (
+            f":arrow_right: Discovery :arrow_right: Demo `{d2d:.0%}`  "
+            f":arrow_right: POC `{d2p:.0%}`  "
+            f":arrow_right: Close `{p2c:.0%}`"
+        )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Conversion Funnel*\n{funnel_text}"},
+        })
+
+        blocks.append({"type": "divider"})
+
+        # ── AI Summary ──
+        if summary and summary != "Pipeline analysis complete.":
+            blocks.extend(_text_to_section_blocks(summary[:2000], label=":brain: AI Analysis"))
+
+        # ── Stalled Deals (top 5) ──
+        if stalled:
+            stalled_lines = []
+            for d in stalled[:5]:
+                amt = f"${d.get('amount', 0):,.0f}" if d.get("amount") else "N/A"
+                company = d.get("company_name") or "Unknown"
+                days = d.get("days_stalled", 0)
+                stage_name = _friendly_stage(d.get("stage", ""))
+                days_emoji = ":red_circle:" if days > 60 else ":large_orange_circle:" if days > 45 else ":large_yellow_circle:"
+                stalled_lines.append(
+                    f"{days_emoji} *{d.get('deal_name', 'Unknown')}* ({company})\n"
+                    f"      Stage: _{stage_name}_  |  Stalled: *{days}d*  |  Value: {amt}"
+                )
+            stalled_text = "\n".join(stalled_lines)
+            remaining = len(stalled) - 5
+            if remaining > 0:
+                stalled_text += f"\n_...and {remaining} more stalled deals_"
+
+            blocks.append({"type": "divider"})
+            blocks.extend(_text_to_section_blocks(stalled_text, label=":warning: Stalled Deals"))
+
+        # ── Deal Win Probabilities (top 5) ──
+        if probabilities:
+            prob_lines = []
+            for p in probabilities[:5]:
+                prob = p.get("probability", 0)
+                amt = f"${p.get('amount', 0):,.0f}" if p.get("amount") else "N/A"
+                company = p.get("company_name") or "Unknown"
+                prob_emoji = ":large_green_circle:" if prob >= 0.7 else ":large_yellow_circle:" if prob >= 0.4 else ":red_circle:"
+                prob_lines.append(
+                    f"{prob_emoji} *{p.get('deal_name', 'Unknown')}* ({company})\n"
+                    f"      Probability: *{prob:.0%}*  |  Value: {amt}"
+                )
+            prob_text = "\n".join(prob_lines)
+
+            blocks.append({"type": "divider"})
+            blocks.extend(_text_to_section_blocks(prob_text, label=":crystal_ball: Deal Win Probabilities"))
+
+        # ── Top Blockers ──
+        if blockers:
+            blocker_lines = []
+            for b in blockers[:4]:
+                stage_name = _friendly_stage(b.get("stage", ""))
+                val = f"${b.get('total_value', 0):,.0f}" if b.get("total_value") else "$0"
+                blocker_lines.append(f":no_entry: _{stage_name}_ — {b.get('lost_count', 0)} lost ({val})")
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*:tombstone: Where Deals Die*\n" + "\n".join(blocker_lines)},
+            })
+
+        # ── Recommendations ──
+        if recommendations:
+            rec_lines = []
+            for i, r in enumerate(recommendations[:5], 1):
+                rec_text = r if isinstance(r, str) else str(r)
+                rec_lines.append(f"{i}. {rec_text}")
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*:bulb: Recommendations*\n" + "\n".join(rec_lines)},
+            })
+
+        # ── Dashboard Link ──
+        if dashboard_url:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f":bar_chart: <{dashboard_url}|View Pipeline in Dashboard>"},
+            })
+
+        # ── Approve / Edit / Dismiss Buttons ──
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Approve", "emoji": True},
+                    "style": "primary",
+                    "action_id": "draft_approve",
+                    "value": draft_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Edit", "emoji": True},
+                    "action_id": "draft_edit",
+                    "value": draft_id,
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Dismiss", "emoji": True},
+                    "style": "danger",
+                    "action_id": "draft_dismiss",
+                    "value": draft_id,
+                },
+            ],
+        })
+
+        # ── Context Footer ──
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"Agent: Pre-Sales Funnel (Jordan Reeves) | Event: `{event_type}` | Draft: `{draft_id[:8]}`"},
+            ],
+        })
+
+        fallback = (
+            f":bar_chart: Pre-Sales Pipeline: {total} deals, "
+            f"{win_rate:.0%} win rate, {len(stalled)} stalled"
+        )
+        return self.send_message(channel, fallback, blocks)
 
     def send_agent_card(
         self,

@@ -406,6 +406,15 @@ from app.routers import drafts
 app.include_router(drafts.router)
 
 
+# ── FastAPI-MCP: expose all API routes as MCP tools for AI agents ─────────
+try:
+    from fastapi_mcp import FastApiMCP
+    mcp = FastApiMCP(app, name="hivepro-cs-control-plane", describe_all_responses=True)
+    mcp.mount()
+except ImportError:
+    pass  # fastapi-mcp is optional — only needed for Claude Code MCP integration
+
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "version": "1.0.0"}

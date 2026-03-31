@@ -380,142 +380,123 @@ class SlackService:
         dashboard_url: str | None = None,
         event_type: str = "deal_stage_changed",
     ) -> dict | bool:
-        """Post a rich Pre-Sales Funnel card with metrics, stalled deals, and probabilities.
-
-        Custom Block Kit layout that surfaces pipeline data beautifully instead
-        of cramming everything into a generic summary block.
-        """
+        """Post a deal-specific Pre-Sales card for a single deal stage change."""
         if not self.configured:
             logger.debug("[Slack] Not configured, skipping presales card")
             return False
 
-        metrics = draft_content.get("funnel_metrics", {})
-        stalled = draft_content.get("stalled_deals", [])
-        probabilities = draft_content.get("deal_probabilities", [])
-        blockers = draft_content.get("top_blockers", [])
-        summary = draft_content.get("summary", "Pipeline analysis complete.")
-        recommendations = draft_content.get("recommendations", [])
+        deal_name = draft_content.get("deal_name", "Unknown")
+        company = draft_content.get("company_name", "Unknown")
+        amount = draft_content.get("amount")
+        old_stage = draft_content.get("old_stage", "")
+        new_stage = draft_content.get("new_stage", "")
+        probability = draft_content.get("probability")
+        factor_scores = draft_content.get("factor_scores", {})
+        summary = draft_content.get("summary", "Deal analysis complete.")
+        risks = draft_content.get("risks", [])
+        next_steps = draft_content.get("next_steps", [])
+
+        old_friendly = _friendly_stage(old_stage) if old_stage else "Unknown"
+        new_friendly = _friendly_stage(new_stage) if new_stage else "Unknown"
+        amt_str = f"${amount:,.0f}" if amount else "N/A"
+
+        # Determine stage direction
+        from app.agents.presales_funnel_agent import STAGE_ORDER
+        old_idx = STAGE_ORDER.get(old_stage, -2)
+        new_idx = STAGE_ORDER.get(new_stage, -2)
+        if new_idx > old_idx:
+            direction_emoji = ":arrow_upper_right:"
+        elif new_idx < old_idx:
+            direction_emoji = ":arrow_lower_right:"
+        else:
+            direction_emoji = ":arrow_right:"
 
         # ── Header ──
+        header_text = f":handshake: Deal Update: {deal_name}"[:150]
         blocks = [
             {
                 "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": ":bar_chart: Pre-Sales Pipeline Intelligence",
-                    "emoji": True,
-                },
+                "text": {"type": "plain_text", "text": header_text, "emoji": True},
             },
         ]
 
-        # ── Funnel Metrics Row ──
-        total = metrics.get("total_deals", 0)
-        open_deals = metrics.get("open_deals", 0)
-        won = metrics.get("closed_won", 0)
-        lost = metrics.get("closed_lost", 0)
-        win_rate = metrics.get("overall_win_rate", 0)
-
-        win_emoji = ":large_green_circle:" if win_rate >= 0.5 else ":large_yellow_circle:" if win_rate >= 0.3 else ":red_circle:"
-
+        # ── Metadata Fields ──
         blocks.append({
             "type": "section",
             "fields": [
-                {"type": "mrkdwn", "text": f"*Total Deals:*\n{total}"},
-                {"type": "mrkdwn", "text": f"*Open:*\n{open_deals}"},
-                {"type": "mrkdwn", "text": f"*Won / Lost:*\n:white_check_mark: {won}  :x: {lost}"},
-                {"type": "mrkdwn", "text": f"*Win Rate:*\n{win_emoji} {win_rate:.0%}"},
+                {"type": "mrkdwn", "text": f":office: *Company:*\n{company}"},
+                {"type": "mrkdwn", "text": f":moneybag: *Value:*\n{amt_str}"},
             ],
         })
 
-        # ── Conversion Funnel ──
-        d2d = metrics.get("discovery_to_demo", 0)
-        d2p = metrics.get("demo_to_poc", 0)
-        p2c = metrics.get("poc_to_close", 0)
-
-        funnel_text = (
-            f":arrow_right: Discovery :arrow_right: Demo `{d2d:.0%}`  "
-            f":arrow_right: POC `{d2p:.0%}`  "
-            f":arrow_right: Close `{p2c:.0%}`"
-        )
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Conversion Funnel*\n{funnel_text}"},
-        })
+        # ── Stage Transition ──
+        if old_stage and new_stage:
+            stage_text = f"{direction_emoji} *{old_friendly}*  :arrow_right:  *{new_friendly}*"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Stage Change*\n{stage_text}"},
+            })
 
         blocks.append({"type": "divider"})
 
-        # ── AI Summary ──
-        if summary and summary != "Pipeline analysis complete.":
-            blocks.extend(_text_to_section_blocks(summary[:2000], label=":brain: AI Analysis"))
+        # ── Win Probability + Factor Breakdown ──
+        if probability is not None:
+            prob_emoji = ":large_green_circle:" if probability >= 0.7 else ":large_yellow_circle:" if probability >= 0.4 else ":red_circle:"
+            prob_text = f"{prob_emoji} *Win Probability: {probability:.0%}*"
 
-        # ── Stalled Deals (top 5) ──
-        if stalled:
-            stalled_lines = []
-            for d in stalled[:5]:
-                amt = f"${d.get('amount', 0):,.0f}" if d.get("amount") else "N/A"
-                company = d.get("company_name") or "Unknown"
-                days = d.get("days_stalled", 0)
-                stage_name = _friendly_stage(d.get("stage", ""))
-                days_emoji = ":red_circle:" if days > 60 else ":large_orange_circle:" if days > 45 else ":large_yellow_circle:"
-                stalled_lines.append(
-                    f"{days_emoji} *{d.get('deal_name', 'Unknown')}* ({company})\n"
-                    f"      Stage: _{stage_name}_  |  Stalled: *{days}d*  |  Value: {amt}"
-                )
-            stalled_text = "\n".join(stalled_lines)
-            remaining = len(stalled) - 5
-            if remaining > 0:
-                stalled_text += f"\n_...and {remaining} more stalled deals_"
+            if factor_scores:
+                breakdown_parts = []
+                for k in ["stage", "engagement", "intent", "sentiment", "velocity"]:
+                    v = factor_scores.get(k)
+                    if v is not None:
+                        breakdown_parts.append(f"{k.title()}: {int(v * 100)}%")
+                if breakdown_parts:
+                    prob_text += f"\n{' | '.join(breakdown_parts)}"
 
-            blocks.append({"type": "divider"})
-            blocks.extend(_text_to_section_blocks(stalled_text, label=":warning: Stalled Deals"))
-
-        # ── Deal Win Probabilities (top 5) ──
-        if probabilities:
-            prob_lines = []
-            for p in probabilities[:5]:
-                prob = p.get("probability", 0)
-                amt = f"${p.get('amount', 0):,.0f}" if p.get("amount") else "N/A"
-                company = p.get("company_name") or "Unknown"
-                prob_emoji = ":large_green_circle:" if prob >= 0.7 else ":large_yellow_circle:" if prob >= 0.4 else ":red_circle:"
-                prob_lines.append(
-                    f"{prob_emoji} *{p.get('deal_name', 'Unknown')}* ({company})\n"
-                    f"      Probability: *{prob:.0%}*  |  Value: {amt}"
-                )
-            prob_text = "\n".join(prob_lines)
-
-            blocks.append({"type": "divider"})
-            blocks.extend(_text_to_section_blocks(prob_text, label=":crystal_ball: Deal Win Probabilities"))
-
-        # ── Top Blockers ──
-        if blockers:
-            blocker_lines = []
-            for b in blockers[:4]:
-                stage_name = _friendly_stage(b.get("stage", ""))
-                val = f"${b.get('total_value', 0):,.0f}" if b.get("total_value") else "$0"
-                blocker_lines.append(f":no_entry: _{stage_name}_ — {b.get('lost_count', 0)} lost ({val})")
-            blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*:tombstone: Where Deals Die*\n" + "\n".join(blocker_lines)},
+                "text": {"type": "mrkdwn", "text": prob_text},
+            })
+        else:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": ":white_circle: *Win Probability:* N/A (deal may be closed)"},
             })
 
-        # ── Recommendations ──
-        if recommendations:
-            rec_lines = []
-            for i, r in enumerate(recommendations[:5], 1):
-                rec_text = r if isinstance(r, str) else str(r)
-                rec_lines.append(f"{i}. {rec_text}")
+        # ── AI Analysis ──
+        if summary and summary != "Deal analysis complete.":
+            blocks.append({"type": "divider"})
+            blocks.extend(_text_to_section_blocks(summary[:2000], label=":brain: Analysis"))
+
+        # ── Risk Signals ──
+        if risks:
+            risk_lines = []
+            for r in risks[:3]:
+                risk_text = r if isinstance(r, str) else r.get("description", str(r)) if isinstance(r, dict) else str(r)
+                risk_lines.append(f":red_circle: {risk_text}")
             blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*:bulb: Recommendations*\n" + "\n".join(rec_lines)},
+                "text": {"type": "mrkdwn", "text": f"*:warning: Risk Signals*\n" + "\n".join(risk_lines)},
+            })
+
+        # ── Next Steps ──
+        if next_steps:
+            step_lines = []
+            for i, s in enumerate(next_steps[:4], 1):
+                step_text = s if isinstance(s, str) else str(s)
+                step_lines.append(f"{i}. {step_text}")
+            blocks.append({"type": "divider"})
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*:clipboard: Next Steps*\n" + "\n".join(step_lines)},
             })
 
         # ── Dashboard Link ──
         if dashboard_url:
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f":bar_chart: <{dashboard_url}|View Pipeline in Dashboard>"},
+                "text": {"type": "mrkdwn", "text": f":bar_chart: <{dashboard_url}|View Deal in Dashboard>"},
             })
 
         # ── Approve / Edit / Dismiss Buttons ──
@@ -553,10 +534,10 @@ class SlackService:
             ],
         })
 
-        fallback = (
-            f":bar_chart: Pre-Sales Pipeline: {total} deals, "
-            f"{win_rate:.0%} win rate, {len(stalled)} stalled"
-        )
+        if probability is not None:
+            fallback = f":handshake: {deal_name} ({company}): {old_friendly} -> {new_friendly}, {probability:.0%} win probability"
+        else:
+            fallback = f":handshake: {deal_name} ({company}): {old_friendly} -> {new_friendly}"
         return self.send_message(channel, fallback, blocks)
 
     def send_agent_card(

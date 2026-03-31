@@ -469,25 +469,33 @@ class PreSalesFunnelAgent(BaseAgent):
         if not db:
             raise ValueError("No database session available")
 
-        # Run deterministic metrics
-        funnel_metrics = self._compute_conversion_rates(db)
-        stalled_deals = self._find_stalled_deals(db)
-        blockers = self._analyze_blockers(db)
+        payload = task.get("payload", {})
+        deal_name = payload.get("deal_name", "")
+        old_stage = payload.get("old_stage", "")
+        new_stage = payload.get("new_stage", "")
+        company_name = payload.get("company_name", "")
+        deal_id = payload.get("deal_id", "")
 
-        # If task has a specific deal, compute its probability
-        deal_name = task.get("payload", {}).get("deal_name")
+        # Compute probability for THIS deal only
         probabilities = self._compute_deal_probability(db, deal_name=deal_name)
+        deal_prob = probabilities[0] if probabilities else {}
 
-        # Store in working memory
-        self.memory.set_context("funnel_metrics", funnel_metrics)
-        self.memory.set_context("stalled_deals", stalled_deals)
-        self.memory.set_context("blockers", blockers)
-        self.memory.set_context("probabilities", probabilities)
+        deal_data = {
+            **deal_prob,
+            "old_stage": old_stage,
+            "new_stage": new_stage,
+            "deal_id": deal_prob.get("deal_id") or deal_id,
+            # Fallbacks if _compute_deal_probability didn't match
+            "deal_name": deal_prob.get("deal_name") or deal_name,
+            "company_name": deal_prob.get("company_name") or company_name,
+        }
+
+        self.memory.set_context("deal_data", deal_data)
 
         logger.info(
-            f"[PreSales] Pipeline analysis: {funnel_metrics['total_deals']} deals, "
-            f"win_rate={funnel_metrics['overall_win_rate']}, "
-            f"{len(stalled_deals)} stalled"
+            f"[PreSales] Deal analysis: {deal_data['deal_name']} "
+            f"({old_stage} -> {new_stage}), "
+            f"probability={deal_data.get('probability', 'N/A')}"
         )
         return task
 
@@ -497,16 +505,10 @@ class PreSalesFunnelAgent(BaseAgent):
         return context
 
     def think(self, task: dict, context: dict) -> dict:
-        funnel_metrics = self.memory.get_context("funnel_metrics") or {}
-        stalled_deals = self.memory.get_context("stalled_deals") or []
-        blockers = self.memory.get_context("blockers") or []
-        probabilities = self.memory.get_context("probabilities") or []
+        deal_data = self.memory.get_context("deal_data") or {}
 
         user_message = self._build_prompt(
-            funnel_metrics=funnel_metrics,
-            stalled_deals=stalled_deals,
-            blockers=blockers,
-            probabilities=probabilities,
+            deal_data=deal_data,
             customer_memory=context.get("customer_memory", {}),
         )
 
@@ -522,93 +524,70 @@ class PreSalesFunnelAgent(BaseAgent):
         if "error" in thinking:
             return {"success": False, **thinking}
 
-        funnel_metrics = self.memory.get_context("funnel_metrics") or {}
-        stalled_deals = self.memory.get_context("stalled_deals") or []
-        blockers = self.memory.get_context("blockers") or []
-        probabilities = self.memory.get_context("probabilities") or []
+        deal_data = self.memory.get_context("deal_data") or {}
 
         return {
             "success": True,
-            "funnel_metrics": funnel_metrics,
-            "stalled_deals": stalled_deals[:10],
-            "top_blockers": blockers,
-            "deal_probabilities": probabilities,
-            "summary": thinking.get("summary", "Pipeline analysis complete."),
-            "recommendations": thinking.get("recommendations", []),
-            "reasoning_summary": thinking.get("summary", "Pipeline analysis complete."),
+            "deal_name": deal_data.get("deal_name", "Unknown"),
+            "company_name": deal_data.get("company_name", "Unknown"),
+            "deal_id": deal_data.get("deal_id", ""),
+            "amount": deal_data.get("amount"),
+            "old_stage": deal_data.get("old_stage", ""),
+            "new_stage": deal_data.get("new_stage", ""),
+            "probability": deal_data.get("probability"),
+            "factor_scores": deal_data.get("factor_scores", {}),
+            "factors": deal_data.get("factors", []),
+            "summary": thinking.get("summary", "Deal analysis complete."),
+            "risks": thinking.get("risks", []),
+            "next_steps": thinking.get("next_steps", []),
+            "reasoning_summary": thinking.get("summary", "Deal analysis complete."),
         }
 
     # ── Prompt Building ────────────────────────────────────────────────
 
-    def _build_prompt(
-        self,
-        funnel_metrics: dict,
-        stalled_deals: list,
-        blockers: list,
-        probabilities: list,
-        customer_memory: dict,
-    ) -> str:
+    def _build_prompt(self, deal_data: dict, customer_memory: dict) -> str:
+        deal_name = deal_data.get("deal_name", "Unknown")
+        company = deal_data.get("company_name", "Unknown")
+        amount = deal_data.get("amount")
+        old_stage = deal_data.get("old_stage", "")
+        new_stage = deal_data.get("new_stage", "")
+        probability = deal_data.get("probability")
+        factor_scores = deal_data.get("factor_scores", {})
+        factors = deal_data.get("factors", [])
+
+        amt_str = f"${amount:,.0f}" if amount else "N/A"
+        prob_str = f"{probability:.0%}" if probability is not None else "N/A"
+
         parts = [
-            "## Pre-Sales Pipeline Analysis",
+            "## Deal Stage Change Analysis",
             "",
-            "## Funnel Metrics",
-            f"Total Deals: {funnel_metrics.get('total_deals', 0)}",
-            f"Open Deals: {funnel_metrics.get('open_deals', 0)}",
-            f"Closed Won: {funnel_metrics.get('closed_won', 0)}",
-            f"Closed Lost: {funnel_metrics.get('closed_lost', 0)}",
-            f"Overall Win Rate: {funnel_metrics.get('overall_win_rate', 0):.1%}",
-            "",
-            "## Stage-to-Stage Conversion",
-            f"Discovery -> Demo: {funnel_metrics.get('discovery_to_demo', 0):.1%}",
-            f"Demo -> POC: {funnel_metrics.get('demo_to_poc', 0):.1%}",
-            f"POC -> Close: {funnel_metrics.get('poc_to_close', 0):.1%}",
+            f"**Deal:** {deal_name}",
+            f"**Company:** {company}",
+            f"**Value:** {amt_str}",
+            f"**Stage Transition:** {old_stage} -> {new_stage}",
+            f"**Win Probability:** {prob_str}",
         ]
 
-        # Stage distribution
-        dist = funnel_metrics.get("stage_distribution", {})
-        if dist:
-            parts.extend(["", "## Stage Distribution"])
-            for stage, count in sorted(dist.items(), key=lambda x: -x[1]):
-                parts.append(f"- {stage}: {count} deals")
+        if factor_scores:
+            parts.append("")
+            parts.append("## Factor Breakdown")
+            for k, v in factor_scores.items():
+                parts.append(f"- {k.title()}: {int(v * 100)}%")
 
-        # Stalled deals
-        if stalled_deals:
-            parts.extend(["", f"## Stalled Deals ({len(stalled_deals)} stuck >30 days)"])
-            for d in stalled_deals[:10]:
-                amt = f"${d['amount']:,.0f}" if d.get("amount") else "N/A"
-                parts.append(
-                    f"- {d['deal_name']} ({d['company_name'] or 'Unknown'}) — "
-                    f"stage: {d['stage']}, stalled {d['days_stalled']} days, value: {amt}"
-                )
-
-        # Blockers
-        if blockers:
-            parts.extend(["", "## Where Deals Die (Closed Lost Analysis)"])
-            for b in blockers:
-                val = f"${b['total_value']:,.0f}" if b.get("total_value") else "$0"
-                parts.append(f"- Stage '{b['stage']}': {b['lost_count']} lost, total value: {val}")
-
-        # Deal probabilities
-        if probabilities:
-            parts.extend(["", "## Deal Win Probabilities (Open Deals)"])
-            for p in probabilities[:10]:
-                amt = f"${p['amount']:,.0f}" if p.get("amount") else "N/A"
-                parts.append(
-                    f"- {p['deal_name']} ({p['company_name'] or 'Unknown'}): "
-                    f"{p['probability']:.0%} probability, value: {amt}"
-                )
-                for f in p.get("factors", []):
-                    parts.append(f"  - {f}")
+        if factors:
+            parts.append("")
+            parts.append("## Factor Details")
+            for f in factors:
+                parts.append(f"- {f}")
 
         parts.extend([
             "",
             "## Required Output Format",
             "Return a JSON object with these fields:",
-            '- summary: 3-5 sentence narrative of the pipeline health, highlighting '
-            'the biggest conversion gaps and risks',
-            '- recommendations: array of 3-5 specific actionable recommendations '
-            'for the CS team to improve conversion rates and unstall deals',
-            '- reasoning: brief explanation of your analysis approach',
+            "- summary: 2-3 sentence analysis of this deal and what the stage transition means",
+            "- risks: array of 1-3 specific risk signals for this deal (empty array if none)",
+            "- next_steps: array of 2-4 specific next actions for the sales/CS team",
+            "- reasoning: brief explanation of your analysis approach",
         ])
 
         return "\n".join(parts)

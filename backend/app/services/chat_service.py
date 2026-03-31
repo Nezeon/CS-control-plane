@@ -1111,7 +1111,7 @@ class ChatService:
                 .all()
             )
         else:
-            # Per-conversation: original behavior (Streamlit/web)
+            # Per-conversation: original behavior (web/Slack)
             messages = (
                 db.query(ChatMessage)
                 .filter_by(conversation_id=conversation_id)

@@ -125,14 +125,13 @@ Each agent has a human identity, personality traits, specialized tools, and a mu
 | Slack | slack-sdk (WebClient + Block Kit) |
 | Auth | python-jose (JWT) + passlib |
 
-### Dual Frontend
+### Frontend
 
 | UI | Tech | URL |
 |----|------|-----|
 | **React Dashboard** | React 18, Vite 5, Tailwind, Three.js, Zustand, D3 | `localhost:5173` |
-| **Streamlit App** | Streamlit (6 pages: Ask, Dashboard, Customers, Agents, Tickets, Executive Summary) | `localhost:8501` |
 
-Both connect to the same FastAPI backend.
+Connects to the same FastAPI backend.
 
 ---
 
@@ -170,16 +169,7 @@ On startup the backend will:
 
 Verify: `GET http://localhost:8000/api/health` &rarr; `{"status": "healthy"}`
 
-### 3. Streamlit UI
-
-```bash
-cd streamlit_app
-streamlit run app.py
-```
-
-Open `http://localhost:8501`. Log in with admin credentials.
-
-### 4. React Dashboard (optional)
+### 3. React Dashboard
 
 ```bash
 cd frontend
@@ -255,11 +245,6 @@ hivepro-cs-control-plane/
 │       ├── components/              # GlassCard, HealthRing, KpiCard, etc.
 │       ├── stores/                  # Zustand (dashboard, customer)
 │       └── services/                # API client + WebSocket
-│
-├── streamlit_app/                   # Streamlit operational UI (6 pages)
-│   ├── app.py                       # Login + navigation
-│   ├── pages/                       # Ask, Dashboard, Customers, Agents, Tickets, Executive Summary
-│   └── utils/                       # API client + styling
 │
 ├── prompt-templates/                # Reusable prompt templates
 ├── docs/                            # Architecture, PRD, wireframes, API contract, DB schema

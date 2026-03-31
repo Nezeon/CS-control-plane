@@ -153,12 +153,6 @@ The Orchestrator routes events directly to specialist agents by event type and l
 | pydantic-settings | 2.1+ | Settings from .env (40+ env vars) |
 | Playwright | 1.40+ | Browser automation (E2E testing) |
 
-### Alternative UI (Streamlit)
-
-| Technology | Purpose |
-|------------|---------|
-| Streamlit | 6-page operational UI (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary) |
-
 ### Deployment
 
 | Platform | Purpose |
@@ -384,17 +378,6 @@ hivepro-cs-control-plane/
 │       │   ├── layout/                # AppLayout, shared layout
 │       │   └── shared/                # GlassCard, HealthRing, KpiCard, etc.
 │       └── utils/                     # formatters
-│
-├── streamlit_app/                     # Alternative UI (6 pages, fully functional)
-│   ├── app.py                         # Entry (login + home)
-│   ├── pages/
-│   │   ├── 1_Ask.py                   # Chat interface
-│   │   ├── 2_Dashboard.py             # Metrics dashboard
-│   │   ├── 3_Customers.py             # Customer list + detail
-│   │   ├── 4_Agents.py                # Agent status + profiles
-│   │   ├── 5_Tickets.py               # Ticket board
-│   │   └── 6_Executive_Summary.py     # Executive summary + charts
-│   └── utils/                         # API client (JWT auth, polling) + CSS
 │
 ├── prompt-templates/                  # Reusable prompt templates
 └── e2e/                               # Playwright E2E tests
@@ -1185,7 +1168,7 @@ Processes events through the orchestrator and broadcasts via WebSocket.
 
 ### 13.4 ChatService (`services/chat_service.py`)
 
-Unified chat orchestration for both Streamlit and Slack interfaces.
+Unified chat orchestration for web and Slack interfaces.
 
 - `process_message_full(conversation_id, message_text)` — Background entry point: creates messages, tries fast path (Haiku), falls back to full agent pipeline
 - Manages conversation lifecycle, message creation, response threading
@@ -1227,7 +1210,7 @@ Bidirectional Slack chat handler.
 - Deduplication of Slack retry requests
 - User mapping (single system user `slack-bot@hivepro.com`)
 - Conversation threading: Slack `thread_ts` maps to `ChatConversation` via `metadata_` JSONB
-- Reuses `ChatService.process_message_full()` — same fast path / full pipeline as Streamlit
+- Reuses `ChatService.process_message_full()` — same fast path / full pipeline as web chat
 
 ### 13.10 SlackFormatter (`services/slack_formatter.py`)
 
@@ -1936,9 +1919,8 @@ VITE_WS_URL=wss://cs-control-plane-api.onrender.com/api/ws
 | C | Jira Integration | Done | Jira REST API (httpx), bulk + incremental sync, webhook receiver, auto-triage events, `jira_project_key` mapping |
 | D | Slack Integration | Done | Real slack-sdk, Block Kit formatting, 9 dedicated channels, interactive buttons (Approve/Edit/Dismiss), draft-first workflow, `agent_drafts` + `audit_log` tables |
 | D.2 | Slack Chat | Done | Bidirectional chat, signature verification, conversation threading, markdown→Block Kit, user mapping, reuses chat fast path |
-| E | Executive Summaries | Done | Trend service (pure SQL), alert rules engine (4 rules), executive router, Streamlit page |
-| F | Chat Fast Path | Done | Haiku fast responses, intent-specific prompts, background processing, unified chat service for Streamlit + Slack |
-| G | Streamlit UI | Done | 6-page app (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary), JWT auth, API polling |
+| E | Executive Summaries | Done | Trend service (pure SQL), alert rules engine (4 rules), executive router |
+| F | Chat Fast Path | Done | Haiku fast responses, intent-specific prompts, background processing, unified chat service for Slack |
 | H | Demo System | Done | Demo runner CLI, demo data constants, rich terminal logging, demo API endpoint |
 
 ---
@@ -1966,13 +1948,7 @@ On startup the backend will:
 - Backfill ChromaDB from PostgreSQL
 - Start APScheduler jobs (Jira daily at 8 AM, Fathom at 6 AM & 6 PM)
 
-### Streamlit UI (Primary)
-```bash
-cd streamlit_app
-streamlit run app.py            # Start on http://localhost:8501
-```
-
-### React Frontend (Optional)
+### React Frontend
 ```bash
 cd frontend
 npm install
@@ -2034,4 +2010,4 @@ npm run dev                     # Start on http://localhost:5173
 
 ---
 
-*This document was originally generated on March 2, 2026 and updated on March 23, 2026 to reflect the current state of the codebase (Phases A-H: architecture upgrade, Jira/Fathom/Slack integration, chat system, executive summaries, Streamlit UI, demo system).*
+*This document was originally generated on March 2, 2026 and updated on March 31, 2026 to reflect the current state of the codebase (Phases A-H: architecture upgrade, Jira/Fathom/Slack integration, chat system, executive summaries, demo system). Streamlit UI removed.*

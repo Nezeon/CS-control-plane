@@ -165,7 +165,7 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 7. **Call Intelligence** — Extracts summaries, action items, sentiment from Fathom recordings
 8. **Health Monitoring** — Daily health scores, risk flags, cross-customer pattern detection, proactive Jira ticket drafts
 9. **Executive Reporting** — Weekly portfolio digest + real-time threshold alerts (issue clusters, health crashes, SLA cascades, churn signals, pipeline stalls)
-10. **Chat Interface** — Interactive chat via Streamlit + Slack with fast path (Haiku) for instant responses
+10. **Chat Interface** — Interactive chat via Slack with fast path (Haiku) for instant responses
 
 ---
 
@@ -264,7 +264,6 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 | **Frontend** | React 18 + Vite 5 | Dashboard SPA (3 pages, minimal) |
 | Styling | Tailwind CSS 3.x | Custom design system |
 | State | Zustand | Client-side state |
-| **Alt UI** | Streamlit | 6-page app (Ask, Dashboard, Customers, Agents, Tickets, Executive Summary) |
 | Auth | python-jose (JWT) + passlib[bcrypt] | Token-based auth |
 | HTTP Client | httpx | External API integration |
 
@@ -439,18 +438,6 @@ hivepro-cs-control-plane/
 │       ├── services/                  # api.js, customerApi, dashboardApi, ticketApi, websocket
 │       ├── stores/                    # dashboardStore, customerStore (Zustand)
 │       └── utils/formatters.js
-│
-├── streamlit_app/                     # Alternative UI (6 pages, fully functional)
-│   ├── app.py                         # Entry (login + home)
-│   ├── pages/
-│   │   ├── 1_Ask.py                   # Chat interface
-│   │   ├── 2_Dashboard.py             # Metrics dashboard
-│   │   ├── 3_Customers.py             # Customer list + detail
-│   │   ├── 4_Agents.py                # Agent status + profiles
-│   │   ├── 5_Tickets.py               # Ticket board
-│   │   └── 6_Executive_Summary.py     # Executive summary + charts
-│   ├── utils/api.py                   # API client (JWT auth, polling)
-│   └── utils/style.py                 # CSS theming
 │
 ```
 
@@ -743,10 +730,6 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 
-# Streamlit UI
-cd streamlit_app
-streamlit run app.py
-
 # React Frontend
 cd frontend
 npm install && npm run dev
@@ -783,7 +766,7 @@ npm install && npm run dev
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **hivepro-cs-control-plane** (1665 symbols, 4575 relationships, 134 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **hivepro-cs-control-plane** (2058 symbols, 6455 relationships, 165 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

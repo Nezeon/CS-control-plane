@@ -1220,7 +1220,7 @@ Customer Memory (portfolio or single customer)
 Claude Haiku (single call with all context)
     │
     ▼
-Formatted Answer (Slack / Streamlit)
+Formatted Answer (Slack / Dashboard)
 ```
 
 **Key design decisions:**

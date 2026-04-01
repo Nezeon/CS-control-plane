@@ -80,6 +80,36 @@ class ChatFastPath:
         """
         start = time.perf_counter()
 
+        # ── Greeting: lightweight response, no data lookup ──
+        if intent == "greeting":
+            logger.info("[FastPath] Greeting intent — lightweight response")
+            response = claude_service.generate_fast_sync(
+                system_prompt=(
+                    "You are CS-Agent, HivePro's AI Customer Success assistant. "
+                    "Respond naturally and conversationally. Be friendly and brief. "
+                    "If asked who you are or what you can do, explain you help with: "
+                    "customer health monitoring, deal pipeline analysis, ticket triage, "
+                    "call intelligence, and executive reporting. "
+                    "Do NOT pull data or generate reports unless explicitly asked."
+                ),
+                user_message=message,
+                max_tokens=256,
+                temperature=0.7,
+            )
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            if "error" in response:
+                return None
+            return {
+                "answer": response["content"],
+                "agent_id": "cso_orchestrator",
+                "agent_name": "Naveen Kapoor",
+                "agents_involved": ["cso_orchestrator"],
+                "model": response.get("model", ""),
+                "duration_ms": duration_ms,
+                "input_tokens": response.get("input_tokens", 0),
+                "output_tokens": response.get("output_tokens", 0),
+            }
+
         logger.info(
             f"[FastPath] Building prompt: intent={intent}, customer={customer_name or 'None'}, "
             f"prefetched_keys={list(prefetched.keys())}"

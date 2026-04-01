@@ -41,10 +41,28 @@ DEAL_KEYWORDS = [
     "hubspot", "presales", "pre-sales",
 ]
 
+# Casual/greeting messages that don't need data lookup
+GREETING_PATTERNS = [
+    "hi", "hello", "hey", "howdy", "good morning", "good afternoon",
+    "good evening", "what's up", "whats up", "sup", "yo", "hola",
+    "thanks", "thank you", "bye", "goodbye", "see you", "cheers",
+    "ok", "okay", "cool", "got it", "nice", "great", "awesome",
+    "who are you", "what can you do", "help",
+]
+
 
 def classify_intent(message: str) -> dict:
     """Classify user chat message into agent routing intent."""
-    lower = message.lower()
+    lower = message.lower().strip()
+
+    # Casual greetings / short conversational messages — no data lookup needed
+    stripped = lower.strip("!?., ")
+    if stripped in GREETING_PATTERNS or len(stripped) <= 3:
+        return {
+            "intent": "greeting",
+            "event_type": "user_chat_greeting",
+            "lanes": [],
+        }
 
     if any(kw in lower for kw in CALL_KEYWORDS):
         return {
@@ -588,6 +606,35 @@ class ChatService:
         try:
             from app.agents.memory_agent import CustomerMemoryAgent
             from app.services.chat_fast_path import chat_fast_path
+
+            # Greeting intent: skip all data loading, just call Claude directly
+            if intent == "greeting":
+                fast_result = chat_fast_path.answer(
+                    message=message, intent=intent, customer_name=None,
+                    customer_memory={}, prefetched={},
+                )
+                if fast_result and fast_result.get("answer"):
+                    assistant_msg = db.query(ChatMessage).filter_by(id=assistant_msg_id).first()
+                    if assistant_msg:
+                        assistant_msg.content = fast_result["answer"]
+                        assistant_msg.pipeline_status = "completed"
+                        assistant_msg.agents_involved = fast_result["agents_involved"]
+                        assistant_msg.execution_metadata = {
+                            "intent": "greeting", "fast_path": True,
+                            "model": fast_result.get("model", ""),
+                            "duration_ms": fast_result.get("duration_ms", 0),
+                        }
+                        db.commit()
+                    self._broadcast("chat:message_complete", {
+                        "conversation_id": conversation_id_str,
+                        "message_id": assistant_msg_id_str,
+                        "content": fast_result["answer"],
+                        "agents_involved": fast_result["agents_involved"],
+                        "fast_path": True,
+                    })
+                    return  # DONE
+                # If greeting failed, fall through to normal path
+                intent = "general"
 
             # Build customer/portfolio memory (1-2 DB queries)
             memory_agent = CustomerMemoryAgent()

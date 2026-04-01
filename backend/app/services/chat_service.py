@@ -638,7 +638,7 @@ class ChatService:
                                            call_date, meeting_type
                                     FROM call_insights
                                     WHERE customer_id = CAST(:cid AS uuid)
-                                    ORDER BY processed_at DESC LIMIT 8
+                                    ORDER BY call_date DESC NULLS LAST LIMIT 8
                                 """), {"cid": str(resolved_customer_id)}).fetchall()
                             else:
                                 call_rows = db.execute(sa_text("""
@@ -646,7 +646,7 @@ class ChatService:
                                            call_date, meeting_type
                                     FROM call_insights
                                     WHERE LOWER(summary) LIKE :s
-                                    ORDER BY processed_at DESC LIMIT 5
+                                    ORDER BY call_date DESC NULLS LAST LIMIT 5
                                 """), {"s": f"%{xref_search}%"}).fetchall()
                             if call_rows:
                                 prefetched["related_calls"] = [

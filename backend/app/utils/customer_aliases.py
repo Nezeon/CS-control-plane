@@ -15,6 +15,10 @@ CUSTOMER_ALIASES: dict[str, str] = {
     "alraedahfinance": "al raedah finance",
     "alraedah finance": "al raedah finance",
     "alraedah": "al raedah finance",
+    "al-raedah": "al raedah finance",
+    "al-raedah finance": "al raedah finance",
+    "al- raedah": "al raedah finance",
+    "al -raedah": "al raedah finance",
     # GPH (maps to Phase 1 by default)
     "gph_makka": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",
     "gph/ksgaa": "the general presidency for the affairs of the grand mosque and the prophet's mosque (gph) - phase 1",

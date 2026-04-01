@@ -122,3 +122,46 @@ async def trigger_fathom_sync(
         patterns_detected=result.get("patterns_detected", 0),
         duration_ms=duration_ms,
     )
+
+
+@router.post("/relink-orphaned")
+async def relink_orphaned_calls(
+    current_user: User = Depends(require_role("admin", "cs_manager")),
+):
+    """
+    Re-run customer matching on all call_insights with customer_id = NULL.
+
+    This fixes calls that were synced before the customer-matching logic was improved
+    (e.g. hyphenated names like 'Al-Raedah' not matching 'Al Raedah Finance').
+    """
+    from app.database import get_sync_session
+    from app.models.call_insight import CallInsight
+    from app.tasks.agent_tasks import _resolve_customer
+
+    db = get_sync_session()
+    try:
+        orphaned = db.query(CallInsight).filter(CallInsight.customer_id.is_(None)).all()
+        linked = 0
+        for insight in orphaned:
+            # CallInsight has no meeting_title column — use summary as the
+            # primary search text and pass it as both title and summary to
+            # _resolve_customer so all matching paths (segment, containment,
+            # alias, summary fallback) get a chance.
+            search_text = insight.summary or ""
+            customer_id, customer_name = _resolve_customer(db, search_text, summary=search_text)
+            if customer_id:
+                insight.customer_id = customer_id
+                linked += 1
+                logger.info(f"[Fathom] Re-linked call {insight.id} → {customer_name}")
+        db.commit()
+        return {
+            "orphaned_total": len(orphaned),
+            "relinked": linked,
+            "still_orphaned": len(orphaned) - linked,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[Fathom] Relink failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+    finally:
+        db.close()

@@ -186,7 +186,7 @@ class CustomerMemoryAgent(BaseAgent):
         recent_insights = (
             db_session.query(CallInsight)
             .filter(CallInsight.customer_id == customer_id)
-            .order_by(desc(CallInsight.processed_at))
+            .order_by(desc(CallInsight.call_date))
             .limit(10)
             .all()
         )

@@ -99,33 +99,48 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
     customer_map = {c.name.lower(): (c.id, c.name) for c in customers}
 
     # Try title segment matching (exact, containment, alias)
+    # Normalize hyphens to spaces for matching (e.g. "Al-Raedah" → "al raedah")
+    def _normalize(s: str) -> str:
+        return re.sub(r'\s+', ' ', s.replace('-', ' ')).strip().lower()
+
     if candidate_segments:
         for seg in candidate_segments:
             seg_lower = seg.lower()
-            # Exact match
+            seg_norm = _normalize(seg)
+            # Exact match (raw and normalized)
             if seg_lower in customer_map:
                 return customer_map[seg_lower]
+            if seg_norm != seg_lower and seg_norm in customer_map:
+                return customer_map[seg_norm]
             # Containment: customer name in segment or segment in customer name
+            # Compare both raw and normalized forms
             for cname_lower, (cid, cname) in customer_map.items():
                 if cname_lower in seg_lower or seg_lower in cname_lower:
                     return cid, cname
+                if cname_lower in seg_norm or seg_norm in cname_lower:
+                    return cid, cname
 
-        # Check alias map
+        # Check alias map (raw and normalized)
         for seg in candidate_segments:
-            alias_target = _FATHOM_CUSTOMER_ALIASES.get(seg.lower())
+            seg_lower = seg.lower()
+            seg_norm = _normalize(seg)
+            alias_target = _FATHOM_CUSTOMER_ALIASES.get(seg_lower) or _FATHOM_CUSTOMER_ALIASES.get(seg_norm)
             if alias_target and alias_target in customer_map:
                 return customer_map[alias_target]
 
     # Fallback: search customer names in meeting summary (catches cases where
     # customer name appears in summary/transcript but not in the title)
     summary_lower = summary.lower() if summary else None
+    summary_norm = _normalize(summary) if summary else None
 
     if summary_lower:
         for cname_lower, (cid, cname) in customer_map.items():
             # Only match names >= 5 chars to avoid false positives
-            if len(cname_lower) >= 5 and cname_lower in summary_lower:
-                logger.info(f"Matched customer '{cname}' from summary (not title): {title}")
-                return cid, cname
+            if len(cname_lower) >= 5:
+                # Check both raw and normalized summary (handles "Al-Raedah" vs "Al Raedah")
+                if cname_lower in summary_lower or cname_lower in summary_norm:
+                    logger.info(f"Matched customer '{cname}' from summary (not title): {title}")
+                    return cid, cname
 
     # Fallback: search HubSpot deal company names in summary.
     # If a deal company is mentioned but no customer record exists,

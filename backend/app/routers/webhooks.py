@@ -442,7 +442,7 @@ async def slack_events(request: Request):
     text_lower = text.lower().strip()
     loop = asyncio.get_event_loop()
 
-    if text_lower.startswith("rule:"):
+    if re.match(r'^rule\s*:', text_lower):
         loop.run_in_executor(
             None, slack_chat_handler.handle_rule,
             channel, slack_user_id, slack_user_name, text, thread_ts,

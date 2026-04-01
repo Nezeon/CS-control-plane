@@ -274,8 +274,8 @@ class SlackChatHandler:
         from app.database import get_sync_session
         from app.models.teachable_rule import TeachableRule
 
-        # Strip "rule:" prefix (case-insensitive)
-        rule_body = re.sub(r'^rule:\s*', '', text, flags=re.IGNORECASE).strip()
+        # Strip "rule:" or "rule :" prefix (case-insensitive, handles space before colon)
+        rule_body = re.sub(r'^rule\s*:\s*', '', text, flags=re.IGNORECASE).strip()
         if not rule_body:
             self.post_response(channel, thread_ts, "Please provide a rule after `Rule:`")
             return

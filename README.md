@@ -9,7 +9,7 @@
 
 # HivePro CS Control Plane
 
-> **Codename: Mission Control** &mdash; An AI-powered command center that orchestrates **14 agents across a 4-tier hierarchy** to automate Customer Success workflows at HivePro.
+> **Codename: Mission Control** &mdash; An AI-powered command center that orchestrates **10 agents** to automate Customer Success workflows at HivePro.
 
 10 specialized AI agents watch Jira tickets, Fathom call recordings, and HubSpot deals &mdash; then triage issues, analyze calls, monitor customer health, draft actions, and coordinate multi-step workflows. Everything goes through Slack first; a dashboard provides deep-dives when needed.
 

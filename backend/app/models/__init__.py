@@ -14,6 +14,7 @@ from app.models.chat_message import ChatMessage
 from app.models.agent_draft import AgentDraft
 from app.models.audit_log import AuditLog
 from app.models.deal import Deal
+from app.models.teachable_rule import TeachableRule
 
 __all__ = [
     "User",
@@ -32,4 +33,5 @@ __all__ = [
     "AgentDraft",
     "AuditLog",
     "Deal",
+    "TeachableRule",
 ]

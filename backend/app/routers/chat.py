@@ -231,3 +231,54 @@ async def archive_conversation(
     conv.status = "archived"
     await db.commit()
     return {"status": "archived", "id": str(conversation_id)}
+
+
+# ── Teachable Rules API ──────────────────────────────────────────────
+
+@router.get("/rules")
+async def list_rules(
+    customer_id: uuid.UUID | None = Query(None, description="Filter by customer (omit for all)"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List active teachable rules, optionally filtered by customer."""
+    from app.models.teachable_rule import TeachableRule
+
+    q = select(TeachableRule).where(TeachableRule.is_active == True)
+    if customer_id:
+        q = q.where(TeachableRule.customer_id == customer_id)
+    q = q.order_by(desc(TeachableRule.created_at)).limit(50)
+
+    result = await db.execute(q)
+    rules = result.scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "rule_text": r.rule_text,
+            "customer_id": str(r.customer_id) if r.customer_id else None,
+            "created_by_name": r.created_by_name,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rules
+    ]
+
+
+@router.delete("/rules/{rule_id}")
+async def delete_rule(
+    rule_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete a teachable rule."""
+    from app.models.teachable_rule import TeachableRule
+
+    result = await db.execute(
+        select(TeachableRule).where(TeachableRule.id == rule_id, TeachableRule.is_active == True)
+    )
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    rule.is_active = False
+    await db.commit()
+    return {"status": "deleted", "id": str(rule_id)}

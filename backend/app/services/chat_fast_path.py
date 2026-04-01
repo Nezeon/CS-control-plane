@@ -102,9 +102,16 @@ class ChatFastPath:
             f"[FastPath] Calling Claude: model=claude-haiku-4-5-20251001, max_tokens=2048, temp=0.3"
         )
 
+        # Inject teachable rules into system prompt
+        system_prompt = SYSTEM_PROMPT
+        rules = prefetched.get("teachable_rules", [])
+        if rules:
+            rules_block = "\n".join(f"- {r}" for r in rules)
+            system_prompt += f"\n\n## Domain Rules (taught by the CS team — always follow these)\n{rules_block}"
+
         # Single Claude call
         response = claude_service.generate_fast_sync(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_message=prompt,
             max_tokens=2048,
             temperature=0.3,

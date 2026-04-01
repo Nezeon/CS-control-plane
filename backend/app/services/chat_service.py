@@ -11,7 +11,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_ as sa_or
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("services.chat")
@@ -829,6 +829,23 @@ class ChatService:
                 db, conversation_id, limit=10 if slack_channel else 5, slack_channel=slack_channel
             )
             logger.info(f"[Chat] Conversation history: {len(conv_history)} prior messages loaded (channel={slack_channel or 'none'})")
+
+            # Load teachable rules (global + customer-specific)
+            try:
+                from app.models.teachable_rule import TeachableRule
+                rule_filter = sa_or(
+                    TeachableRule.customer_id.is_(None),
+                    TeachableRule.customer_id == resolved_customer_id,
+                ) if resolved_customer_id else TeachableRule.customer_id.is_(None)
+                rules = db.query(TeachableRule.rule_text).filter(
+                    TeachableRule.is_active == True,
+                    rule_filter,
+                ).order_by(TeachableRule.created_at.desc()).limit(20).all()
+                if rules:
+                    prefetched["teachable_rules"] = [r[0] for r in rules]
+                    logger.info(f"[Chat] Loaded {len(rules)} teachable rules")
+            except Exception as e:
+                logger.debug(f"[Chat] Teachable rules load skipped: {e}")
 
             # Single Claude Haiku call (~1-3s)
             fast_result = chat_fast_path.answer(

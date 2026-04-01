@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import re
 import time
 
 from fastapi import APIRouter, Header, HTTPException, Request, Depends, status
@@ -404,10 +405,23 @@ async def slack_events(request: Request):
     slack_user_id = event.get("user", "")
 
     # Strip @mention prefix (e.g. "<@U12345> how is ACME?" -> "how is ACME?")
+    original_text = text
     if settings.SLACK_BOT_USER_ID:
         mention_prefix = f"<@{settings.SLACK_BOT_USER_ID}>"
         if text.startswith(mention_prefix):
             text = text[len(mention_prefix):].strip()
+
+    # Skip messages directed at other humans (not the bot).
+    # e.g. "@ayushmaan can you update this?" → two humans talking, don't respond.
+    # But "@CS-Agent what about @ayushmaan's accounts?" → bot was addressed, respond.
+    if settings.SLACK_BOT_USER_ID:
+        bot_mention = f"<@{settings.SLACK_BOT_USER_ID}>"
+        all_mentions = re.findall(r"<@U[A-Z0-9]+>", original_text)
+        has_bot_mention = bot_mention in original_text
+        has_other_mentions = any(m != bot_mention for m in all_mentions)
+        if has_other_mentions and not has_bot_mention:
+            logger.debug(f"[SlackWebhook] Skipping: directed at other user(s), not bot")
+            return {"ok": True}
 
     if not text:
         return {"ok": True}
@@ -424,8 +438,32 @@ async def slack_events(request: Request):
         f"[SlackWebhook] Message from {slack_user_name} in {channel}: {text[:80]}"
     )
 
-    # Spawn background thread (same pattern as /api/chat/send)
+    # ── Teachable rules commands (intercept before chat pipeline) ──
+    text_lower = text.lower().strip()
     loop = asyncio.get_event_loop()
+
+    if text_lower.startswith("rule:"):
+        loop.run_in_executor(
+            None, slack_chat_handler.handle_rule,
+            channel, slack_user_id, slack_user_name, text, thread_ts,
+        )
+        return {"ok": True}
+
+    if text_lower in ("rules", "list rules"):
+        loop.run_in_executor(
+            None, slack_chat_handler.handle_list_rules, channel, thread_ts,
+        )
+        return {"ok": True}
+
+    if text_lower.startswith("delete rule "):
+        rule_id_prefix = text[len("delete rule "):].strip()
+        loop.run_in_executor(
+            None, slack_chat_handler.handle_delete_rule,
+            channel, thread_ts, rule_id_prefix,
+        )
+        return {"ok": True}
+
+    # Spawn background thread for normal chat (same pattern as /api/chat/send)
     loop.run_in_executor(
         None,
         slack_chat_handler.handle_message,

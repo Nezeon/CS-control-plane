@@ -12,6 +12,7 @@ import logging
 import time
 import uuid
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -251,6 +252,137 @@ class SlackChatHandler:
                 db.close()
             except Exception:
                 pass
+
+    # ── Teachable Rules Handler ────────────────────────────────────────────
+
+    def handle_rule(
+        self,
+        channel: str,
+        slack_user_id: str,
+        slack_user_name: str,
+        text: str,
+        thread_ts: str,
+    ) -> None:
+        """Parse and store a teachable rule from Slack.
+
+        Supports:
+          Rule: <text>                     → global rule
+          Rule for <customer>: <text>      → customer-specific rule
+        """
+        import re
+        import uuid
+        from app.database import get_sync_session
+        from app.models.teachable_rule import TeachableRule
+
+        # Strip "rule:" prefix (case-insensitive)
+        rule_body = re.sub(r'^rule:\s*', '', text, flags=re.IGNORECASE).strip()
+        if not rule_body:
+            self.post_response(channel, thread_ts, "Please provide a rule after `Rule:`")
+            return
+
+        # Check for customer-specific pattern: "for <customer>: <rule text>"
+        customer_id = None
+        customer_name = None
+        scope_match = re.match(r'^for\s+(.+?):\s*(.+)$', rule_body, re.IGNORECASE | re.DOTALL)
+        if scope_match:
+            candidate_name = scope_match.group(1).strip()
+            rule_text = scope_match.group(2).strip()
+
+            # Try to resolve customer
+            db = get_sync_session()
+            try:
+                from app.services.chat_service import _try_resolve_customer
+                customer_id, customer_name = _try_resolve_customer(db, candidate_name)
+            finally:
+                db.close()
+
+            if not customer_id:
+                # Couldn't find customer — save as global, warn user
+                rule_text = rule_body  # Use the full text including "for X:" as context
+        else:
+            rule_text = rule_body
+
+        # Save to database
+        db = get_sync_session()
+        try:
+            rule = TeachableRule(
+                id=uuid.uuid4(),
+                rule_text=rule_text,
+                customer_id=customer_id,
+                created_by_slack_user=slack_user_id,
+                created_by_name=slack_user_name,
+            )
+            db.add(rule)
+            db.commit()
+
+            # Post confirmation
+            if customer_id:
+                msg = f":white_check_mark: Rule saved for *{customer_name}*: _{rule_text}_"
+            elif scope_match and not customer_id:
+                msg = f":white_check_mark: Rule saved (global — couldn't find customer '{candidate_name}'): _{rule_text}_"
+            else:
+                msg = f":white_check_mark: Rule saved (global): _{rule_text}_"
+
+            self.post_response(channel, thread_ts, msg)
+            logger.info(f"[SlackChat] Rule saved: customer={customer_name or 'global'}, text={rule_text[:80]}")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[SlackChat] Failed to save rule: {e}", exc_info=True)
+            self.post_response(channel, thread_ts, f":x: Failed to save rule: {str(e)[:100]}")
+        finally:
+            db.close()
+
+    def handle_list_rules(self, channel: str, thread_ts: str) -> None:
+        """List all active teachable rules and post to Slack."""
+        from app.database import get_sync_session
+        from app.models.teachable_rule import TeachableRule
+        from sqlalchemy import desc
+
+        db = get_sync_session()
+        try:
+            rules = db.query(TeachableRule).filter(
+                TeachableRule.is_active == True
+            ).order_by(desc(TeachableRule.created_at)).limit(30).all()
+
+            if not rules:
+                self.post_response(channel, thread_ts, "No teachable rules saved yet.")
+                return
+
+            lines = ["*Active Teachable Rules:*\n"]
+            for i, r in enumerate(rules, 1):
+                scope = f"*{r.customer.name}*" if r.customer_id and r.customer else "Global"
+                short_id = str(r.id)[:8]
+                lines.append(f"{i}. [{scope}] {r.rule_text}  (`{short_id}`)")
+
+            self.post_response(channel, thread_ts, "\n".join(lines))
+        finally:
+            db.close()
+
+    def handle_delete_rule(self, channel: str, thread_ts: str, rule_id_prefix: str) -> None:
+        """Soft-delete a teachable rule by ID prefix."""
+        from app.database import get_sync_session
+        from app.models.teachable_rule import TeachableRule
+
+        db = get_sync_session()
+        try:
+            rule = db.query(TeachableRule).filter(
+                TeachableRule.is_active == True,
+                TeachableRule.id.cast(sa.String).like(f"{rule_id_prefix}%"),
+            ).first()
+
+            if not rule:
+                self.post_response(channel, thread_ts, f":x: No active rule found matching `{rule_id_prefix}`")
+                return
+
+            rule.is_active = False
+            db.commit()
+            self.post_response(channel, thread_ts, f":white_check_mark: Rule deleted: _{rule.rule_text[:80]}_")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[SlackChat] Failed to delete rule: {e}")
+            self.post_response(channel, thread_ts, f":x: Failed to delete rule: {str(e)[:100]}")
+        finally:
+            db.close()
 
     # ── Response Posting ─────────────────────────────────────────────────
 

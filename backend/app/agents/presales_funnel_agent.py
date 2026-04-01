@@ -35,7 +35,8 @@ CLOSED_STAGES = ["closedwon", "closedlost"]
 
 # Stage index for "at least reached this stage" calculations
 STAGE_ORDER = {s: i for i, s in enumerate(PIPELINE_STAGES)}
-STAGE_ORDER["closedwon"] = len(PIPELINE_STAGES)
+# Contract Sent = order placed, contract being signed. Same level as Closed Won — NOT a regression.
+STAGE_ORDER["closedwon"] = STAGE_ORDER["contractsent"]
 STAGE_ORDER["closedlost"] = -1  # Lost deals don't advance
 
 
@@ -260,7 +261,7 @@ class PreSalesFunnelAgent(BaseAgent):
             "1166515347": 0.60,   # Pre-POC
             "219679027": 0.70,    # POC
             "1157536395": 0.80,   # Negotiation
-            "contractsent": 0.90, # Contract Sent
+            "contractsent": 0.95, # Contract Sent = order placed, effectively closed
         }
 
         # Get open deals
@@ -581,6 +582,11 @@ class PreSalesFunnelAgent(BaseAgent):
                 parts.append(f"- {f}")
 
         parts.extend([
+            "",
+            "## HivePro Pipeline Stage Definitions",
+            "- Contract Sent: Order is placed, contract is being signed. This is a POSITIVE terminal stage, equivalent to Closed Won.",
+            "- Closed Won ↔ Contract Sent is NOT a regression. It means the contract is being finalized for signature.",
+            "- Only movement to Closed Lost or back to an earlier stage (Discovery, Demo, Pre-POC, POC, Negotiation) is a true regression.",
             "",
             "## Required Output Format",
             "Return a JSON object with these fields:",

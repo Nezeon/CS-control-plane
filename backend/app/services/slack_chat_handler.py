@@ -337,10 +337,13 @@ class SlackChatHandler:
         from app.database import get_sync_session
         from app.models.teachable_rule import TeachableRule
         from sqlalchemy import desc
+        from sqlalchemy.orm import joinedload
 
         db = get_sync_session()
         try:
-            rules = db.query(TeachableRule).filter(
+            rules = db.query(TeachableRule).options(
+                joinedload(TeachableRule.customer)
+            ).filter(
                 TeachableRule.is_active == True
             ).order_by(desc(TeachableRule.created_at)).limit(30).all()
 
@@ -360,8 +363,14 @@ class SlackChatHandler:
 
     def handle_delete_rule(self, channel: str, thread_ts: str, rule_id_prefix: str) -> None:
         """Soft-delete a teachable rule by ID prefix."""
+        import re
         from app.database import get_sync_session
         from app.models.teachable_rule import TeachableRule
+
+        # Validate: only hex chars and hyphens (UUID prefix)
+        if not re.match(r'^[a-f0-9\-]+$', rule_id_prefix.lower()):
+            self.post_response(channel, thread_ts, ":x: Invalid rule ID format. Use the ID shown in `rules` list.")
+            return
 
         db = get_sync_session()
         try:

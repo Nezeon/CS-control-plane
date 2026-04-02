@@ -57,7 +57,7 @@ def classify_intent(message: str) -> dict:
 
     # Casual greetings / short conversational messages — no data lookup needed
     stripped = lower.strip("!?., ")
-    if stripped in GREETING_PATTERNS or len(stripped) <= 3:
+    if stripped in GREETING_PATTERNS:
         return {
             "intent": "greeting",
             "event_type": "user_chat_greeting",

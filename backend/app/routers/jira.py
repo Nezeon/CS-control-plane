@@ -124,3 +124,46 @@ async def sync_single(
         "action": result["action"],
         "ticket_id": str(result["ticket_id"]),
     }
+
+
+@router.post("/relink-orphaned")
+async def relink_orphaned_tickets(
+    current_user: User = Depends(require_role("admin", "cs_manager")),
+):
+    """
+    Re-run customer matching on all tickets with customer_id = NULL.
+
+    Fixes tickets that were synced before improved matching logic or
+    before the customer was added to the database.
+    """
+    from app.database import get_sync_session
+    from app.models.ticket import Ticket
+    from app.tasks.jira_sync import _resolve_customer_from_summary, _build_customer_cache
+
+    db = get_sync_session()
+    try:
+        orphaned = db.query(Ticket).filter(Ticket.customer_id.is_(None)).all()
+        customer_cache = _build_customer_cache(db)
+        linked = 0
+        matched = {}
+        for ticket in orphaned:
+            customer_id, customer_name = _resolve_customer_from_summary(
+                db, ticket.summary or "", customer_cache=customer_cache
+            )
+            if customer_id:
+                ticket.customer_id = customer_id
+                linked += 1
+                matched[customer_name] = matched.get(customer_name, 0) + 1
+        db.commit()
+        return {
+            "orphaned_total": len(orphaned),
+            "relinked": linked,
+            "still_orphaned": len(orphaned) - linked,
+            "by_customer": matched,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[Jira] Relink failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+    finally:
+        db.close()

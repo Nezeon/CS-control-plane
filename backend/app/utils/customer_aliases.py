@@ -40,6 +40,9 @@ CUSTOMER_ALIASES: dict[str, str] = {
     "[libra solutions]": "libra solutions",
     "[ooredoo]": "ooredoo",
     "[tencent]": "tencent america",
+    "[apache]": "apache",
+    "[apache corp]": "apache",
+    "apache corp": "apache",
     # Abbreviation aliases for formal names
     "pdo": "petroleum development oman (pdo)",
     "difc": "dubai international financial centre (difc)",

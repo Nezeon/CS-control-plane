@@ -402,6 +402,23 @@ def _resolve_customer_from_summary(db: Session, summary: str, customer_cache: di
         customers = db.query(Customer).all()
         name_map = {c.name.lower(): c for c in customers}
 
+    # Helper: try alias → direct → containment match on a candidate string
+    def _try_match(candidate: str):
+        if not candidate or len(candidate) < 2:
+            return None
+        # Alias map
+        canonical = _CUSTOMER_ALIASES.get(candidate)
+        if canonical and canonical in name_map:
+            return name_map[canonical]
+        # Direct name match
+        if candidate in name_map:
+            return name_map[candidate]
+        # Containment: customer name in candidate or candidate in customer name
+        for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
+            if len(name_lower) >= 3 and (name_lower in candidate or candidate in name_lower):
+                return cust
+        return None
+
     # Step 1: Try bracket patterns like [Apache], [DMS], [Ooredoo]
     if s_lower.startswith("["):
         m = re.match(r'^\[([^\]]+)\]', s_lower)
@@ -410,69 +427,50 @@ def _resolve_customer_from_summary(db: Session, summary: str, customer_cache: di
             # Skip known non-customer tags
             if bracket_content in _NON_CUSTOMER_TAGS:
                 return None, None
-            # Check alias map
+            # Check with bracket key [xyz] and plain content
             bracket_key = f"[{bracket_content}]"
-            canonical = _CUSTOMER_ALIASES.get(bracket_key)
-            if canonical and canonical in name_map:
-                c = name_map[canonical]
-                return c.id, c.name
-            # Check alias without brackets
-            canonical = _CUSTOMER_ALIASES.get(bracket_content)
-            if canonical and canonical in name_map:
-                c = name_map[canonical]
-                return c.id, c.name
-            # Check direct name match
-            if bracket_content in name_map:
-                c = name_map[bracket_content]
-                return c.id, c.name
-            # Containment match on bracket content
-            for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-                if len(name_lower) >= 3 and (name_lower in bracket_content or bracket_content in name_lower):
-                    return cust.id, cust.name
-            # Bracket content didn't match anything — don't fall through
-            return None, None
+            cust = _try_match(bracket_key) or _try_match(bracket_content)
+            if cust:
+                return cust.id, cust.name
+            # Bracket didn't match — fall through to check rest of summary
 
     # Step 2: Extract prefix before first delimiter (| or -)
     m = re.match(r'^([^|\-\[]+?)\s*[|\-]', s_lower)
     prefix = m.group(1).strip() if m else None
 
-    candidate = prefix if prefix else None
+    if prefix and prefix not in _NON_CUSTOMER_TAGS:
+        cust = _try_match(prefix)
+        if cust:
+            return cust.id, cust.name
 
-    # Skip known non-customer prefixes
-    if candidate and candidate in _NON_CUSTOMER_TAGS:
-        return None, None
-
-    if candidate:
-        # Check alias map first
-        canonical = _CUSTOMER_ALIASES.get(candidate)
-        if canonical and canonical in name_map:
-            c = name_map[canonical]
-            return c.id, c.name
-
-        # Check direct name match
-        if candidate in name_map:
-            c = name_map[candidate]
-            return c.id, c.name
-
-        # Containment: candidate in customer name or vice versa
-        for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-            if len(name_lower) >= 3 and (name_lower in candidate or candidate in name_lower):
+    # Step 2b: Also try suffix after delimiter (e.g. "some issue - Eskan Bank")
+    dm = re.search(r'[|\-]\s*(.+)$', s_lower)
+    if dm:
+        suffix = dm.group(1).strip()
+        # Strip bracket prefix if present (e.g. "[Apache] - issue" → "issue")
+        suffix = re.sub(r'^\[[^\]]*\]\s*[-|]?\s*', '', suffix).strip()
+        if suffix and suffix not in _NON_CUSTOMER_TAGS:
+            cust = _try_match(suffix)
+            if cust:
                 return cust.id, cust.name
 
-    # Step 3: Try the whole summary as a single candidate (no delimiter found)
-    # Check alias map for the whole lowered summary
+    # Step 3: Full summary scan — check each customer name anywhere in the summary
+    # Also check alias map keys as substrings
     canonical = _CUSTOMER_ALIASES.get(s_lower)
     if canonical and canonical in name_map:
         c = name_map[canonical]
         return c.id, c.name
-    # Direct match
     if s_lower in name_map:
         c = name_map[s_lower]
         return c.id, c.name
-    # Containment check on first 50 chars
-    check = s_lower[:50]
+    # Containment check on full summary (not just first 50 chars)
     for name_lower, cust in sorted(name_map.items(), key=lambda x: -len(x[0])):
-        if len(name_lower) >= 3 and name_lower in check:
+        if len(name_lower) >= 5 and name_lower in s_lower:
             return cust.id, cust.name
+    # Also check alias keys in summary
+    for alias_key, alias_target in _CUSTOMER_ALIASES.items():
+        if len(alias_key) >= 5 and alias_key in s_lower and alias_target in name_map:
+            c = name_map[alias_target]
+            return c.id, c.name
 
     return None, None

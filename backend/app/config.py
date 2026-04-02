@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     HUBSPOT_WEBHOOK_SECRET: str = ""
 
     # Dashboard base URL for deep-links in Slack cards
-    DASHBOARD_BASE_URL: str = "https://cs-control-plane-ggtt6b4vn-nezeons-projects.vercel.app"
+    DASHBOARD_BASE_URL: str = "https://cs-control-plane.vercel.app"
 
     model_config = {"env_file": [".env", "../.env"], "extra": "ignore"}
 

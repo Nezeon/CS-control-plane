@@ -4,6 +4,7 @@ Executive Summary Router -- Portfolio-level trends, alerts, and insights.
 GET  /api/executive/summary     -- Full executive summary (trends + snapshot + alerts)
 GET  /api/executive/trends      -- Health/ticket/sentiment trends only
 POST /api/executive/check-rules -- Run alert rules engine manually
+POST /api/executive/brief       -- Trigger executive brief to Slack (manual)
 """
 
 import logging
@@ -82,5 +83,23 @@ async def check_alert_rules(
     try:
         stats = alert_rules_engine.evaluate_all(db)
         return stats
+    finally:
+        db.close()
+
+
+@router.post("/brief")
+async def trigger_executive_brief(
+    current_user: User = Depends(require_role("admin", "cs_manager")),
+):
+    """
+    Manually trigger the executive brief — generates and posts a consolidated
+    portfolio summary to the #cs-executive-overview Slack channel.
+    """
+    from app.services.executive_brief_service import generate_and_send_brief
+
+    db = get_sync_session()
+    try:
+        result = generate_and_send_brief(db)
+        return result
     finally:
         db.close()

@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     SLACK_CH_PRESALES: str = "#cs-presales-funnel"
     SLACK_CH_EXEC_DIGEST: str = "#cs-executive-digest"
     SLACK_CH_EXEC_URGENT: str = "#cs-executive-urgent"
+    SLACK_CH_EXEC_OVERVIEW: str = "#cs-executive-overview"
 
     # HubSpot CRM
     HUBSPOT_ACCESS_TOKEN: str = ""

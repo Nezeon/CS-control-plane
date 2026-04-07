@@ -166,6 +166,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Health check setup failed (non-fatal): {e}")
 
+    # Executive Brief: Wednesday & Friday at 9:00 AM IST
+    try:
+        scheduler.add_job(_run_executive_brief, "cron", day_of_week="wed,fri",
+                          hour=9, minute=0, id="exec_brief_schedule",
+                          misfire_grace_time=3600)
+        logger.info(f"Executive brief scheduled: Wed & Fri at 09:00 {settings.SYNC_TIMEZONE}")
+    except Exception as e:
+        logger.warning(f"Executive brief setup failed (non-fatal): {e}")
+
     # ChromaDB backfill: schedule as background job so server starts accepting requests immediately
     # (needed for ephemeral mode on Railway where ChromaDB is in-memory)
     def _run_backfills():
@@ -315,6 +324,28 @@ async def _run_health_check():
         logger.info(f"[HealthCheck] Done: {succeeded}/{total} succeeded, {at_risk} at-risk")
     except Exception as e:
         logger.warning(f"[HealthCheck] Failed: {e}")
+
+
+async def _run_executive_brief():
+    """APScheduler job: Generate and send executive brief to Slack."""
+    try:
+        from app.database import get_sync_session
+        from app.services.executive_brief_service import generate_and_send_brief
+
+        logger.info("[ExecBrief] Scheduled brief starting")
+        db = get_sync_session()
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: generate_and_send_brief(db)
+            )
+            if result.get("sent"):
+                logger.info(f"[ExecBrief] Brief sent: {result.get('sections', {})}")
+            else:
+                logger.warning(f"[ExecBrief] Brief not sent: {result.get('error', 'unknown')}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[ExecBrief] Failed: {e}")
 
 
 async def _run_hubspot_sync():

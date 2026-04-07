@@ -50,10 +50,12 @@ INTENT_AGENT_MAP = {
 SYSTEM_PROMPT = """You are an AI Customer Success analyst for HivePro. You have access to REAL customer data from Jira tickets, Fathom call recordings, and HubSpot deals.
 
 RULES:
-- ALL data provided below is factual and from real systems. NEVER say "I don't have data" or suggest the user go look elsewhere.
+- The data provided below is from real systems. ONLY cite facts, numbers, and entities that appear in the data below. Do NOT invent, infer, or fabricate any data points that are not explicitly present.
+- If the data below does not contain enough information to answer the question confidently, say so clearly. Ask a clarifying question to help narrow down the answer (e.g., "I found multiple Oman-related deals — did you mean Oman Methanol Company, MOFA (Oman), or Ooredoo Oman?").
+- If the data contains MULTIPLE entities that partially match the user's query, list them and ask which one the user means. Do NOT merge data from different entities into a single narrative.
 - Give concise, executive-grade answers. Lead with the answer, then support with data.
-- Name specific companies and cite specific data points (scores, dates, ticket IDs).
-- If asked about a specific customer/deal, focus on that entity and pull from ALL data sources (deals + calls + tickets).
+- Name specific companies and cite specific data points (scores, dates, ticket IDs) — but ONLY from the data provided below.
+- If asked about a specific customer/deal, focus on that entity. If the exact entity is found, answer about it. If only partial matches exist, list what was found and ask for clarification.
 - If asked a portfolio-wide question (e.g., "most requested feature"), group and rank by THEME across multiple customers — not by individual customer. Show which theme appears across the most customers.
 - When feature/ticket data is provided, identify common themes across different customers' requests (e.g., "scanning improvements" spans 3 customers' tickets).
 - Keep answers under 500 words unless detailed analysis is needed.
@@ -540,13 +542,15 @@ class ChatFastPath:
         parts.extend([
             "",
             "## Response Guidelines",
-            "- ALL data above is from REAL sources (HubSpot deals, Fathom call recordings, meeting transcripts). Cite it as factual, never say 'I don't have data' when data is provided above.",
+            "- Data above is from REAL sources (HubSpot deals, Fathom call recordings, meeting transcripts). ONLY cite facts present in the data above — never fabricate.",
+            "- If a PARTIAL MATCH WARNING is present, you MUST list the matching deals/companies and ask the user which one they mean. Do NOT merge data from different deals.",
             "- Name specific companies and deals when referencing data — executives want specifics, not generalizations.",
             "- If loss analysis or call insights are provided, lead with those findings — they are the most actionable data.",
             "- If asked about a specific deal, focus on that deal's probability and the real factors driving it.",
             "- If asked about the pipeline, summarize conversion gaps with specific examples from the data.",
             "- If meeting data is available, cite specific call outcomes: who attended, what was discussed, what risks were flagged.",
             "- Always quantify: use percentages, dollar amounts, and counts.",
+            "- If you don't have enough data to answer confidently, say so and ask a clarifying question.",
             "- Recommend specific actions based on the patterns in the data.",
         ])
 
@@ -571,13 +575,22 @@ class ChatFastPath:
 
     def _append_cross_reference(self, parts: list, prefetched: dict, existing_prompt: str = ""):
         """Append cross-referenced data from other sources to any prompt."""
+        is_partial = prefetched.get("_xref_partial_match", False)
+        searched_entity = prefetched.get("_xref_searched_entity", "")
+
         # Related deals (for non-deal intents)
         related_deals = prefetched.get("related_deals", [])
         if related_deals:
-            parts.append(f"\n## Related Deals ({len(related_deals)} found)")
-            for d in related_deals[:5]:
+            if is_partial:
+                parts.append(f"\n## ⚠ PARTIAL MATCH WARNING")
+                parts.append(f"No exact match found for \"{searched_entity}\". The deals below matched a broader search and may belong to DIFFERENT companies/accounts.")
+                parts.append(f"**You MUST ask the user which specific deal or company they mean before giving a detailed analysis. List these as options.**\n")
+                parts.append(f"## Deals Found (broader search — {len(related_deals)} results)")
+            else:
+                parts.append(f"\n## Related Deals ({len(related_deals)} found)")
+            for d in related_deals[:10]:
                 amt = f"${d['amount']:,.0f}" if d.get("amount") else "N/A"
-                parts.append(f"- {d['deal_name']} | stage: {d['stage']} | value: {amt}")
+                parts.append(f"- **{d['deal_name']}** | company: {d.get('company_name', 'Unknown')} | stage: {d['stage']} | value: {amt}")
 
         # Related call insights (for non-fathom intents)
         related_calls = prefetched.get("related_calls", [])

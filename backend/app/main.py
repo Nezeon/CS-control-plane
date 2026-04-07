@@ -109,11 +109,11 @@ async def lifespan(app: FastAPI):
         if jira_service.configured:
             scheduler.add_job(_run_jira_sync, "cron", hour=8, minute=0, id="jira_daily",
                               misfire_grace_time=3600)
-            # Also run once on startup (5s delay)
-            scheduler.add_job(_run_jira_sync, "date",
-                              run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
-                              id="jira_startup")
-            logger.info(f"Jira sync scheduled: daily at 08:00 {settings.SYNC_TIMEZONE} + on startup")
+            if not settings.SKIP_STARTUP_SYNCS:
+                scheduler.add_job(_run_jira_sync, "date",
+                                  run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
+                                  id="jira_startup")
+            logger.info(f"Jira sync scheduled: daily at 08:00 {settings.SYNC_TIMEZONE}{' (startup skipped)' if settings.SKIP_STARTUP_SYNCS else ' + on startup'}")
         else:
             logger.info("Jira not configured — sync disabled")
     except Exception as e:
@@ -126,11 +126,11 @@ async def lifespan(app: FastAPI):
                               misfire_grace_time=3600)
             scheduler.add_job(_run_fathom_sync, "cron", hour=18, minute=0, id="fathom_evening",
                               misfire_grace_time=3600)
-            # Also run once on startup (30s delay)
-            scheduler.add_job(_run_fathom_sync, "date",
-                              run_date=datetime.now(timezone.utc) + timedelta(seconds=30),
-                              id="fathom_startup")
-            logger.info(f"Fathom sync scheduled: daily at 06:00 & 18:00 {settings.SYNC_TIMEZONE} + on startup")
+            if not settings.SKIP_STARTUP_SYNCS:
+                scheduler.add_job(_run_fathom_sync, "date",
+                                  run_date=datetime.now(timezone.utc) + timedelta(seconds=30),
+                                  id="fathom_startup")
+            logger.info(f"Fathom sync scheduled: daily at 06:00 & 18:00 {settings.SYNC_TIMEZONE}{' (startup skipped)' if settings.SKIP_STARTUP_SYNCS else ' + on startup'}")
         else:
             logger.info("Fathom not configured — sync disabled")
     except Exception as e:
@@ -141,10 +141,11 @@ async def lifespan(app: FastAPI):
         if settings.HUBSPOT_ACCESS_TOKEN:
             scheduler.add_job(_run_hubspot_sync, "cron", hour=7, minute=0, id="hubspot_daily",
                               misfire_grace_time=3600)
-            scheduler.add_job(_run_hubspot_sync, "date",
-                              run_date=datetime.now(timezone.utc) + timedelta(seconds=15),
-                              id="hubspot_startup")
-            logger.info(f"HubSpot sync scheduled: daily at 07:00 {settings.SYNC_TIMEZONE} + on startup")
+            if not settings.SKIP_STARTUP_SYNCS:
+                scheduler.add_job(_run_hubspot_sync, "date",
+                                  run_date=datetime.now(timezone.utc) + timedelta(seconds=15),
+                                  id="hubspot_startup")
+            logger.info(f"HubSpot sync scheduled: daily at 07:00 {settings.SYNC_TIMEZONE}{' (startup skipped)' if settings.SKIP_STARTUP_SYNCS else ' + on startup'}")
         else:
             logger.info("HubSpot not configured — sync disabled")
     except Exception as e:
@@ -179,9 +180,12 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"RAG embeddings backfill failed (non-fatal): {e}")
 
-    scheduler.add_job(_run_backfills, "date",
-                      run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
-                      id="backfill_startup")
+    if not settings.SKIP_STARTUP_SYNCS:
+        scheduler.add_job(_run_backfills, "date",
+                          run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
+                          id="backfill_startup")
+    else:
+        logger.info("ChromaDB backfill skipped (SKIP_STARTUP_SYNCS=true)")
 
     scheduler.start()
 

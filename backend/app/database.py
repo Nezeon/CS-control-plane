@@ -1,9 +1,10 @@
 import re
 import ssl
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -50,16 +51,23 @@ engine = create_async_engine(
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# Sync engine (for Celery tasks, agents, seed script)
+# Sync engine (for Celery tasks, agents, chat pipeline)
+# NullPool = fresh connection every time, no reuse. Required for local dev from India
+# because Neon's pooler silently drops idle connections from distant regions, causing
+# psycopg2 to hang forever on stale TCP sockets. Each query pays ~1-2s SSL handshake
+# but never hangs on a dead connection.
 sync_engine = create_engine(
     settings.SYNC_DATABASE_URL,
     echo=False,
-    connect_args={**_sync_connect_args(), "connect_timeout": 30},
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
-    pool_recycle=120,  # Recycle every 2 min (Neon drops idle at ~5 min)
-    pool_timeout=60,   # Wait up to 60s for a connection (Fathom sync can hold many)
+    connect_args={
+        **_sync_connect_args(),
+        "connect_timeout": 15,
+        "keepalives": 1,
+        "keepalives_idle": 5,
+        "keepalives_interval": 3,
+        "keepalives_count": 3,
+    },
+    poolclass=NullPool,
 )
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 
@@ -81,7 +89,7 @@ def get_sync_session():
 
 
 def warm_sync_pool():
-    """Pre-warm the sync connection pool so the first real query doesn't pay SSL cold-start."""
+    """Pre-warm check — verify DB is reachable."""
     from sqlalchemy import text
     with sync_engine.connect() as conn:
         conn.execute(text("SELECT 1"))

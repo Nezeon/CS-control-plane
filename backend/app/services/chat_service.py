@@ -647,19 +647,22 @@ class ChatService:
             logger.info(f"[Chat] Memory assembled: keys={list(customer_memory.keys())}")
 
             # ── Universal cross-reference: enrich with data from all sources ──
-            # Runs when we have a resolved customer OR an explicit entity in the query
+            # Uses a FRESH db session to avoid stale Neon connections from Steps 2-3
+            logger.info("[Chat] ── STEP 4: Cross-reference lookup ──")
             explicit_entity = _extract_entity_from_query(message)
             xref_entity = explicit_entity or customer_name
             if xref_entity:
                 xref_full = xref_entity.lower().strip()
                 xref_first_word = xref_full.split()[0] if xref_full else ""
                 if len(xref_full) >= 3:
+                    xref_db = get_sync_session()
                     try:
                         from sqlalchemy import text as sa_text
                         # Related deals — prefer customer_id, then full entity, then first-word fallback
+                        logger.info(f"[Chat]   Searching deals for '{xref_full}'...")
                         if "related_deals" not in prefetched:
                             if resolved_customer_id:
-                                deal_rows = db.execute(sa_text("""
+                                deal_rows = xref_db.execute(sa_text("""
                                     SELECT deal_name, stage, amount, company_name
                                     FROM deals
                                     WHERE customer_id = CAST(:cid AS uuid)
@@ -667,7 +670,7 @@ class ChatService:
                                 """), {"cid": str(resolved_customer_id)}).fetchall()
                             else:
                                 # Try full entity match first (e.g. "oman methanol")
-                                deal_rows = db.execute(sa_text("""
+                                deal_rows = xref_db.execute(sa_text("""
                                     SELECT deal_name, stage, amount, company_name
                                     FROM deals
                                     WHERE LOWER(deal_name) LIKE :full OR LOWER(company_name) LIKE :full
@@ -676,7 +679,7 @@ class ChatService:
 
                                 if not deal_rows and xref_first_word != xref_full and len(xref_first_word) >= 3:
                                     # Broaden to first-word search, but flag as partial match
-                                    deal_rows = db.execute(sa_text("""
+                                    deal_rows = xref_db.execute(sa_text("""
                                         SELECT deal_name, stage, amount, company_name
                                         FROM deals
                                         WHERE LOWER(deal_name) LIKE :s OR LOWER(company_name) LIKE :s
@@ -696,7 +699,7 @@ class ChatService:
                         # Related call insights — prefer customer_id, then full entity, then first-word fallback
                         if "related_calls" not in prefetched:
                             if resolved_customer_id:
-                                call_rows = db.execute(sa_text("""
+                                call_rows = xref_db.execute(sa_text("""
                                     SELECT summary, sentiment, key_topics, risks, decisions, action_items,
                                            call_date, meeting_type
                                     FROM call_insights
@@ -705,7 +708,7 @@ class ChatService:
                                 """), {"cid": str(resolved_customer_id)}).fetchall()
                             else:
                                 # Try full entity match first
-                                call_rows = db.execute(sa_text("""
+                                call_rows = xref_db.execute(sa_text("""
                                     SELECT summary, sentiment, key_topics, risks, decisions, action_items,
                                            call_date, meeting_type
                                     FROM call_insights
@@ -714,7 +717,7 @@ class ChatService:
                                 """), {"full": f"%{xref_full}%"}).fetchall()
 
                                 if not call_rows and xref_first_word != xref_full and len(xref_first_word) >= 3:
-                                    call_rows = db.execute(sa_text("""
+                                    call_rows = xref_db.execute(sa_text("""
                                         SELECT summary, sentiment, key_topics, risks, decisions, action_items,
                                                call_date, meeting_type
                                         FROM call_insights
@@ -749,16 +752,19 @@ class ChatService:
                             logger.info(f"[Chat] Cross-reference for '{xref_entity}': {xref_keys}")
                     except Exception as e:
                         logger.debug(f"[Chat] Cross-reference failed: {e}")
+                    finally:
+                        xref_db.close()
 
             # ── Portfolio-wide aggregation (when no specific entity) ──
             # Provides ticket analysis, call topics, and pipeline stats for broad questions
             if not xref_entity:
+                pf_db = get_sync_session()
                 try:
                     from sqlalchemy import text as sa_text
                     from collections import Counter
 
                     # Feature requests + improvements from Jira (with customer names)
-                    ticket_rows = db.execute(sa_text("""
+                    ticket_rows = pf_db.execute(sa_text("""
                         SELECT t.ticket_type, t.summary, t.severity, c.name as customer_name
                         FROM tickets t
                         LEFT JOIN customers c ON c.id = t.customer_id
@@ -777,7 +783,7 @@ class ChatService:
                         ]
 
                     # Bug tickets (top issues)
-                    bug_rows = db.execute(sa_text("""
+                    bug_rows = pf_db.execute(sa_text("""
                         SELECT t.summary, t.severity, t.status, c.name as customer_name
                         FROM tickets t
                         LEFT JOIN customers c ON c.id = t.customer_id
@@ -792,7 +798,7 @@ class ChatService:
                         ]
 
                     # Aggregated call topics across all customers
-                    topic_rows = db.execute(sa_text("""
+                    topic_rows = pf_db.execute(sa_text("""
                         SELECT key_topics FROM call_insights
                         WHERE key_topics IS NOT NULL AND key_topics != '[]'::jsonb
                         ORDER BY processed_at DESC LIMIT 50
@@ -807,12 +813,12 @@ class ChatService:
                         prefetched["aggregated_topics"] = topic_freq
 
                     # Pipeline summary
-                    pipeline = db.execute(sa_text("""
+                    pipeline = pf_db.execute(sa_text("""
                         SELECT
                             COUNT(*) as total,
-                            SUM(CASE WHEN stage = 'closedwon' THEN 1 ELSE 0 END) as won,
-                            SUM(CASE WHEN stage = 'closedlost' THEN 1 ELSE 0 END) as lost,
-                            SUM(CASE WHEN stage NOT IN ('closedwon', 'closedlost') THEN 1 ELSE 0 END) as open_deals
+                            SUM(CASE WHEN stage = 'Closed Won' THEN 1 ELSE 0 END) as won,
+                            SUM(CASE WHEN stage = 'Closed Lost' THEN 1 ELSE 0 END) as lost,
+                            SUM(CASE WHEN stage NOT IN ('Closed Won', 'Closed Lost') THEN 1 ELSE 0 END) as open_deals
                         FROM deals
                     """)).fetchone()
                     if pipeline:
@@ -826,6 +832,8 @@ class ChatService:
                         logger.info(f"[Chat] Portfolio prefetch: {pf_keys}")
                 except Exception as e:
                     logger.debug(f"[Chat] Portfolio prefetch failed: {e}")
+                finally:
+                    pf_db.close()
 
             # Deal intent: also prefetch loss analysis for portfolio questions
             if intent == "deal":
@@ -922,6 +930,7 @@ class ChatService:
                 logger.debug(f"[Chat] Teachable rules load skipped: {e}")
 
             # Single Claude Haiku call (~1-3s)
+            logger.info("[Chat] ── STEP 5: Calling Claude Haiku (fast path) ──")
             fast_result = chat_fast_path.answer(
                 message=message,
                 intent=intent,

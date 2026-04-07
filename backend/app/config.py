@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Demo
     DEMO_MODE: bool = True
 
+    # Local dev: skip startup syncs (Jira/Fathom/HubSpot) to avoid overloading Neon
+    SKIP_STARTUP_SYNCS: bool = False
+
     # Jira (Atlassian Cloud)
     JIRA_API_URL: str = "https://hivepro-kronos.atlassian.net"
     JIRA_EMAIL: str = ""

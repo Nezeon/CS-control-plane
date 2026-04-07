@@ -186,10 +186,14 @@ class HubSpotService:
         # Only store requested properties (avoid leaking internal HubSpot fields)
         filtered_props = {k: v for k, v in props.items() if k in DEAL_PROPERTIES}
 
+        # Resolve numeric stage ID to human-readable label (e.g. "219679027" -> "POC")
+        raw_stage = props.get("dealstage", "")
+        stage_label = self.get_stage_label(raw_stage) if raw_stage else ""
+
         return {
             "hubspot_deal_id": str(deal.get("id", "")),
             "deal_name": props.get("dealname", "Untitled Deal"),
-            "stage": props.get("dealstage", ""),
+            "stage": stage_label,
             "pipeline": props.get("pipeline", "default"),
             "amount": amount,
             "close_date": close_date.date() if close_date else None,

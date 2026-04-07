@@ -1,8 +1,7 @@
 """
-Drafts API — View and manage agent draft outputs.
+Drafts API — View agent output records.
 
-Supports listing, filtering, and approving/dismissing drafts from the dashboard
-(in addition to Slack interactive buttons).
+Supports listing and filtering agent outputs that were posted to Slack.
 """
 
 import uuid
@@ -19,7 +18,7 @@ router = APIRouter(prefix="/api/drafts", tags=["drafts"])
 
 @router.get("")
 async def list_drafts(
-    status: Optional[str] = Query(None, description="Filter by status: pending, approved, edited, dismissed"),
+    status: Optional[str] = Query(None, description="Filter by status (e.g. posted)"),
     agent_id: Optional[str] = Query(None, description="Filter by agent_id"),
     customer_id: Optional[str] = Query(None, description="Filter by customer_id"),
     limit: int = Query(50, ge=1, le=200),
@@ -100,33 +99,3 @@ async def get_draft(draft_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/{draft_id}/approve")
-async def approve_draft_endpoint(draft_id: str):
-    """Approve a draft from the dashboard."""
-    from app.database import get_sync_session
-    from app.services import draft_service
-
-    sync_db = get_sync_session()
-    try:
-        draft = draft_service.approve_draft(sync_db, draft_id, approved_by="dashboard_user")
-        if not draft:
-            raise HTTPException(status_code=404, detail="Draft not found")
-        return {"status": "approved", "draft_id": str(draft.id)}
-    finally:
-        sync_db.close()
-
-
-@router.post("/{draft_id}/dismiss")
-async def dismiss_draft_endpoint(draft_id: str):
-    """Dismiss a draft from the dashboard."""
-    from app.database import get_sync_session
-    from app.services import draft_service
-
-    sync_db = get_sync_session()
-    try:
-        draft = draft_service.dismiss_draft(sync_db, draft_id, dismissed_by="dashboard_user")
-        if not draft:
-            raise HTTPException(status_code=404, detail="Draft not found")
-        return {"status": "dismissed", "draft_id": str(draft.id)}
-    finally:
-        sync_db.close()

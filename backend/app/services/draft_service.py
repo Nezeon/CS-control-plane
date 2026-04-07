@@ -1,13 +1,12 @@
 """
-Draft Service — Draft-first approval workflow (ARCHITECTURE.md Section 8).
+Draft Service — Agent output recording and Slack notification.
 
-Every agent output is saved as a DRAFT, posted to Slack with Approve/Edit/Dismiss
-buttons, and only executed after human approval.
+Every agent output is saved as a record and posted to Slack as an
+informational card for the CS team.
 """
 
 import logging
 import uuid
-from datetime import datetime, timezone
 
 from app.config import get_channel_for_draft, settings
 from app.models.agent_draft import AgentDraft
@@ -66,7 +65,7 @@ def create_draft(
     health_score: int | None = None,
     priority: str | None = None,
 ) -> AgentDraft:
-    """Create a draft record and post a Slack card with approval buttons."""
+    """Create a draft record and post an informational Slack card."""
     draft_type = AGENT_DRAFT_TYPE.get(agent_id, agent_id)
     channel = get_channel_for_draft(draft_type)
 
@@ -77,7 +76,7 @@ def create_draft(
         customer_id=customer_id,
         draft_type=draft_type,
         draft_content=draft_content,
-        status="pending",
+        status="posted",
         slack_channel=channel,
         confidence=confidence,
     )
@@ -158,137 +157,6 @@ def create_draft(
     return draft
 
 
-def approve_draft(db, draft_id, approved_by: str = "slack_user") -> AgentDraft | None:
-    """Approve a draft — mark as approved, log to audit."""
-    draft = db.query(AgentDraft).filter_by(id=draft_id).first()
-    if not draft:
-        return None
-
-    draft.status = "approved"
-    draft.approved_by = approved_by
-    draft.approved_at = datetime.now(timezone.utc)
-    db.commit()
-
-    _log_audit(
-        db,
-        agent=draft.agent_id,
-        event_id=draft.event_id,
-        customer_id=draft.customer_id,
-        action=f"draft_approved:{draft.draft_type}",
-        output_summary=f"Draft {draft_id} approved by {approved_by}",
-        confidence=draft.confidence,
-        human_action="approved",
-    )
-
-    # Execute post-approval actions (e.g. Jira write-back)
-    _execute_post_approval(db, draft)
-
-    logger.info(f"[Draft] {draft_id} approved by {approved_by}")
-    return draft
-
-
-def _execute_post_approval(db, draft: AgentDraft):
-    """Execute side-effects after a draft is approved (fire-and-forget)."""
-    try:
-        if draft.draft_type == "triage":
-            _execute_triage_approval(db, draft)
-    except Exception as e:
-        logger.warning(f"[Draft] Post-approval action failed (non-critical): {e}")
-
-
-def _execute_triage_approval(db, draft: AgentDraft):
-    """On triage approval: update Jira labels with classification."""
-    from app.services.jira_service import jira_service
-
-    if not jira_service.configured:
-        return
-
-    content = draft.draft_content or {}
-    category = content.get("category", "")
-    severity = content.get("severity", "")
-
-    # Resolve jira_id from the linked event's payload or from draft content
-    jira_id = content.get("jira_id")
-    if not jira_id and draft.event_id:
-        from app.models.event import Event
-        event = db.query(Event).filter_by(id=draft.event_id).first()
-        if event and event.payload:
-            jira_id = event.payload.get("jira_id")
-
-    if not jira_id:
-        logger.warning("[Draft] No jira_id found for triage approval, skipping Jira write-back")
-        return
-
-    # Update labels on the Jira issue
-    labels = []
-    if category:
-        labels.append(f"triage:{category}")
-    if severity:
-        labels.append(severity)
-    if labels:
-        jira_service.update_issue_labels(jira_id, labels)
-
-    # Add a comment with the triage summary
-    summary = content.get("suggested_action") or content.get("reasoning") or ""
-    if summary:
-        comment = f"[CS Control Plane — Triage Approved]\nCategory: {category}\nSeverity: {severity}\nAction: {summary}"
-        jira_service.add_comment(jira_id, comment)
-
-
-def dismiss_draft(db, draft_id, dismissed_by: str = "slack_user") -> AgentDraft | None:
-    """Dismiss a draft — mark as dismissed, log rejection to audit."""
-    draft = db.query(AgentDraft).filter_by(id=draft_id).first()
-    if not draft:
-        return None
-
-    draft.status = "dismissed"
-    draft.approved_by = dismissed_by
-    draft.approved_at = datetime.now(timezone.utc)
-    db.commit()
-
-    _log_audit(
-        db,
-        agent=draft.agent_id,
-        event_id=draft.event_id,
-        customer_id=draft.customer_id,
-        action=f"draft_dismissed:{draft.draft_type}",
-        output_summary=f"Draft {draft_id} dismissed by {dismissed_by}",
-        confidence=draft.confidence,
-        human_action="dismissed",
-    )
-
-    logger.info(f"[Draft] {draft_id} dismissed by {dismissed_by}")
-    return draft
-
-
-def edit_draft(db, draft_id, edit_diff: dict, edited_by: str = "slack_user") -> AgentDraft | None:
-    """Edit a draft — store edit diff, mark as edited, log to audit."""
-    draft = db.query(AgentDraft).filter_by(id=draft_id).first()
-    if not draft:
-        return None
-
-    draft.status = "edited"
-    draft.edit_diff = edit_diff
-    draft.approved_by = edited_by
-    draft.approved_at = datetime.now(timezone.utc)
-    db.commit()
-
-    _log_audit(
-        db,
-        agent=draft.agent_id,
-        event_id=draft.event_id,
-        customer_id=draft.customer_id,
-        action=f"draft_edited:{draft.draft_type}",
-        output_summary=f"Draft {draft_id} edited by {edited_by}",
-        confidence=draft.confidence,
-        human_action="edited",
-        human_edit_diff=edit_diff,
-    )
-
-    logger.info(f"[Draft] {draft_id} edited by {edited_by}")
-    return draft
-
-
 # ── Internal helpers ──────────────────────────────────────────────────
 
 
@@ -359,14 +227,14 @@ def _extract_action(content: dict, draft_type: str) -> str:
                     return val[:400]
 
     action_hints = {
-        "triage": "Review ticket classification and approve Jira label update.",
-        "call_intel": "Review call analysis and approve customer email draft.",
-        "health_alert": "Review health score changes and risk flags.",
-        "escalation": "Review escalation document and approve send to engineering.",
-        "troubleshoot": "Review root cause analysis and next steps.",
-        "qbr": "Review QBR document before sharing with customer.",
-        "sow": "Review SOW document and checklist before sharing.",
-        "deployment": "Review deployment validation results.",
-        "presales": "Review pipeline analysis, stalled deals, and win probabilities.",
+        "triage": "Ticket classified — check category and severity.",
+        "call_intel": "Call analysis complete — review summary and action items.",
+        "health_alert": "Health score changes and risk flags detected.",
+        "escalation": "Escalation document drafted for engineering.",
+        "troubleshoot": "Root cause analysis and next steps identified.",
+        "qbr": "QBR document drafted for customer review.",
+        "sow": "SOW document and checklist prepared.",
+        "deployment": "Deployment validation results available.",
+        "presales": "Pipeline analysis — deals, stages, and win probabilities.",
     }
-    return action_hints.get(draft_type, "Review and approve agent output.")
+    return action_hints.get(draft_type, "Agent analysis complete.")

@@ -499,33 +499,6 @@ class SlackService:
                 "text": {"type": "mrkdwn", "text": f":bar_chart: <{dashboard_url}|View Deal in Dashboard>"},
             })
 
-        # ── Approve / Edit / Dismiss Buttons ──
-        blocks.append({
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Approve", "emoji": True},
-                    "style": "primary",
-                    "action_id": "draft_approve",
-                    "value": draft_id,
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Edit", "emoji": True},
-                    "action_id": "draft_edit",
-                    "value": draft_id,
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Dismiss", "emoji": True},
-                    "style": "danger",
-                    "action_id": "draft_dismiss",
-                    "value": draft_id,
-                },
-            ],
-        })
-
         # ── Context Footer ──
         blocks.append({
             "type": "context",
@@ -556,10 +529,10 @@ class SlackService:
         jira_base_url: str | None = None,
         confidence: float | None = None,
     ) -> dict | bool:
-        """Post a standard agent card with Approve/Edit/Dismiss buttons.
+        """Post an informational agent card to Slack.
 
-        Per ARCHITECTURE.md Section 6.2. Returns the Slack API response dict
-        (including 'ts') on success, or False on failure.
+        Returns the Slack API response dict (including 'ts') on success,
+        or False on failure.
         """
         if not self.configured:
             logger.debug(f"[Slack] Not configured, skipping agent card for {agent_name}")
@@ -608,35 +581,10 @@ class SlackService:
             },
             {"type": "divider"},
             *_text_to_section_blocks(summary, label="Summary"),
-            *_text_to_section_blocks(action_required, label="Action Required"),
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "Approve", "emoji": True},
-                        "style": "primary",
-                        "action_id": "draft_approve",
-                        "value": draft_id,
-                    },
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "Edit", "emoji": True},
-                        "action_id": "draft_edit",
-                        "value": draft_id,
-                    },
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "Dismiss", "emoji": True},
-                        "style": "danger",
-                        "action_id": "draft_dismiss",
-                        "value": draft_id,
-                    },
-                ],
-            },
+            *_text_to_section_blocks(action_required, label="Recommendation"),
         ]
 
-        # Add links section (Jira + Dashboard) before actions
+        # Add links section (Jira + Dashboard)
         if dashboard_url or (jira_id and jira_base_url):
             link_parts = []
             if jira_id and jira_base_url:
@@ -649,7 +597,7 @@ class SlackService:
                 "type": "section",
                 "text": {"type": "mrkdwn", "text": link_text},
             }
-            # Insert before the actions block
+            # Insert before the context footer
             blocks.insert(-1, link_section)
 
         # Context footer with event type

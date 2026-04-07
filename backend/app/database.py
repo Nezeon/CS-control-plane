@@ -55,11 +55,11 @@ sync_engine = create_engine(
     settings.SYNC_DATABASE_URL,
     echo=False,
     connect_args={**_sync_connect_args(), "connect_timeout": 30},
-    pool_size=3,
-    max_overflow=5,
+    pool_size=5,
+    max_overflow=10,
     pool_pre_ping=True,
     pool_recycle=120,  # Recycle every 2 min (Neon drops idle at ~5 min)
-    pool_timeout=30,
+    pool_timeout=60,   # Wait up to 60s for a connection (Fathom sync can hold many)
 )
 SyncSessionLocal = sessionmaker(bind=sync_engine)
 

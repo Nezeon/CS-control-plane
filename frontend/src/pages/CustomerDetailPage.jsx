@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Shield, Phone, FileText, Activity, BarChart3 } from 'lucide-react'
+import { ArrowLeft, Shield, Phone, FileText, Activity, BarChart3, TrendingUp } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -13,12 +13,12 @@ import { formatDate, formatDateTime, formatRelativeTime } from '../utils/formatt
 import TicketDetailDrawer from '../components/shared/TicketDetailDrawer'
 import CallDetailDrawer from '../components/shared/CallDetailDrawer'
 
-const TABS = [
-  { key: 'overview', label: 'Overview', icon: Shield },
-  { key: 'tickets', label: 'Tickets', icon: FileText },
-  { key: 'calls', label: 'Calls', icon: Phone },
-  { key: 'health', label: 'Health History', icon: Activity },
-  { key: 'qbr', label: 'QBR', icon: BarChart3 },
+const ALL_TABS = [
+  { key: 'overview', label: 'Overview', icon: Shield, showFor: 'all' },
+  { key: 'tickets', label: 'Tickets', icon: FileText, showFor: 'all' },
+  { key: 'calls', label: 'Calls', icon: Phone, showFor: 'all' },
+  { key: 'health', label: 'Health History', icon: Activity, showFor: 'active' },
+  { key: 'qbr', label: 'QBR', icon: BarChart3, showFor: 'active' },
 ]
 
 function daysUntil(dateStr) {
@@ -66,6 +66,14 @@ export default function CustomerDetailPage() {
   }
 
   const renewalDays = daysUntil(customer.renewal_date)
+  const isProspect = customer.is_prospect || (customer.tier || '').toLowerCase() === 'prospect'
+
+  // Filter tabs based on customer type
+  const tabs = ALL_TABS.filter(t => t.showFor === 'all' || (t.showFor === 'active' && !isProspect))
+
+  // If current tab is hidden for prospects, reset to overview
+  const validTabKeys = tabs.map(t => t.key)
+  const currentTab = validTabKeys.includes(activeTab) ? activeTab : 'overview'
 
   return (
     <div className="p-6 space-y-6">
@@ -77,31 +85,54 @@ export default function CustomerDetailPage() {
         <ArrowLeft size={16} /> Back to Customers
       </button>
 
-      {/* Customer Header — per ARCHITECTURE.md Section 7.2 */}
+      {/* Customer Header */}
       <GlassCard level="near">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-          <HealthRing score={customer.health?.current_score ?? customer.health_score ?? 0} size={80} strokeWidth={5} />
+          {isProspect ? (
+            <div
+              className="w-20 h-20 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0"
+              style={{ background: 'rgba(139,92,246,0.1)', color: '#8B5CF6' }}
+            >
+              {(customer.name || '').slice(0, 2).toUpperCase()}
+            </div>
+          ) : (
+            <HealthRing score={customer.health?.current_score ?? customer.health_score ?? 0} size={80} strokeWidth={5} />
+          )}
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-display font-bold text-text-primary">{customer.name}</h1>
             <div className="flex flex-wrap items-center gap-3 mt-2">
-              {customer.tier && (
+              {isProspect ? (
+                <span
+                  className="text-xxs font-mono uppercase px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(139,92,246,0.1)', color: '#8B5CF6' }}
+                >
+                  Prospect
+                </span>
+              ) : customer.tier ? (
                 <span className="text-xxs font-mono uppercase px-2 py-0.5 rounded-full bg-bg-active text-text-secondary">
                   {customer.tier}
                 </span>
+              ) : null}
+              {!isProspect && (
+                <StatusPill status={customer.health?.risk_level || customer.risk_level || 'healthy'} />
               )}
-              <StatusPill status={customer.health?.risk_level || customer.risk_level || 'healthy'} />
               {customer.industry && (
                 <span className="text-xs text-text-muted">{customer.industry}</span>
               )}
             </div>
             <div className="flex flex-wrap gap-6 mt-3 text-xs text-text-muted">
               {customer.cs_owner?.full_name && <span>CSM: {customer.cs_owner.full_name}</span>}
-              {renewalDays != null && (
+              {!isProspect && renewalDays != null && (
                 <span className={renewalDays <= 90 ? 'text-status-warning font-semibold' : ''}>
                   Renewal: {renewalDays}d ({formatDate(customer.renewal_date)})
                 </span>
               )}
-              {customer.deployment?.mode && <span>Deploy: {customer.deployment.mode}</span>}
+              {!isProspect && customer.deployment?.mode && <span>Deploy: {customer.deployment.mode}</span>}
+              {isProspect && customer.deals?.length > 0 && (
+                <span style={{ color: '#8B5CF6' }}>
+                  {customer.deals.length} deal{customer.deals.length !== 1 ? 's' : ''} in pipeline
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -109,12 +140,12 @@ export default function CustomerDetailPage() {
 
       {/* Tab Navigation */}
       <div className="flex items-center gap-1 border-b border-border-subtle overflow-x-auto">
-        {TABS.map(({ key, label, icon: Icon }) => (
+        {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => switchTab(key)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm transition-colors whitespace-nowrap border-b-2 ${
-              activeTab === key
+              currentTab === key
                 ? 'border-accent text-accent'
                 : 'border-transparent text-text-muted hover:text-text-secondary'
             }`}
@@ -126,20 +157,105 @@ export default function CustomerDetailPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && <OverviewTab customer={customer} />}
-      {activeTab === 'tickets' && <TicketsTab tickets={customerTickets} />}
-      {activeTab === 'calls' && <CallsTab insights={customerInsights} />}
-      {activeTab === 'health' && <HealthTab history={healthHistory} />}
-      {activeTab === 'qbr' && <QBRTab customer={customer} />}
+      {currentTab === 'overview' && <OverviewTab customer={customer} isProspect={isProspect} />}
+      {currentTab === 'tickets' && <TicketsTab tickets={customerTickets} />}
+      {currentTab === 'calls' && <CallsTab insights={customerInsights} />}
+      {currentTab === 'health' && <HealthTab history={healthHistory} />}
+      {currentTab === 'qbr' && <QBRTab customer={customer} />}
     </div>
   )
 }
 
 // ── Tab Components ──────────────────────────────────────────────────
 
-function OverviewTab({ customer }) {
+function OverviewTab({ customer, isProspect }) {
   const deployment = customer.deployment || {}
   const health = customer.health || {}
+  const meta = customer.metadata || {}
+  const deals = customer.deals || []
+
+  if (isProspect) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Deal Pipeline */}
+        <GlassCard level="near" className={deals.length === 0 ? '' : 'lg:col-span-2'}>
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <TrendingUp size={14} style={{ color: '#8B5CF6' }} />
+            Deal Pipeline
+          </h3>
+          {deals.length === 0 ? (
+            <p className="text-sm text-text-muted py-4 text-center">No deals linked</p>
+          ) : (
+            <div className="space-y-3">
+              {deals.map((deal) => (
+                <div
+                  key={deal.id}
+                  className="flex items-center justify-between p-3 rounded-lg"
+                  style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)' }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text-primary truncate">{deal.deal_name}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
+                      {deal.owner_name && <span>Owner: {deal.owner_name}</span>}
+                      {deal.close_date && <span>Close: {formatDate(deal.close_date)}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+                    {deal.stage && (
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{ background: 'rgba(139,92,246,0.1)', color: '#8B5CF6' }}
+                      >
+                        {deal.stage}
+                      </span>
+                    )}
+                    {deal.amount != null && (
+                      <span className="text-sm font-mono font-semibold text-text-primary">
+                        ${deal.amount >= 1000 ? `${(deal.amount / 1000).toFixed(0)}K` : deal.amount.toFixed(0)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </GlassCard>
+
+        {/* Prospect Info */}
+        <GlassCard level="mid" className="lg:col-span-2">
+          <h3 className="text-sm font-semibold text-text-primary mb-3">Company Info</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            {[
+              ['Contact', customer.primary_contact_name || '—'],
+              ['Email', customer.primary_contact_email || '—'],
+              ['Industry', customer.industry || '—'],
+              ['Domain', meta.domain || '—'],
+              ['Location', [meta.city, meta.state, meta.country].filter(Boolean).join(', ') || '—'],
+              ['Phone', meta.phone || '—'],
+              ['Employees', meta.employees || '—'],
+              ['Contact Title', meta.contact_title || '—'],
+              ['Open Tickets', customer.open_ticket_count ?? '—'],
+              ['Recent Calls', customer.recent_call_count ?? '—'],
+              ['CSM Owner', customer.cs_owner?.full_name || '—'],
+              ['Lifecycle', meta.lifecycle_stage || '—'],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <span className="text-xxs text-text-ghost uppercase tracking-wider">{label}</span>
+                <p className="text-text-primary mt-0.5">{value}</p>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+
+        {meta.description && (
+          <GlassCard level="far" className="lg:col-span-2">
+            <h3 className="text-sm font-semibold text-text-primary mb-2">Description</h3>
+            <p className="text-sm text-text-muted">{meta.description}</p>
+          </GlassCard>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -188,6 +304,31 @@ function OverviewTab({ customer }) {
         </div>
       </GlassCard>
 
+      {/* Show deals for active customers too, if they have any */}
+      {deals.length > 0 && (
+        <GlassCard level="near" className="lg:col-span-2">
+          <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <TrendingUp size={14} style={{ color: '#8B5CF6' }} />
+            HubSpot Deals
+          </h3>
+          <div className="space-y-2">
+            {deals.map((deal) => (
+              <div key={deal.id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <span className="text-text-primary truncate flex-1">{deal.deal_name}</span>
+                <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+                  {deal.stage && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(139,92,246,0.1)', color: '#8B5CF6' }}>{deal.stage}</span>
+                  )}
+                  {deal.amount != null && (
+                    <span className="font-mono text-xs text-text-muted">${deal.amount >= 1000 ? `${(deal.amount / 1000).toFixed(0)}K` : deal.amount.toFixed(0)}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
+
       <GlassCard level="mid" className="lg:col-span-2">
         <h3 className="text-sm font-semibold text-text-primary mb-3">Customer Info</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -198,7 +339,7 @@ function OverviewTab({ customer }) {
             ['Renewal', formatDate(customer.renewal_date)],
             ['Open Tickets', customer.open_ticket_count ?? '—'],
             ['Recent Calls', customer.recent_call_count ?? '—'],
-            ['Pending Actions', customer.pending_action_items ?? '—'],
+            ['CSM Owner', customer.cs_owner?.full_name || '—'],
             ['Industry', customer.industry || '—'],
           ].map(([label, value]) => (
             <div key={label}>

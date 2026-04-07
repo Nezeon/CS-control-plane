@@ -2,6 +2,7 @@ import api from './api'
 
 export const customerApi = {
   list: (params) => api.get('/customers', { params }),
+  listProspects: (params) => api.get('/customers', { params: { ...params, customer_type: 'prospect' } }),
   get: (id) => api.get(`/customers/${id}`),
   create: (data) => api.post('/customers', data),
   update: (id, data) => api.put(`/customers/${id}`, data),

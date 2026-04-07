@@ -38,14 +38,16 @@ class TrendService:
         now = datetime.now(timezone.utc)
         start = now - timedelta(days=days)
 
-        # Daily portfolio average
+        # Daily portfolio average (active customers only)
         rows = db.execute(text("""
-            SELECT DATE(calculated_at) AS d,
-                   ROUND(AVG(score)) AS avg_score,
-                   COUNT(DISTINCT customer_id) AS cnt
-            FROM health_scores
-            WHERE calculated_at >= :start
-            GROUP BY DATE(calculated_at)
+            SELECT DATE(hs.calculated_at) AS d,
+                   ROUND(AVG(hs.score)) AS avg_score,
+                   COUNT(DISTINCT hs.customer_id) AS cnt
+            FROM health_scores hs
+            JOIN customers c ON c.id = hs.customer_id
+            WHERE hs.calculated_at >= :start
+              AND c.is_active = true
+            GROUP BY DATE(hs.calculated_at)
             ORDER BY d
         """), {"start": start}).fetchall()
 
@@ -74,6 +76,7 @@ class TrendService:
             FROM customers c
             JOIN earliest e ON e.customer_id = c.id
             JOIN latest l ON l.customer_id = c.id
+            WHERE c.is_active = true
             ORDER BY delta ASC
         """), {"start": start}).fetchall()
 
@@ -213,7 +216,7 @@ class TrendService:
         """
         Current portfolio state: customer counts by risk, tier, renewal proximity.
         """
-        # Risk distribution
+        # Risk distribution (active customers only — excludes prospects)
         risk = db.execute(text("""
             SELECT h.risk_level, COUNT(*) AS cnt
             FROM customers c
@@ -221,19 +224,22 @@ class TrendService:
                 SELECT risk_level FROM health_scores
                 WHERE customer_id = c.id ORDER BY calculated_at DESC LIMIT 1
             ) h ON true
+            WHERE c.is_active = true
             GROUP BY h.risk_level
         """)).fetchall()
 
         risk_dist = {r.risk_level or "unknown": r.cnt for r in risk}
 
-        # Tier distribution
+        # Tier distribution (active customers only)
         tier = db.execute(text("""
-            SELECT tier, COUNT(*) AS cnt FROM customers GROUP BY tier ORDER BY cnt DESC
+            SELECT tier, COUNT(*) AS cnt FROM customers
+            WHERE is_active = true
+            GROUP BY tier ORDER BY cnt DESC
         """)).fetchall()
 
         tier_dist = {r.tier or "unknown": r.cnt for r in tier}
 
-        # Upcoming renewals (next 90 days)
+        # Upcoming renewals (next 90 days, active customers only)
         renewals = db.execute(text("""
             SELECT c.id, c.name, c.tier, c.renewal_date, h.score, h.risk_level
             FROM customers c
@@ -242,6 +248,7 @@ class TrendService:
                 WHERE customer_id = c.id ORDER BY calculated_at DESC LIMIT 1
             ) h ON true
             WHERE c.renewal_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '90 days'
+              AND c.is_active = true
             ORDER BY c.renewal_date ASC
         """)).fetchall()
 

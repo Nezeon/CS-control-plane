@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.action_item import ActionItem
 from app.models.call_insight import CallInsight
 from app.models.customer import Customer
+from app.models.deal import Deal
 from app.models.health_score import HealthScore
 from app.models.ticket import Ticket
 from app.models.user import User
@@ -19,6 +20,7 @@ from app.schemas.customer import (
     CustomerListItem,
     CustomerListResponse,
     CustomerUpdate,
+    DealBrief,
     DeploymentInfo,
     HealthInfo,
 )
@@ -74,12 +76,33 @@ def _build_last_call_subquery():
     )
 
 
+def _build_top_deal_subquery():
+    """Subquery: highest-amount deal per customer (for prospect list enrichment)."""
+    ranked_deals = (
+        select(
+            Deal.customer_id,
+            Deal.deal_name,
+            Deal.stage,
+            Deal.amount,
+            func.row_number()
+            .over(
+                partition_by=Deal.customer_id,
+                order_by=Deal.amount.desc().nulls_last(),
+            )
+            .label("rn"),
+        )
+        .subquery("ranked_deals")
+    )
+    return select(ranked_deals).where(ranked_deals.c.rn == 1).subquery("top_deal")
+
+
 @router.get("", response_model=CustomerListResponse)
 async def list_customers(
     search: str | None = None,
     risk_level: str | None = None,
     cs_owner_id: UUID | None = None,
     tier: str | None = None,
+    customer_type: str = Query(default="active", pattern="^(active|prospect|all)$"),
     sort_by: str = Query(default="score", pattern="^(score|name|renewal)$"),
     sort_order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=20, ge=1, le=100),
@@ -89,6 +112,7 @@ async def list_customers(
     latest_health = _build_latest_health_subquery()
     open_tickets = _build_open_ticket_count_subquery()
     last_call = _build_last_call_subquery()
+    top_deal = _build_top_deal_subquery()
 
     # Base query
     query = (
@@ -102,11 +126,15 @@ async def list_customers(
             latest_health.c.risk_flags.label("risk_flags"),
             open_tickets.c.open_ticket_count,
             last_call.c.last_call_date,
+            top_deal.c.deal_name.label("deal_name"),
+            top_deal.c.stage.label("deal_stage"),
+            top_deal.c.amount.label("deal_amount"),
         )
         .outerjoin(User, Customer.cs_owner_id == User.id)
         .outerjoin(latest_health, Customer.id == latest_health.c.customer_id)
         .outerjoin(open_tickets, Customer.id == open_tickets.c.customer_id)
         .outerjoin(last_call, Customer.id == last_call.c.customer_id)
+        .outerjoin(top_deal, Customer.id == top_deal.c.customer_id)
         .where(Customer.is_active.is_(True))
     )
 
@@ -117,6 +145,18 @@ async def list_customers(
         .outerjoin(latest_health, Customer.id == latest_health.c.customer_id)
         .where(Customer.is_active.is_(True))
     )
+
+    # Customer type filter
+    if customer_type == "active":
+        query = query.where(
+            (Customer.tier.is_(None)) | (Customer.tier != "prospect")
+        )
+        count_query = count_query.where(
+            (Customer.tier.is_(None)) | (Customer.tier != "prospect")
+        )
+    elif customer_type == "prospect":
+        query = query.where(Customer.tier == "prospect")
+        count_query = count_query.where(Customer.tier == "prospect")
 
     # Filters
     if search:
@@ -188,6 +228,9 @@ async def list_customers(
                 days_to_renewal=days_to_renewal,
                 last_call_date=last_call_date_val,
                 primary_contact_name=customer.primary_contact_name,
+                deal_stage=row.deal_stage,
+                deal_amount=row.deal_amount,
+                deal_name=row.deal_name,
             )
         )
 
@@ -273,11 +316,33 @@ async def get_customer(
         factors=latest_hs.factors or {} if latest_hs else {},
     )
 
+    # Fetch deals for this customer
+    deals_result = await db.execute(
+        select(Deal)
+        .where(Deal.customer_id == customer_id)
+        .order_by(Deal.amount.desc().nulls_last())
+    )
+    deals = [
+        DealBrief(
+            id=d.id,
+            deal_name=d.deal_name,
+            stage=d.stage,
+            amount=d.amount,
+            close_date=d.close_date,
+            owner_name=d.owner_name,
+            pipeline=d.pipeline,
+        )
+        for d in deals_result.scalars().all()
+    ]
+
+    is_prospect = (customer.tier or "").lower() == "prospect"
+
     return CustomerDetail(
         id=customer.id,
         name=customer.name,
         industry=customer.industry,
         tier=customer.tier,
+        is_prospect=is_prospect,
         contract_start=customer.contract_start,
         renewal_date=customer.renewal_date,
         days_to_renewal=days_to_renewal,
@@ -289,6 +354,7 @@ async def get_customer(
         open_ticket_count=open_ticket_count,
         recent_call_count=recent_call_count,
         pending_action_items=pending_action_items,
+        deals=deals,
         metadata=customer.metadata_ or {},
         created_at=customer.created_at,
         updated_at=customer.updated_at,

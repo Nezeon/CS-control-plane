@@ -6,6 +6,18 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.user import CsOwnerBrief
 
 
+class DealBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    deal_name: str
+    stage: str | None = None
+    amount: float | None = None
+    close_date: date | None = None
+    owner_name: str | None = None
+    pipeline: str | None = None
+
+
 class CustomerListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -22,6 +34,10 @@ class CustomerListItem(BaseModel):
     days_to_renewal: int | None = None
     last_call_date: date | None = None
     primary_contact_name: str | None = None
+    # Prospect deal fields (populated for tier=prospect)
+    deal_stage: str | None = None
+    deal_amount: float | None = None
+    deal_name: str | None = None
 
 
 class CustomerListResponse(BaseModel):
@@ -52,6 +68,7 @@ class CustomerDetail(BaseModel):
     name: str
     industry: str | None = None
     tier: str | None = None
+    is_prospect: bool = False
     contract_start: date | None = None
     renewal_date: date | None = None
     days_to_renewal: int | None = None
@@ -63,6 +80,7 @@ class CustomerDetail(BaseModel):
     open_ticket_count: int = 0
     recent_call_count: int = 0
     pending_action_items: int = 0
+    deals: list[DealBrief] = []
     metadata: dict = {}
     created_at: datetime
     updated_at: datetime

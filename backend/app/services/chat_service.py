@@ -648,6 +648,7 @@ class ChatService:
 
             # ── Universal cross-reference: enrich with data from all sources ──
             # Uses a FRESH db session to avoid stale Neon connections from Steps 2-3
+            from app.database import get_sync_session as _get_fresh_session
             logger.info("[Chat] ── STEP 4: Cross-reference lookup ──")
             explicit_entity = _extract_entity_from_query(message)
             xref_entity = explicit_entity or customer_name
@@ -655,7 +656,7 @@ class ChatService:
                 xref_full = xref_entity.lower().strip()
                 xref_first_word = xref_full.split()[0] if xref_full else ""
                 if len(xref_full) >= 3:
-                    xref_db = get_sync_session()
+                    xref_db = _get_fresh_session()
                     try:
                         from sqlalchemy import text as sa_text
                         # Related deals — prefer customer_id, then full entity, then first-word fallback
@@ -758,7 +759,7 @@ class ChatService:
             # ── Portfolio-wide aggregation (when no specific entity) ──
             # Provides ticket analysis, call topics, and pipeline stats for broad questions
             if not xref_entity:
-                pf_db = get_sync_session()
+                pf_db = _get_fresh_session()
                 try:
                     from sqlalchemy import text as sa_text
                     from collections import Counter
@@ -907,9 +908,13 @@ class ChatService:
             slack_channel = (conv.metadata_ or {}).get("slack_channel") if conv else None
 
             # Load conversation history — per-channel for Slack, per-conversation for web
-            conv_history = self._get_recent_messages(
-                db, conversation_id, limit=10 if slack_channel else 5, slack_channel=slack_channel
-            )
+            hist_db = _get_fresh_session()
+            try:
+                conv_history = self._get_recent_messages(
+                    hist_db, conversation_id, limit=10 if slack_channel else 5, slack_channel=slack_channel
+                )
+            finally:
+                hist_db.close()
             logger.info(f"[Chat] Conversation history: {len(conv_history)} prior messages loaded (channel={slack_channel or 'none'})")
 
             # Load teachable rules (global + customer-specific)

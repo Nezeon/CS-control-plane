@@ -23,7 +23,7 @@ logger = logging.getLogger("services.hubspot")
 DEAL_PROPERTIES = [
     "dealname", "dealstage", "pipeline", "amount", "closedate",
     "hubspot_owner_id", "hs_lastmodifieddate", "hs_createdate",
-    "deal_currency_code",
+    "deal_currency_code", "cs_owner", "customer_success_manager",
 ]
 
 
@@ -132,6 +132,105 @@ class HubSpotService:
         resp.raise_for_status()
         return resp.json()
 
+    def get_company_details(self, company_id: str) -> dict:
+        """Fetch enriched company details for prospect creation."""
+        client = self._get_client()
+        params = {
+            "properties": "name,domain,industry,city,state,country,"
+                          "phone,numberofemployees,description,"
+                          "hs_lead_status,lifecyclestage",
+        }
+        resp = client.get(f"/crm/v3/objects/companies/{company_id}", params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        props = data.get("properties", {})
+        return {
+            "name": props.get("name", ""),
+            "domain": props.get("domain"),
+            "industry": props.get("industry"),
+            "city": props.get("city"),
+            "state": props.get("state"),
+            "country": props.get("country"),
+            "phone": props.get("phone"),
+            "employees": props.get("numberofemployees"),
+            "description": props.get("description"),
+            "lead_status": props.get("hs_lead_status"),
+            "lifecycle_stage": props.get("lifecyclestage"),
+        }
+
+    def get_company_contacts(self, company_id: str) -> list[dict]:
+        """Fetch primary contacts associated with a company."""
+        client = self._get_client()
+        try:
+            # Get contact associations
+            resp = client.get(
+                f"/crm/v3/objects/companies/{company_id}/associations/contacts"
+            )
+            resp.raise_for_status()
+            contact_ids = [str(r["id"]) for r in resp.json().get("results", [])]
+            if not contact_ids:
+                return []
+
+            # Fetch first contact's details
+            contact_id = contact_ids[0]
+            resp = client.get(
+                f"/crm/v3/objects/contacts/{contact_id}",
+                params={"properties": "firstname,lastname,email,phone,jobtitle"},
+            )
+            resp.raise_for_status()
+            props = resp.json().get("properties", {})
+            first = props.get("firstname", "")
+            last = props.get("lastname", "")
+            return [{
+                "name": f"{first} {last}".strip(),
+                "email": props.get("email"),
+                "phone": props.get("phone"),
+                "title": props.get("jobtitle"),
+            }]
+        except Exception:
+            return []
+
+    # -- Owners ---------------------------------------------------------------
+
+    def resolve_owner_name(self, owner_id: str) -> str | None:
+        """Resolve a HubSpot owner ID to a display name. Cached.
+        Returns None and stops retrying if the API returns 403 (missing scope)."""
+        if not owner_id:
+            return None
+        if not hasattr(self, "_owner_cache"):
+            self._owner_cache: dict[str, str | None] = {}
+        if not hasattr(self, "_owner_api_disabled"):
+            self._owner_api_disabled = False
+        if self._owner_api_disabled:
+            return None
+        if owner_id in self._owner_cache:
+            return self._owner_cache[owner_id]
+        info = self.get_owner(owner_id)
+        name = info.get("name") or None
+        self._owner_cache[owner_id] = name
+        return name
+
+    def get_owner(self, owner_id: str) -> dict:
+        """Fetch a HubSpot owner by ID. Returns {name, email}.
+        Disables further calls on 403 (missing scope)."""
+        client = self._get_client()
+        try:
+            resp = client.get(f"/crm/v3/owners/{owner_id}")
+            if resp.status_code == 403:
+                logger.debug("[HubSpot] Owners API returned 403 — missing crm.objects.owners.read scope")
+                self._owner_api_disabled = True
+                return {"name": None, "email": None}
+            resp.raise_for_status()
+            data = resp.json()
+            first = data.get("firstName", "")
+            last = data.get("lastName", "")
+            return {
+                "name": f"{first} {last}".strip(),
+                "email": data.get("email"),
+            }
+        except Exception:
+            return {"name": None, "email": None}
+
     # -- Pipelines ------------------------------------------------------------
 
     def list_pipelines(self) -> list[dict]:
@@ -190,6 +289,11 @@ class HubSpotService:
         raw_stage = props.get("dealstage", "")
         stage_label = self.get_stage_label(raw_stage) if raw_stage else ""
 
+        # Resolve owner: prefer cs_owner text, then hubspot_owner_id resolution
+        cs_owner_text = props.get("cs_owner") or None
+        resolved_owner = self.resolve_owner_name(props.get("hubspot_owner_id"))
+        owner_name = cs_owner_text or resolved_owner
+
         return {
             "hubspot_deal_id": str(deal.get("id", "")),
             "deal_name": props.get("dealname", "Untitled Deal"),
@@ -197,6 +301,7 @@ class HubSpotService:
             "pipeline": props.get("pipeline", "default"),
             "amount": amount,
             "close_date": close_date.date() if close_date else None,
+            "owner_name": owner_name,
             "company_name": company_name,
             "properties": filtered_props,
             "hubspot_created_at": self._parse_hubspot_date(props.get("hs_createdate")),

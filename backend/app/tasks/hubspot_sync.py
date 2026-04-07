@@ -74,6 +74,14 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
         except Exception:
             db.rollback()
 
+        # Enrich existing customers with HubSpot company data (contact, industry, etc.)
+        _enrich_existing_customers(db, deals, customer_cache)
+        db.commit()
+
+        # Auto-create prospect Customer records for unlinked companies
+        _ensure_prospect_customers(db, deals, customer_cache, company_cache)
+        db.commit()
+
         # Upsert each deal
         stats = {"created": 0, "updated": 0, "skipped": 0, "errors": 0, "total": len(deals)}
         stage_changed_deals = []
@@ -140,6 +148,14 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
             _activate_closed_won_customers(db, closed_won_deals)
             db.commit()
 
+        # Populate contract_start from Closed Won deal dates
+        _populate_contract_dates(db)
+        db.commit()
+
+        # Clean up any duplicate prospect records (from previous buggy syncs)
+        _cleanup_duplicate_prospects(db)
+        db.commit()
+
         return stats
 
     finally:
@@ -205,6 +221,316 @@ def _build_customer_cache(db: Session) -> dict:
     from app.models.customer import Customer
     customers = db.query(Customer).all()
     return {c.name.lower(): c for c in customers}
+
+
+def _ensure_prospect_customers(
+    db: Session,
+    deals: list[dict],
+    customer_cache: dict,
+    company_cache: dict[str, str | None],
+) -> int:
+    """
+    Auto-create Customer records with tier='prospect' for companies
+    that have deals but no matching customer.
+
+    Fetches enriched company details + primary contact from HubSpot.
+    Returns count of prospects created.
+    """
+    from app.models.customer import Customer
+    from app.models.deal import Deal
+
+    # Build set of hubspot_company_ids that already have a linked customer in deals table
+    linked_companies = set()
+    linked_rows = (
+        db.query(Deal.hubspot_company_id)
+        .filter(Deal.hubspot_company_id.isnot(None), Deal.customer_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    for row in linked_rows:
+        linked_companies.add(row[0])
+
+    # Also build set of existing prospect company IDs (from metadata) to avoid duplicates
+    existing_prospect_company_ids = set()
+    existing_prospects = db.query(Customer).filter(Customer.tier == "prospect").all()
+    for p in existing_prospects:
+        meta = p.metadata_ or {}
+        cid = meta.get("hubspot_company_id")
+        if cid:
+            existing_prospect_company_ids.add(cid)
+
+    # Collect unique companies without a customer match
+    seen_companies: dict[str, str] = {}  # company_id -> company_name
+    for deal in deals:
+        company_id = deal.get("_company_id")
+        company_name = deal.get("_company_name")
+        if not company_id or not company_name:
+            continue
+        # Skip if this company already has deals linked to a customer
+        if company_id in linked_companies:
+            continue
+        # Skip if a prospect already exists for this company
+        if company_id in existing_prospect_company_ids:
+            continue
+        # Skip if company name matches an existing customer
+        cust_id, _ = _resolve_customer(company_name, customer_cache)
+        if cust_id:
+            continue
+        if company_id not in seen_companies:
+            seen_companies[company_id] = company_name
+
+    if not seen_companies:
+        return 0
+
+    created = 0
+    for company_id, company_name in seen_companies.items():
+        try:
+            # Fetch enriched company data from HubSpot
+            details = hubspot_service.get_company_details(company_id)
+            contacts = hubspot_service.get_company_contacts(company_id)
+            primary_contact = contacts[0] if contacts else {}
+
+            prospect = Customer(
+                id=uuid.uuid4(),
+                name=details.get("name") or company_name,
+                industry=details.get("industry"),
+                tier="prospect",
+                is_active=False,
+                primary_contact_name=primary_contact.get("name"),
+                primary_contact_email=primary_contact.get("email"),
+                metadata_={
+                    "hubspot_company_id": company_id,
+                    "domain": details.get("domain"),
+                    "city": details.get("city"),
+                    "state": details.get("state"),
+                    "country": details.get("country"),
+                    "phone": details.get("phone") or primary_contact.get("phone"),
+                    "employees": details.get("employees"),
+                    "description": details.get("description"),
+                    "lead_status": details.get("lead_status"),
+                    "lifecycle_stage": details.get("lifecycle_stage"),
+                    "contact_title": primary_contact.get("title"),
+                },
+            )
+            db.add(prospect)
+            db.flush()
+
+            # Add to cache so deals link to this new prospect
+            customer_cache[prospect.name.lower()] = prospect
+            created += 1
+            logger.info(f"[HubSpotSync] Created prospect '{prospect.name}' from company {company_id}")
+
+        except Exception as e:
+            logger.warning(f"[HubSpotSync] Failed to create prospect for company {company_id}: {e}")
+
+    if created:
+        db.flush()
+        logger.info(f"[HubSpotSync] Created {created} prospect customers from HubSpot companies")
+
+    return created
+
+
+def _enrich_existing_customers(
+    db: Session,
+    deals: list[dict],
+    customer_cache: dict,
+) -> int:
+    """
+    For companies that match an existing active customer, fill in missing
+    contact/industry/metadata from HubSpot company data.
+    Only updates fields that are currently NULL/empty.
+    """
+    enriched = 0
+    seen_company_ids: set[str] = set()
+
+    for deal in deals:
+        company_id = deal.get("_company_id")
+        company_name = deal.get("_company_name")
+        if not company_id or not company_name or company_id in seen_company_ids:
+            continue
+        seen_company_ids.add(company_id)
+
+        cust_id, _ = _resolve_customer(company_name, customer_cache)
+        if not cust_id:
+            continue
+
+        customer = customer_cache.get(company_name.lower().strip())
+        if not customer:
+            # Find via containment match
+            for _, c in customer_cache.items():
+                if c.id == cust_id:
+                    customer = c
+                    break
+        if not customer or (customer.tier or "").lower() == "prospect":
+            continue
+
+        # Check if enrichment is needed (any key field or metadata missing)
+        existing_meta = customer.metadata_ or {}
+        needs_update = (
+            not customer.primary_contact_name
+            or not customer.primary_contact_email
+            or not customer.industry
+            or not existing_meta.get("hubspot_company_id")
+        )
+        if not needs_update:
+            continue
+
+        try:
+            details = hubspot_service.get_company_details(company_id)
+            contacts = hubspot_service.get_company_contacts(company_id)
+            primary_contact = contacts[0] if contacts else {}
+
+            changed = False
+            if not customer.primary_contact_name and primary_contact.get("name"):
+                customer.primary_contact_name = primary_contact["name"]
+                changed = True
+            if not customer.primary_contact_email and primary_contact.get("email"):
+                customer.primary_contact_email = primary_contact["email"]
+                changed = True
+            if not customer.industry and details.get("industry"):
+                customer.industry = details["industry"]
+                changed = True
+
+            # Store HubSpot metadata for the overview
+            # Must create a new dict — SQLAlchemy JSONB doesn't detect in-place mutations
+            old_meta = customer.metadata_ or {}
+            if not old_meta.get("hubspot_company_id"):
+                new_meta = {
+                    **old_meta,
+                    "hubspot_company_id": company_id,
+                    "domain": details.get("domain"),
+                    "city": details.get("city"),
+                    "state": details.get("state"),
+                    "country": details.get("country"),
+                    "phone": details.get("phone") or primary_contact.get("phone"),
+                    "employees": details.get("employees"),
+                    "contact_title": primary_contact.get("title"),
+                }
+                customer.metadata_ = new_meta
+                changed = True
+
+            if changed:
+                enriched += 1
+                logger.info(f"[HubSpotSync] Enriched customer '{customer.name}' with HubSpot data")
+
+        except Exception as e:
+            logger.debug(f"[HubSpotSync] Could not enrich customer '{customer.name}': {e}")
+
+    if enriched:
+        db.flush()
+        logger.info(f"[HubSpotSync] Enriched {enriched} existing customers from HubSpot")
+
+    return enriched
+
+
+def _populate_contract_dates(db: Session) -> int:
+    """
+    For active customers missing contract_start, derive it from the earliest
+    Closed Won deal's close_date. Pure DB operation — no HubSpot API calls.
+    """
+    from app.models.customer import Customer
+    from app.models.deal import Deal
+
+    customers = db.query(Customer).filter(
+        (Customer.tier.is_(None)) | (Customer.tier != "prospect"),
+        Customer.is_active.is_(True),
+        Customer.contract_start.is_(None),
+    ).all()
+
+    if not customers:
+        return 0
+
+    updated = 0
+    for customer in customers:
+        # Find earliest Closed Won deal
+        earliest = (
+            db.query(Deal.close_date)
+            .filter(
+                Deal.customer_id == customer.id,
+                Deal.stage.ilike("%closed won%"),
+                Deal.close_date.isnot(None),
+            )
+            .order_by(Deal.close_date.asc())
+            .first()
+        )
+        if earliest and earliest[0]:
+            customer.contract_start = earliest[0]
+            updated += 1
+
+    if updated:
+        db.flush()
+        logger.info(f"[HubSpotSync] Populated contract_start for {updated} customers from Closed Won deals")
+
+    return updated
+
+
+def _cleanup_duplicate_prospects(db: Session) -> int:
+    """
+    Remove prospect Customer records that duplicate an existing active customer.
+    A prospect is a duplicate if its hubspot_company_id matches a deal
+    that is already linked to a non-prospect customer.
+    """
+    from app.models.customer import Customer
+    from app.models.deal import Deal
+
+    # Find prospect customers
+    prospects = db.query(Customer).filter(Customer.tier == "prospect").all()
+    if not prospects:
+        return 0
+
+    # Build map: hubspot_company_id -> active customer_id (from deals)
+    linked = {}
+    rows = (
+        db.query(Deal.hubspot_company_id, Deal.customer_id)
+        .filter(Deal.hubspot_company_id.isnot(None), Deal.customer_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    for company_id, customer_id in rows:
+        linked[company_id] = customer_id
+
+    # Also build name-based lookup of active customers
+    active_names = set()
+    actives = db.query(Customer).filter(
+        (Customer.tier.is_(None)) | (Customer.tier != "prospect"),
+        Customer.is_active.is_(True),
+    ).all()
+    for c in actives:
+        active_names.add(c.name.lower().strip())
+
+    removed = 0
+    for prospect in prospects:
+        meta = prospect.metadata_ or {}
+        company_id = meta.get("hubspot_company_id")
+        is_dup = False
+
+        # Check 1: company_id already linked to an active customer
+        if company_id and company_id in linked:
+            active_cust_id = linked[company_id]
+            if active_cust_id != prospect.id:
+                is_dup = True
+
+        # Check 2: prospect name matches an active customer name
+        if not is_dup and prospect.name.lower().strip() in active_names:
+            is_dup = True
+
+        if is_dup:
+            # Relink any deals pointing to this prospect to the active customer
+            if company_id and company_id in linked:
+                active_id = linked[company_id]
+                db.query(Deal).filter(
+                    Deal.customer_id == prospect.id
+                ).update({"customer_id": active_id})
+
+            logger.info(f"[HubSpotSync] Removing duplicate prospect '{prospect.name}'")
+            db.delete(prospect)
+            removed += 1
+
+    if removed:
+        db.flush()
+        logger.info(f"[HubSpotSync] Removed {removed} duplicate prospect records")
+
+    return removed
 
 
 def _resolve_customer(company_name: str | None, customer_cache: dict) -> tuple:

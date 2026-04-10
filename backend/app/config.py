@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     HUBSPOT_API_BASE_URL: str = "https://api.hubapi.com"
     HUBSPOT_WEBHOOK_SECRET: str = ""
 
+    # Escalation rule thresholds (configurable without code changes)
+    ESCALATION_STALE_P0_DAYS: int = 3
+    ESCALATION_STALE_P1_DAYS: int = 4
+    ESCALATION_FEATURE_MIN_CUSTOMERS: int = 3
+    ESCALATION_RECURRING_MIN_OCCURRENCES: int = 3
+    ESCALATION_ACTION_FOLLOWUP_DAYS: int = 3
+    ESCALATION_PATTERN_WINDOW_DAYS: int = 30
+
     # Dashboard base URL for deep-links in Slack cards
     DASHBOARD_BASE_URL: str = "https://cs-control-plane.vercel.app"
 

@@ -175,6 +175,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Executive brief setup failed (non-fatal): {e}")
 
+    # Escalation rules: daily for stale P0/P1, Wed+Fri for pattern rules
+    try:
+        scheduler.add_job(_run_escalation_daily, "cron", hour=8, minute=30,
+                          id="escalation_daily", misfire_grace_time=3600)
+        scheduler.add_job(_run_escalation_patterns, "cron", day_of_week="wed,fri",
+                          hour=9, minute=15, id="escalation_patterns",
+                          misfire_grace_time=3600)
+        logger.info(f"Escalation rules scheduled: stale daily 08:30, patterns Wed+Fri 09:15 {settings.SYNC_TIMEZONE}")
+    except Exception as e:
+        logger.warning(f"Escalation rules setup failed (non-fatal): {e}")
+
     # ChromaDB backfill: schedule as background job so server starts accepting requests immediately
     # (needed for ephemeral mode on Railway where ChromaDB is in-memory)
     def _run_backfills():
@@ -346,6 +357,52 @@ async def _run_executive_brief():
             db.close()
     except Exception as e:
         logger.warning(f"[ExecBrief] Failed: {e}")
+
+
+async def _run_escalation_daily():
+    """APScheduler job: Daily escalation check for stale P0/P1 tickets."""
+    try:
+        from app.database import get_sync_session
+        from app.services.alert_rules_engine import alert_rules_engine
+
+        logger.info("[Escalation] Daily stale ticket check starting")
+        db = get_sync_session()
+        try:
+            stats = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: alert_rules_engine.evaluate_by_names(
+                    db, ["escalation_stale_p0", "escalation_stale_p1"]
+                )
+            )
+            logger.info(f"[Escalation] Daily: {stats.get('alerts_created', 0)} alerts created")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[Escalation] Daily check failed: {e}")
+
+
+async def _run_escalation_patterns():
+    """APScheduler job: Wed+Fri pattern rules (features, complaints, action items)."""
+    try:
+        from app.database import get_sync_session
+        from app.services.alert_rules_engine import alert_rules_engine
+
+        logger.info("[Escalation] Pattern rules check starting")
+        db = get_sync_session()
+        try:
+            stats = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: alert_rules_engine.evaluate_by_names(
+                    db, [
+                        "repeated_feature_requests",
+                        "recurring_complaints",
+                        "unanswered_action_items",
+                    ]
+                )
+            )
+            logger.info(f"[Escalation] Patterns: {stats.get('alerts_created', 0)} alerts created")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"[Escalation] Pattern check failed: {e}")
 
 
 async def _run_hubspot_sync():

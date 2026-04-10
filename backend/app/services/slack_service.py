@@ -155,19 +155,20 @@ class SlackService:
             logger.warning(f"[Slack] Failed to fetch user info for {user_id}: {e}")
             return None
 
-    def send_alert(self, alert) -> bool:
+    def send_alert(self, alert, channel: str | None = None) -> bool:
         """
         Send a rich Block Kit alert notification.
 
         Args:
             alert: Alert model instance with title, severity, description,
                    suggested_action, customer relationship, etc.
+            channel: Optional Slack channel override. Defaults to #cs-health-alerts.
         """
         if not self.configured:
             logger.debug(f"[Slack] Not configured, skipping alert '{alert.title}'")
             return False
 
-        channel = settings.SLACK_CH_HEALTH_ALERTS
+        channel = channel or settings.SLACK_CH_HEALTH_ALERTS
         severity = (alert.severity or "medium").lower()
         color = SEVERITY_COLORS.get(severity, "#6B7280")
         customer_name = alert.customer.name if alert.customer else "Unknown"

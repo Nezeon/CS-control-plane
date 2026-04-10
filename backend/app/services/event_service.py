@@ -23,7 +23,7 @@ def route_direct(sync_db, event_dict: dict) -> dict:
         logger.warning(f"No specialist for event_type={event_type}")
         return {"agent_name": None, "result": {"success": False, "error": f"Unknown event: {event_type}"}}
 
-    logger.info(f"[DirectRoute] {event_type} → {agent_id} (customer={customer_id})")
+    logger.info(f"[DirectRoute] {event_type} -> {agent_id} (customer={customer_id})")
 
     # Build customer memory (pure SQL, no Claude calls)
     memory_agent = CustomerMemoryAgent()

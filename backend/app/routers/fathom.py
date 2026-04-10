@@ -152,7 +152,7 @@ async def relink_orphaned_calls(
             if customer_id:
                 insight.customer_id = customer_id
                 linked += 1
-                logger.info(f"[Fathom] Re-linked call {insight.id} → {customer_name}")
+                logger.info(f"[Fathom] Re-linked call {insight.id} -> {customer_name}")
         db.commit()
         return {
             "orphaned_total": len(orphaned),

@@ -39,7 +39,7 @@ class TraitRegistry:
         if not name:
             raise ValueError(f"Trait class {trait_class.__name__} must define a 'name' attribute")
         cls._traits[name] = trait_class
-        logger.debug(f"Registered trait: {name} → {trait_class.__name__}")
+        logger.debug(f"Registered trait: {name} -> {trait_class.__name__}")
         return trait_class
 
     @classmethod

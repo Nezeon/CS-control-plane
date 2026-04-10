@@ -146,35 +146,35 @@ class PipelineEngine:
                     perceive_result = self.agent.perceive(task)
                     if isinstance(perceive_result, dict):
                         context.update(perceive_result)
-                    logger.info(f"[Pipeline]   perceive() → context keys: {list(context.keys())}")
+                    logger.info(f"[Pipeline]   perceive() -> context keys: {list(context.keys())}")
 
                 elif stage_type == "retrieve":
                     retrieve_result = self.agent.retrieve(task)
                     if isinstance(retrieve_result, dict):
                         context.update(retrieve_result)
-                    logger.info(f"[Pipeline]   retrieve() → context keys: {list(context.keys())}")
+                    logger.info(f"[Pipeline]   retrieve() -> context keys: {list(context.keys())}")
 
                 elif stage_type == "think":
                     thinking = self.agent.think(task, context) or {}
-                    logger.info(f"[Pipeline]   think() → keys: {list(thinking.keys()) if isinstance(thinking, dict) else '?'}")
+                    logger.info(f"[Pipeline]   think() -> keys: {list(thinking.keys()) if isinstance(thinking, dict) else '?'}")
 
                 elif stage_type == "act":
                     result = self.agent.act(task, thinking) or {}
                     # Fire postprocess traits
                     result = self._fire_postprocess_traits(result, context)
-                    logger.info(f"[Pipeline]   act() → success={result.get('success', '?')}, keys: {list(result.keys()) if isinstance(result, dict) else '?'}")
+                    logger.info(f"[Pipeline]   act() -> success={result.get('success', '?')}, keys: {list(result.keys()) if isinstance(result, dict) else '?'}")
 
                 elif stage_type == "reflect":
                     reflection = self.agent.reflect(task, result) or {}
-                    logger.info(f"[Pipeline]   reflect() → keys: {list(reflection.keys()) if isinstance(reflection, dict) else '?'}")
+                    logger.info(f"[Pipeline]   reflect() -> keys: {list(reflection.keys()) if isinstance(reflection, dict) else '?'}")
 
                 elif stage_type == "quality_gate":
                     result = self.agent.quality_gate(task, result) or result
-                    logger.info(f"[Pipeline]   quality_gate() → confidence={result.get('confidence', '?')}")
+                    logger.info(f"[Pipeline]   quality_gate() -> confidence={result.get('confidence', '?')}")
 
                 elif stage_type == "finalize":
                     result = self.agent.finalize(task, result) or result
-                    logger.info(f"[Pipeline]   finalize() → final result keys: {list(result.keys()) if isinstance(result, dict) else '?'}")
+                    logger.info(f"[Pipeline]   finalize() -> final result keys: {list(result.keys()) if isinstance(result, dict) else '?'}")
 
                 # Broadcast stage completed
                 stage_duration_ms = int((time.perf_counter() - _stage_t0) * 1000)

@@ -38,9 +38,9 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
     Match a Fathom meeting to an existing customer.
 
     Search order:
-      1. Title segments → customers table (exact, containment, alias)
-      2. Summary text → customers table
-      3. Summary text → HubSpot deal companies (auto-creates prospect customer)
+      1. Title segments -> customers table (exact, containment, alias)
+      2. Summary text -> customers table
+      3. Summary text -> HubSpot deal companies (auto-creates prospect customer)
 
     Returns (customer_id, customer_name) or (None, None) if no match.
     """
@@ -99,7 +99,7 @@ def _resolve_customer(db, title: str, participants: list[str] | None = None, sum
     customer_map = {c.name.lower(): (c.id, c.name) for c in customers}
 
     # Try title segment matching (exact, containment, alias)
-    # Normalize hyphens to spaces for matching (e.g. "Al-Raedah" → "al raedah")
+    # Normalize hyphens to spaces for matching (e.g. "Al-Raedah" -> "al raedah")
     def _normalize(s: str) -> str:
         return re.sub(r'\s+', ' ', s.replace('-', ' ')).strip().lower()
 
@@ -231,7 +231,7 @@ def process_event(self, event: dict) -> dict:
                 db_event.status = "processing"
                 db.commit()
 
-        # Direct routing: event → specialist (no orchestrator, no lane leads)
+        # Direct routing: event -> specialist (no orchestrator, no lane leads)
         event_type = event.get("event_type", "")
         customer_id = event.get("customer_id")
         agent_id = EVENT_ROUTING.get(event_type)
@@ -239,7 +239,7 @@ def process_event(self, event: dict) -> dict:
         if not agent_id or not AgentFactory.is_registered(agent_id):
             raise ValueError(f"No specialist for event_type={event_type}")
 
-        logger.info(f"[DirectRoute] {event_type} → {agent_id} (customer={customer_id})")
+        logger.info(f"[DirectRoute] {event_type} -> {agent_id} (customer={customer_id})")
 
         memory_agent = CustomerMemoryAgent()
         customer_memory = (
@@ -874,7 +874,7 @@ def run_health_check_all(self) -> dict:
         finally:
             db.close()
 
-        # Cross-customer pattern detection: 5+ customers with same flag → executive urgent
+        # Cross-customer pattern detection: 5+ customers with same flag -> executive urgent
         flag_counts = Counter(all_flags)
         threshold_alerts = []
         for flag, count in flag_counts.items():

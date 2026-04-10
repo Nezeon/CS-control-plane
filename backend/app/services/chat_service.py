@@ -577,7 +577,7 @@ class ChatService:
         if not resolved_customer_id:
             resolved_customer_id, customer_name = _try_resolve_customer(db, message)
             if resolved_customer_id:
-                logger.info(f"[Chat]   Fuzzy match → {customer_name} ({resolved_customer_id})")
+                logger.info(f"[Chat]   Fuzzy match -> {customer_name} ({resolved_customer_id})")
             else:
                 logger.info("[Chat]   No customer matched in query")
         else:
@@ -689,7 +689,7 @@ class ChatService:
                                     if deal_rows:
                                         prefetched["_xref_partial_match"] = True
                                         prefetched["_xref_searched_entity"] = xref_entity
-                                        logger.info(f"[Chat] Cross-reference: no exact match for '{xref_full}', broadened to '{xref_first_word}' → {len(deal_rows)} deals")
+                                        logger.info(f"[Chat] Cross-reference: no exact match for '{xref_full}', broadened to '{xref_first_word}' -> {len(deal_rows)} deals")
 
                             if deal_rows:
                                 prefetched["related_deals"] = [

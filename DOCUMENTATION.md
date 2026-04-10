@@ -350,7 +350,7 @@ hivepro-cs-control-plane/
 │       │   ├── event_service.py       # Event routing + draft creation
 │       │   ├── message_service.py     # Inter-agent messages
 │       │   ├── draft_service.py       # Draft create/approve/dismiss
-│       │   ├── alert_rules_engine.py  # 4 alert rules
+│       │   ├── alert_rules_engine.py  # 9 alert rules (5 original + 4 escalation)
 │       │   └── trend_service.py       # Analytics queries
 │       │
 │       ├── tasks/                     # Celery async tasks
@@ -940,7 +940,8 @@ All endpoints are prefixed with `/api`. Authentication uses Bearer JWT tokens (e
 |--------|------|--------|-------------|
 | GET | `/summary` | Executive dashboard data | Portfolio snapshot, at-risk, trending |
 | GET | `/trends` | `{health_trends, ticket_velocity, sentiment_shifts}` | Multi-metric trend analysis |
-| POST | `/check-rules` | `{alerts_created, details}` | Run 4 alert rules engine |
+| POST | `/check-rules` | `{alerts_created, details}` | Run all 9 alert rules |
+| POST | `/brief` | `{sent, channel, sections}` | Trigger executive brief to #cs-executive-overview |
 
 ### 11.16 Drafts (`/api/drafts`)
 
@@ -1227,14 +1228,44 @@ Draft-first approval workflow.
 
 ### 13.12 AlertRulesEngine (`services/alert_rules_engine.py`)
 
-4 automated alert rules that check for critical conditions:
+9 automated alert rules in two tiers:
 
+**Original rules → #cs-health-alerts:**
 1. **health_drop_15** — Health score dropped 15+ points in 7 days
-2. **critical_tickets_stale** — Critical tickets open for too long
-3. **renewal_at_risk** — At-risk customer with renewal within 90 days
-4. **negative_sentiment_streak** — Multiple consecutive negative call sentiments
+2. **critical_tickets_stale_p0** — P0 tickets open >7 days
+3. **critical_tickets_stale_p1** — P1 tickets open >10 days
+4. **renewal_at_risk** — At-risk customer with renewal within 60 days
+5. **negative_sentiment_streak** — 3+ consecutive negative call sentiments
+
+**Escalation rules → #cs-executive-urgent:**
+6. **escalation_stale_p0** — P0 tickets open >3 days (configurable via `ESCALATION_STALE_P0_DAYS`)
+7. **escalation_stale_p1** — P1 tickets open >4 days (configurable via `ESCALATION_STALE_P1_DAYS`)
+8. **repeated_feature_requests** — AI-grouped feature tickets from 3+ customers in 30 days (Claude Haiku groups similar summaries)
+9. **recurring_complaints** — AI-grouped bug/task tickets with 3+ occurrences in 30 days
+
+**Custom (non-SQL) rules:**
+- **unanswered_action_items** — Action items pending >3 days with no follow-up. Fire-once per action item (dedup by action_item_id in `similar_past_issues` JSONB). Won't spam.
+
+**Scheduling:**
+- Original rules: run with health monitor (every 3 days)
+- Escalation stale P0/P1: daily at 8:30 AM IST
+- Pattern rules (features, complaints, action items): Wed + Fri at 9:15 AM IST
+
+**Methods:**
+- `evaluate_all(db)` — runs all SQL-based rules (original + escalation stale)
+- `evaluate_by_names(db, ["rule_name", ...])` — runs specific rules by name, including custom rules
 
 Rules deduplicate: won't create duplicate open alerts for the same customer + type.
+
+### 13.17 ExecutiveBriefService (`services/executive_brief_service.py`)
+
+Generates a consolidated Slack message for C-level executives. Posted to `#cs-executive-overview`.
+
+**Sections:** Portfolio Health, Attention Required, Ticket Summary, Call Intelligence, Pipeline Snapshot, Top 3 Actions (AI-generated via Claude Haiku).
+
+**Data sources:** `trend_service.portfolio_snapshot()`, direct SQL for stale tickets, `trend_service.ticket_velocity()`, `trend_service.sentiment_shifts()`, deal pipeline queries, Claude Haiku for action recommendations.
+
+**Trigger:** `POST /api/executive/brief` (manual) or scheduled Wed & Fri at 9:00 AM IST.
 
 ### 13.13 TrendService (`services/trend_service.py`)
 

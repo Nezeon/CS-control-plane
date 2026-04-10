@@ -207,11 +207,12 @@ Every agent output starts as a **draft**. Nothing customer-facing or system-modi
 
 | Channel | What Gets Posted | Agent Source |
 |---------|-----------------|-------------|
+| **#cs-executive-overview** | Portfolio brief (Wed & Fri 9 AM) — health, renewals, pipeline, tickets, AI actions | Executive Brief Service |
 | **#cs-executive-digest** | Weekly executive summary (Monday 9 AM) | Executive Reporter |
-| **#cs-executive-urgent** | Threshold alerts (issue cluster, health crash, SLA cascade, churn signal, pipeline stall) | Health Monitor |
+| **#cs-executive-urgent** | Escalation alerts: stale P0/P1 (daily), repeated features, recurring complaints, unanswered actions (Wed+Fri) | Alert Rules Engine |
 | **#cs-call-intelligence** | Post-call summaries + action items + sentiment | Call Intelligence |
 | **#cs-ticket-triage** | Ticket classifications + troubleshooting results | Ticket Triage, Troubleshooting |
-| **#cs-health-alerts** | Daily health check results + risk flags | Health Monitor |
+| **#cs-health-alerts** | Health check results + risk flags + threshold alerts (health drops, sentiment streaks, renewal risk) | Health Monitor, Alert Rules Engine |
 | **#cs-presales-funnel** | Pipeline analytics + stalled deal alerts | Pre-Sales Funnel |
 | **#cs-qbr-drafts** | QBR document drafts for review | QBR / Value Narrative |
 | **#cs-escalations** | Engineering escalation docs for approval | Escalation Writer |
@@ -534,9 +535,12 @@ Agent produces output → Saved as DRAFT (agent_drafts table)
 | Jira initial sync | On first startup | Full (last 6 months) |
 | Fathom sync | 6:00 AM + 6:00 PM IST | Last 7 days of meetings |
 | Fathom startup sync | 30s after app start | Last 7 days |
-| HubSpot daily sync | 7:00 AM IST | Full (all deals + company resolution) |
+| HubSpot daily sync | 7:00 AM IST | Full (all deals + company resolution + renewal dates + CS managers) |
 | HubSpot startup sync | 15s after app start | Full (first time only — marker file `.hubspot_initial_sync_done`) |
 | Health check | Every 3 days at 8:30 AM | All customers |
+| Executive brief | Wed & Fri at 9:00 AM | Portfolio summary → #cs-executive-overview |
+| Escalation daily | Daily at 8:30 AM | Stale P0 (>3d) + P1 (>4d) → #cs-executive-urgent |
+| Escalation patterns | Wed & Fri at 9:15 AM | Feature requests, recurring complaints, unanswered actions → #cs-executive-urgent |
 
 Timezone: `Asia/Kolkata` (configurable via `SYNC_TIMEZONE`)
 
@@ -683,8 +687,8 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 | Table | Purpose |
 |-------|---------|
 | `users` | User accounts (email, role, is_active) |
-| `customers` | Customer profiles (name, health_score, jira_project_key) |
-| `deals` | HubSpot CRM deals (stage, amount, company, win probability) |
+| `customers` | Customer profiles (name, health_score, jira_project_key, renewal_date, metadata JSONB with cs_manager) |
+| `deals` | HubSpot CRM deals (stage as label, amount, company, ced + deal_terms in properties JSONB) |
 | `health_scores` | Daily health score history |
 | `tickets` | Support tickets (summary, severity, status, sla_minutes) |
 | `call_insights` | Fathom meeting transcripts + extracted insights |
@@ -712,7 +716,10 @@ VITE_WS_URL=ws://localhost:8000/api/ws
 | **Chat fast path** | Bypasses full agent pipeline; single Haiku call for interactive chat. 5 intents: health, fathom, ticket, deal, general. |
 | **Cross-reference** | Universal prefetch enriches ALL intents with deals + calls + meetings from all data sources. Portfolio prefetch adds Jira tickets + call topics for broad questions. |
 | **Deal probability** | Multi-factor model: stage 25% + engagement 25% + intent 20% + sentiment 15% + velocity 15%. Uses call_insights for signals. |
-| **HubSpot sync** | `hubspot_service.py` singleton, Bearer token auth, daily 7 AM cron + startup marker file. 1436 deals synced. |
+| **HubSpot sync** | `hubspot_service.py` singleton, Bearer token auth, daily 7 AM cron + startup marker file. 1448 deals synced. Also populates `renewal_date` (from `ced` property) and `cs_manager` (from deal owner) on customers. |
+| **Deal stages** | DB stores human-readable labels ("Closed Won", "Discovery Meeting"), NOT HubSpot internal IDs ("closedwon"). All SQL must use labels. |
+| **Alert rules** | 9 rules total: 5 original (→ #cs-health-alerts) + 4 escalation (→ #cs-executive-urgent). Escalation rules: stale P0/P1, repeated features (AI-grouped), recurring complaints (AI-grouped), unanswered action items (fire-once). |
+| **Executive brief** | `executive_brief_service.py` generates portfolio summary → #cs-executive-overview. Wed+Fri 9 AM. Manual: `POST /api/executive/brief`. |
 | **Chat endpoint** | `POST /api/chat/send` with `{"message": text}` (NOT `{"text": text}`) |
 | **Chat polling** | `poll_for_response()` checks conversation for `pipeline_status != "processing"` |
 | **Model fields** | `HealthScore.calculated_at` (not scored_at), `Ticket.summary` (not title), `Ticket.severity` (not priority) |
@@ -766,7 +773,7 @@ npm install && npm run dev
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **hivepro-cs-control-plane** (2050 symbols, 6712 relationships, 165 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **hivepro-cs-control-plane** (2134 symbols, 6958 relationships, 172 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

@@ -25,6 +25,14 @@ from app.config import settings
 logger = logging.getLogger("services.executive_brief")
 
 
+def _truncate(text: str, max_len: int = 80) -> str:
+    """Truncate text at the last word boundary within max_len, appending '...'."""
+    if len(text) <= max_len:
+        return text
+    truncated = text[:max_len].rsplit(" ", 1)[0]
+    return truncated + "..."
+
+
 def _gather_portfolio_health(db: Session) -> dict:
     """Portfolio snapshot: risk distribution, avg health, upcoming renewals."""
     from app.services.trend_service import trend_service
@@ -85,7 +93,8 @@ def _gather_attention_items(db: Session) -> list[dict]:
             ORDER BY customer_id, calculated_at DESC
         )
         SELECT c.id, c.name, e.old_score, l.new_score,
-               (e.old_score - l.new_score) AS drop_amount
+               (e.old_score - l.new_score) AS drop_amount,
+               c.metadata->>'cs_manager' AS cs_manager
         FROM customers c
         JOIN earliest e ON e.customer_id = c.id
         JOIN latest l ON l.customer_id = c.id
@@ -106,6 +115,8 @@ def _gather_attention_items(db: Session) -> list[dict]:
         if renewal_row:
             days_to = (renewal_row.renewal_date - datetime.now(timezone.utc).date()).days
             detail += f". Renewal in {days_to} days"
+        if r.cs_manager:
+            detail += f" (CS: {r.cs_manager})"
         items.append({
             "severity": "critical" if r.drop_amount > 20 else "high",
             "customer": r.name,
@@ -116,7 +127,8 @@ def _gather_attention_items(db: Session) -> list[dict]:
     # 2. P0/P1 tickets stale >3 days
     stale = db.execute(text("""
         SELECT c.name, t.summary, t.severity,
-               EXTRACT(DAY FROM NOW() - t.created_at)::int AS days_open
+               EXTRACT(DAY FROM NOW() - t.created_at)::int AS days_open,
+               c.metadata->>'cs_manager' AS cs_manager
         FROM tickets t
         JOIN customers c ON t.customer_id = c.id
         WHERE t.severity IN ('P0', 'P1', 'critical')
@@ -128,10 +140,18 @@ def _gather_attention_items(db: Session) -> list[dict]:
     """)).fetchall()
 
     for r in stale:
+        # Escalate severity based on how long the ticket has been open
+        if r.days_open > 90:
+            severity = "critical"
+        else:
+            severity = "high"
+        detail = f"{r.severity} ticket \"{_truncate(r.summary)}\" open {r.days_open} days"
+        if r.cs_manager:
+            detail += f" (CS: {r.cs_manager})"
         items.append({
-            "severity": "high",
+            "severity": severity,
             "customer": r.name,
-            "detail": f"{r.severity} ticket \"{r.summary[:60]}\" open {r.days_open} days",
+            "detail": detail,
             "action": "Engineering follow-up required",
         })
 
@@ -248,7 +268,7 @@ def _gather_call_intelligence(db: Session) -> dict:
         if r.risks:
             for risk in r.risks[:1]:
                 risk_text = risk.get("description", str(risk)) if isinstance(risk, dict) else str(risk)
-                top_risks.append(f"\"{risk_text[:60]}\" ({r.name})")
+                top_risks.append(f"\"{_truncate(risk_text)}\" ({r.name})")
         if len(top_risks) >= 2:
             break
 
@@ -272,28 +292,28 @@ def _gather_pipeline_snapshot(db: Session) -> dict:
     open_deals = db.execute(text("""
         SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total_value
         FROM deals
-        WHERE stage NOT IN ('closedwon', 'closedlost')
+        WHERE stage NOT IN ('Closed Won', 'Closed Lost')
     """)).first()
 
     # Win rate (last 30 days)
     closed = db.execute(text("""
         SELECT
-            COUNT(*) FILTER (WHERE stage = 'closedwon') AS won,
-            COUNT(*) FILTER (WHERE stage = 'closedlost') AS lost
+            COUNT(*) FILTER (WHERE stage = 'Closed Won') AS won,
+            COUNT(*) FILTER (WHERE stage = 'Closed Lost') AS lost
         FROM deals
         WHERE hubspot_updated_at >= NOW() - INTERVAL '30 days'
-          AND stage IN ('closedwon', 'closedlost')
+          AND stage IN ('Closed Won', 'Closed Lost')
     """)).first()
 
     won = closed.won if closed else 0
     lost = closed.lost if closed else 0
     win_rate = round(won / (won + lost) * 100) if (won + lost) > 0 else None
 
-    # Stalled deals (>30 days no update)
+    # Stalled deals (>30 days no update, using HubSpot's hs_lastmodifieddate)
     stalled_count = db.execute(text("""
         SELECT COUNT(*)
         FROM deals
-        WHERE stage NOT IN ('closedwon', 'closedlost')
+        WHERE stage NOT IN ('Closed Won', 'Closed Lost')
           AND hubspot_updated_at < NOW() - INTERVAL '30 days'
     """)).scalar() or 0
 
@@ -301,7 +321,7 @@ def _gather_pipeline_snapshot(db: Session) -> dict:
     top_deal = db.execute(text("""
         SELECT deal_name, company_name, amount, stage
         FROM deals
-        WHERE stage NOT IN ('closedwon', 'closedlost')
+        WHERE stage NOT IN ('Closed Won', 'Closed Lost')
           AND amount IS NOT NULL
         ORDER BY amount DESC
         LIMIT 1
@@ -404,11 +424,16 @@ def _format_brief_blocks(
     })
 
     # ── Section 1: Portfolio Health ──
+    # Map risk_level values to display buckets.
+    # Health monitor writes: healthy, watch, high_risk, critical
+    # Older data may use: low, medium, high, critical
     risk = portfolio["risk_distribution"]
-    healthy = risk.get("healthy", 0)
-    watch = risk.get("watch", 0)
-    high_risk = risk.get("high_risk", 0)
+    healthy = risk.get("healthy", 0) + risk.get("low", 0)
+    watch = risk.get("watch", 0) + risk.get("medium", 0)
+    high_risk = risk.get("high_risk", 0) + risk.get("high", 0)
     critical = risk.get("critical", 0)
+    known_keys = {"healthy", "watch", "high_risk", "critical", "low", "medium", "high"}
+    unscored = sum(v for k, v in risk.items() if k not in known_keys)
 
     change_str = ""
     if portfolio["avg_change"] > 0:
@@ -419,11 +444,20 @@ def _format_brief_blocks(
     renewals_60d = [r for r in portfolio.get("renewals_60d", [])
                     if r.get("renewal_date") and _days_until(r["renewal_date"]) <= 60]
 
+    risk_line = f"Healthy: {healthy}  |  Watch: {watch}  |  At-Risk: {high_risk}  |  Critical: {critical}"
+    if unscored:
+        risk_line += f"  |  Unscored: {unscored}"
+
+    renewal_str = f"Renewals in next 60 days: {len(renewals_60d)} customers"
+    if renewals_60d:
+        renewal_names = ", ".join(r["name"] for r in renewals_60d[:5])
+        renewal_str += f": {renewal_names}"
+
     portfolio_text = (
         f"*Portfolio Health* ({portfolio['total_customers']} active customers)\n"
-        f"Healthy: {healthy}  |  Watch: {watch}  |  At-Risk: {high_risk}  |  Critical: {critical}\n"
+        f"{risk_line}\n"
         f"Avg Health Score: {portfolio['current_avg']}/100{change_str}\n"
-        f"Renewals in next 60 days: {len(renewals_60d)} customers"
+        f"{renewal_str}"
     )
     blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": portfolio_text}})
     blocks.append({"type": "divider"})
@@ -480,7 +514,10 @@ def _format_brief_blocks(
 
     # ── Section 5: Pipeline Snapshot ──
     total_val_str = f"${pipeline['total_value']:,.0f}" if pipeline["total_value"] else "N/A"
-    win_rate_str = f"{pipeline['win_rate']}%" if pipeline["win_rate"] is not None else "N/A"
+    if pipeline["win_rate"] is not None:
+        win_rate_str = f"{pipeline['win_rate']}%"
+    else:
+        win_rate_str = "No deals closed in 30d"
 
     pipeline_text = (
         f"*Pipeline Snapshot*\n"
@@ -490,8 +527,7 @@ def _format_brief_blocks(
 
     if pipeline.get("top_deal"):
         td = pipeline["top_deal"]
-        from app.services.slack_service import _friendly_stage
-        stage_name = _friendly_stage(td["stage"]) if td["stage"] else "Unknown"
+        stage_name = td["stage"] or "Unknown"
         pipeline_text += f"\nTop deal: {td['name']} ({td['company']}) at {stage_name} — ${td['amount']:,.0f}"
 
     blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": pipeline_text}})

@@ -21,23 +21,25 @@ from app.agents.base_agent import BaseAgent
 logger = logging.getLogger("agents.presales_funnel")
 
 # Ordered pipeline stages from earliest to latest (from HubSpot "HivePro Global" pipeline)
+# NOTE: These are the human-readable LABELS stored in the deals.stage column,
+# resolved from HubSpot internal IDs by hubspot_service.get_stage_label().
 PIPELINE_STAGES = [
-    "appointmentscheduled",   # Discovery Meeting
-    "presentationscheduled",  # Demo 1
-    "decisionmakerboughtin",  # Demo 2
-    "1166515347",             # Pre-POC
-    "219679027",              # POC
-    "1157536395",             # Negotiation
-    "contractsent",           # Contract Sent
+    "Discovery Meeting",
+    "Demo 1",
+    "Demo 2",
+    "Pre-POC",
+    "POC",
+    "Negotiation",
+    "Contract Sent",
 ]
 
-CLOSED_STAGES = ["closedwon", "closedlost"]
+CLOSED_STAGES = ["Closed Won", "Closed Lost"]
 
 # Stage index for "at least reached this stage" calculations
 STAGE_ORDER = {s: i for i, s in enumerate(PIPELINE_STAGES)}
 # Contract Sent = order placed, contract being signed. Same level as Closed Won — NOT a regression.
-STAGE_ORDER["closedwon"] = STAGE_ORDER["contractsent"]
-STAGE_ORDER["closedlost"] = -1  # Lost deals don't advance
+STAGE_ORDER["Closed Won"] = STAGE_ORDER["Contract Sent"]
+STAGE_ORDER["Closed Lost"] = -1  # Lost deals don't advance
 
 
 class PreSalesFunnelAgent(BaseAgent):
@@ -59,8 +61,8 @@ class PreSalesFunnelAgent(BaseAgent):
         total = sum(stage_counts.values())
 
         # Count deals that reached at least each stage
-        won = stage_counts.get("closedwon", 0)
-        lost = stage_counts.get("closedlost", 0)
+        won = stage_counts.get("Closed Won", 0)
+        lost = stage_counts.get("Closed Lost", 0)
 
         # Deals that reached each stage = deals currently at that stage + all deals past it
         # We compute "reached" by summing current + all later stages (including won)
@@ -77,9 +79,9 @@ class PreSalesFunnelAgent(BaseAgent):
         def safe_ratio(numerator, denominator):
             return round(numerator / denominator, 3) if denominator > 0 else 0.0
 
-        discovery = reached.get("appointmentscheduled", 0)
-        demo = reached.get("presentationscheduled", 0)
-        poc = reached.get("219679027", 0)
+        discovery = reached.get("Discovery Meeting", 0)
+        demo = reached.get("Demo 1", 0)
+        poc = reached.get("POC", 0)
 
         metrics = {
             "total_deals": total,
@@ -107,7 +109,7 @@ class PreSalesFunnelAgent(BaseAgent):
                    COALESCE(hubspot_updated_at, updated_at) as last_modified,
                    hubspot_deal_id
             FROM deals
-            WHERE stage NOT IN ('closedwon', 'closedlost')
+            WHERE stage NOT IN ('Closed Won', 'Closed Lost')
               AND COALESCE(hubspot_updated_at, updated_at) < NOW() - CAST(:days || ' days' AS interval)
             ORDER BY COALESCE(hubspot_updated_at, updated_at) ASC
             LIMIT 20
@@ -143,7 +145,7 @@ class PreSalesFunnelAgent(BaseAgent):
                 COUNT(*) as lost_count,
                 COALESCE(SUM(amount), 0) as total_value
             FROM deals
-            WHERE stage = 'closedlost'
+            WHERE stage = 'Closed Lost'
             GROUP BY COALESCE(properties->>'dealstage', stage)
             ORDER BY lost_count DESC
         """)).fetchall()
@@ -165,7 +167,7 @@ class PreSalesFunnelAgent(BaseAgent):
         lost_deals = db.execute(text("""
             SELECT deal_name, company_name, amount, hubspot_created_at
             FROM deals
-            WHERE stage = 'closedlost' AND company_name IS NOT NULL
+            WHERE stage = 'Closed Lost' AND company_name IS NOT NULL
             ORDER BY amount DESC NULLS LAST
             LIMIT :lim
         """), {"lim": limit}).fetchall()
@@ -255,20 +257,20 @@ class PreSalesFunnelAgent(BaseAgent):
         """
         # Stage base rates (25% weight)
         STAGE_BASE = {
-            "appointmentscheduled": 0.15,
-            "presentationscheduled": 0.30,
-            "decisionmakerboughtin": 0.45,
-            "1166515347": 0.60,   # Pre-POC
-            "219679027": 0.70,    # POC
-            "1157536395": 0.80,   # Negotiation
-            "contractsent": 0.95, # Contract Sent = order placed, effectively closed
+            "Discovery Meeting": 0.15,
+            "Demo 1": 0.30,
+            "Demo 2": 0.45,
+            "Pre-POC": 0.60,
+            "POC": 0.70,
+            "Negotiation": 0.80,
+            "Contract Sent": 0.95,  # Order placed, effectively closed
         }
 
         # Get open deals
         query = """
             SELECT deal_name, stage, amount, company_name, hubspot_created_at, hubspot_deal_id
             FROM deals
-            WHERE stage NOT IN ('closedwon', 'closedlost')
+            WHERE stage NOT IN ('Closed Won', 'Closed Lost')
         """
         params = {}
         if deal_name:
@@ -410,13 +412,13 @@ class PreSalesFunnelAgent(BaseAgent):
 
                 # Expected days per stage (healthy pace)
                 stage_expected_days = {
-                    "appointmentscheduled": 30,
-                    "presentationscheduled": 45,
-                    "decisionmakerboughtin": 60,
-                    "1166515347": 75,
-                    "219679027": 90,
-                    "1157536395": 100,
-                    "contractsent": 110,
+                    "Discovery Meeting": 30,
+                    "Demo 1": 45,
+                    "Demo 2": 60,
+                    "Pre-POC": 75,
+                    "POC": 90,
+                    "Negotiation": 100,
+                    "Contract Sent": 110,
                 }
                 expected = stage_expected_days.get(stage, 60)
 

@@ -24,6 +24,7 @@ DEAL_PROPERTIES = [
     "dealname", "dealstage", "pipeline", "amount", "closedate",
     "hubspot_owner_id", "hs_lastmodifieddate", "hs_createdate",
     "deal_currency_code", "cs_owner", "customer_success_manager",
+    "ced", "deal_terms__months_",
 ]
 
 

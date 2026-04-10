@@ -152,6 +152,14 @@ def sync_hubspot_deals(trigger_events: bool = True) -> dict:
         _populate_contract_dates(db)
         db.commit()
 
+        # Populate renewal_date from Closed Won deal contract end dates
+        _populate_renewal_dates(db)
+        db.commit()
+
+        # Populate CS manager from deal owners
+        _populate_cs_managers(db)
+        db.commit()
+
         # Clean up any duplicate prospect records (from previous buggy syncs)
         _cleanup_duplicate_prospects(db)
         db.commit()
@@ -460,6 +468,144 @@ def _populate_contract_dates(db: Session) -> int:
     if updated:
         db.flush()
         logger.info(f"[HubSpotSync] Populated contract_start for {updated} customers from Closed Won deals")
+
+    return updated
+
+
+def _populate_renewal_dates(db: Session) -> int:
+    """
+    For active customers, derive renewal_date from their latest Closed Won deal.
+
+    Priority:
+      1. Deal's `ced` (Contract End Date) from HubSpot properties JSONB
+      2. Deal's close_date + deal_terms (months) from HubSpot properties JSONB
+      3. Deal's close_date + 12 months (default annual contract assumption)
+
+    Always uses the LATEST Closed Won deal per customer (most recent contract).
+    """
+    from app.models.customer import Customer
+    from app.models.deal import Deal
+
+    def _add_months(d, months: int):
+        """Add months to a date, clamping day to valid range."""
+        import calendar
+        month = d.month - 1 + months
+        year = d.year + month // 12
+        month = month % 12 + 1
+        day = min(d.day, calendar.monthrange(year, month)[1])
+        return d.replace(year=year, month=month, day=day)
+
+    customers = db.query(Customer).filter(
+        Customer.is_active.is_(True),
+        (Customer.tier.is_(None)) | (Customer.tier != "prospect"),
+    ).all()
+
+    if not customers:
+        return 0
+
+    updated = 0
+    for customer in customers:
+        # Find latest Closed Won deal for this customer
+        latest = (
+            db.query(Deal)
+            .filter(
+                Deal.customer_id == customer.id,
+                Deal.stage.ilike("%closed won%"),
+            )
+            .order_by(Deal.close_date.desc().nullslast())
+            .first()
+        )
+        if not latest:
+            continue
+
+        props = latest.properties or {}
+        renewal = None
+
+        # Priority 1: ced (Contract End Date) — stored as epoch ms or ISO string
+        ced_raw = props.get("ced")
+        if ced_raw:
+            try:
+                if isinstance(ced_raw, str) and "T" in ced_raw:
+                    renewal = datetime.fromisoformat(ced_raw.replace("Z", "+00:00")).date()
+                else:
+                    renewal = datetime.fromtimestamp(int(ced_raw) / 1000, tz=timezone.utc).date()
+            except (ValueError, TypeError, OSError):
+                pass
+
+        # Priority 2: close_date + deal_terms (months)
+        if not renewal and latest.close_date:
+            term_raw = props.get("deal_terms__months_")
+            if term_raw:
+                try:
+                    months = int(float(term_raw))
+                    if 1 <= months <= 120:
+                        renewal = _add_months(latest.close_date, months)
+                except (ValueError, TypeError):
+                    pass
+
+        # Priority 3: close_date + 12 months (default annual)
+        if not renewal and latest.close_date:
+            renewal = _add_months(latest.close_date, 12)
+
+        if renewal and renewal != customer.renewal_date:
+            customer.renewal_date = renewal
+            updated += 1
+
+    if updated:
+        db.flush()
+        logger.info(f"[HubSpotSync] Populated renewal_date for {updated} customers from Closed Won deals")
+
+    return updated
+
+
+def _populate_cs_managers(db: Session) -> int:
+    """
+    For active customers, derive CS manager name from their most recent deal's
+    owner_name and store in customer metadata JSONB under 'cs_manager'.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.models.customer import Customer
+    from app.models.deal import Deal
+
+    customers = db.query(Customer).filter(
+        Customer.is_active.is_(True),
+        (Customer.tier.is_(None)) | (Customer.tier != "prospect"),
+    ).all()
+
+    if not customers:
+        return 0
+
+    updated = 0
+    for customer in customers:
+        # Find most recent deal with a resolved owner name (any stage)
+        deal = (
+            db.query(Deal.owner_name)
+            .filter(
+                Deal.customer_id == customer.id,
+                Deal.owner_name.isnot(None),
+            )
+            .order_by(Deal.close_date.desc().nullslast())
+            .first()
+        )
+        if not deal or not deal.owner_name:
+            continue
+
+        owner = deal.owner_name
+        # Skip unresolved numeric HubSpot owner IDs
+        if owner.isdigit():
+            continue
+
+        meta = dict(customer.metadata_ or {})
+        if meta.get("cs_manager") != owner:
+            meta["cs_manager"] = owner
+            customer.metadata_ = meta
+            flag_modified(customer, "metadata_")
+            updated += 1
+
+    if updated:
+        db.flush()
+        logger.info(f"[HubSpotSync] Populated cs_manager for {updated} customers from deal owners")
 
     return updated
 
